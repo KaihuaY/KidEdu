@@ -206,16 +206,25 @@ async function pushToGist(content: string): Promise<void> {
   setStatus('saved')
 }
 
-function applyRemoteContent(remoteJson: string): void {
+/**
+ * Merges remote content into the local store. Returns true if, after the
+ * merge, the local doc holds something the remote doesn't have yet (e.g. the
+ * remote file was empty, or the merge kept a section from local because it
+ * was newer) - callers use this to push the merged doc back up, which
+ * matters in particular when this is running as part of a retry after a
+ * failed upload: without it, the edit that failed to push would only ever
+ * get merged back into `local` and never actually reach the gist.
+ */
+function applyRemoteContent(remoteJson: string): boolean {
   if (!remoteJson) {
     lastSyncedJson = exportJson()
-    return
+    return true
   }
   let remoteDoc: ProgressDoc
   try {
     remoteDoc = JSON.parse(remoteJson) as ProgressDoc
   } catch {
-    return
+    return false
   }
   applyingRemote = true
   try {
@@ -225,6 +234,7 @@ function applyRemoteContent(remoteJson: string): void {
   } finally {
     applyingRemote = false
   }
+  return lastSyncedJson !== remoteJson
 }
 
 function scheduleUpload(): void {
@@ -249,16 +259,28 @@ function scheduleRetry(): void {
   }, RETRY_MS)
 }
 
+/** Pushes the current doc immediately (bypassing the debounce) after a merge revealed the remote is behind. */
+function pushMergedResult(): void {
+  pushToGist(exportJson()).catch(() => {
+    if (status !== 'expired') scheduleRetry()
+  })
+}
+
 async function trySync(): Promise<void> {
   try {
     if (!gistId) gistId = await findOrCreateGist()
     const remote = await fetchGistContent(gistId)
     lastKnownRemoteUpdatedAt = remote.updatedAt
-    applyRemoteContent(remote.content)
+    const needsPush = applyRemoteContent(remote.content)
     if (!unsubscribeStore) {
       unsubscribeStore = subscribe(scheduleUpload)
     }
     setStatus('saved')
+    // Important on a retry after a failed push: the edit that failed to
+    // upload was just merged back into the local doc above, but merging
+    // alone never re-sends it - without this it would silently never reach
+    // the gist until the user happened to make another edit.
+    if (needsPush) pushMergedResult()
   } catch {
     if (status !== 'expired') scheduleRetry()
   }
@@ -277,7 +299,7 @@ async function pollForRemoteChanges(): Promise<void> {
     if (data.updated_at !== lastKnownRemoteUpdatedAt) {
       const remote = await fetchGistContent(gistId)
       lastKnownRemoteUpdatedAt = remote.updatedAt
-      applyRemoteContent(remote.content)
+      if (applyRemoteContent(remote.content)) pushMergedResult()
     }
   } catch {
     // A missed poll is harmless; the next 60s tick (or a local edit) tries again.

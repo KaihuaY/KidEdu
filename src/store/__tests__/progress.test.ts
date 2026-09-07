@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   defaultDoc,
   exportJson,
@@ -99,5 +99,84 @@ describe('export / import round trip', () => {
 
   it('rejects a file with the wrong schema version', () => {
     expect(() => importJson(JSON.stringify({ schemaVersion: 2 }))).toThrow()
+  })
+})
+
+describe('normalizeDoc (via importJson)', () => {
+  it('backfills missing nested profile and settings fields so screens never see undefined', () => {
+    // Simulates an older/partial save: profiles.kid exists but predates the
+    // tokens/sessions/streak fields, profiles.parent is missing outright,
+    // and settings predates ticketChance/prizePools.
+    const legacyJson = JSON.stringify({
+      schemaVersion: 1,
+      settings: { kidName: 'Old Kid', updatedAt: 1 },
+      profiles: { kid: { holds: {}, xp: 10 }, updatedAt: 555 },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+    })
+
+    importJson(legacyJson)
+    const doc = getDoc()
+
+    expect(doc.profiles.kid.xp).toBe(10) // preserved
+    expect(doc.profiles.kid.tokens).toEqual({ gold: 0, silver: 0, bronze: 0 })
+    expect(doc.profiles.kid.streak).toEqual({ current: 0, best: 0, lastDay: '' })
+    expect(doc.profiles.kid.sessions).toEqual([])
+    expect(doc.profiles.parent).toEqual(defaultDoc().profiles.parent)
+    expect(doc.settings.kidName).toBe('Old Kid') // preserved
+    expect(doc.settings.ticketChance).toEqual({ gold: 1, silver: 0.6, bronze: 0.3 })
+    expect(doc.settings.prizePools.gold.length).toBeGreaterThan(0)
+  })
+
+  it('does not let a partially-specified prizePools/ticketChance drop the other tiers', () => {
+    const legacyJson = JSON.stringify({
+      schemaVersion: 1,
+      settings: {
+        updatedAt: 1,
+        prizePools: { gold: [{ id: 'g', name: 'Gold only', emoji: '🏆', weight: 1 }] },
+        ticketChance: { gold: 0.5 },
+      },
+      profiles: { updatedAt: 1 },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+    })
+
+    importJson(legacyJson)
+    const doc = getDoc()
+
+    expect(doc.settings.prizePools.gold).toEqual([{ id: 'g', name: 'Gold only', emoji: '🏆', weight: 1 }])
+    expect(doc.settings.prizePools.silver.length).toBeGreaterThan(0)
+    expect(doc.settings.prizePools.bronze.length).toBeGreaterThan(0)
+    expect(doc.settings.ticketChance).toEqual({ gold: 0.5, silver: 0.6, bronze: 0.3 })
+  })
+})
+
+describe('a brand-new (never-edited) local doc never outranks synced data', () => {
+  it('stamps every section updatedAt: 0 so mergeDocs always prefers real remote progress', async () => {
+    vi.resetModules()
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: new MemoryStorage(), // empty - nothing saved on this "device" yet
+      configurable: true,
+      writable: true,
+    })
+
+    const fresh = await import('../progress')
+    const localDoc = fresh.getDoc()
+    expect(localDoc.settings.updatedAt).toBe(0)
+    expect(localDoc.profiles.updatedAt).toBe(0)
+    expect(localDoc.rewards.updatedAt).toBe(0)
+    expect(localDoc.solveLog.updatedAt).toBe(0)
+
+    // Any real synced doc - even one saved a long time ago - must win a
+    // merge against a device that has never actually recorded an edit.
+    const remote = fresh.defaultDoc()
+    remote.profiles.updatedAt = 12345
+    remote.profiles.kid.xp = 77
+    remote.settings.updatedAt = 12345
+    remote.settings.kidName = 'Synced Kid'
+
+    const merged = fresh.mergeDocs(localDoc, remote)
+    expect(merged.profiles.kid.xp).toBe(77)
+    expect(merged.settings.kidName).toBe('Synced Kid')
   })
 })

@@ -209,6 +209,21 @@ function hasLocalStorage(): boolean {
 }
 
 /**
+ * Fills in a profile's nested fields (tokens/streak in particular) from a
+ * default profile, so a doc saved before one of those fields existed - or a
+ * profile object that only partially round-tripped through a merge/import -
+ * doesn't leave `undefined` where every screen assumes a value is present.
+ */
+function normalizeProfile(fallback: ProfileProgress, parsed: Partial<ProfileProgress> | undefined): ProfileProgress {
+  return {
+    ...fallback,
+    ...parsed,
+    tokens: { ...fallback.tokens, ...parsed?.tokens },
+    streak: { ...fallback.streak, ...parsed?.streak },
+  }
+}
+
+/**
  * Backfills any field added to the schema after a doc was first persisted,
  * without bumping schemaVersion (schemaVersion covers *shape-breaking*
  * changes; new optional-in-spirit fields with sane defaults are handled
@@ -219,23 +234,53 @@ function normalizeDoc(parsed: Partial<ProgressDoc>): ProgressDoc {
   return {
     ...fallback,
     ...parsed,
-    settings: { ...fallback.settings, ...parsed.settings },
-    profiles: { ...fallback.profiles, ...parsed.profiles },
+    settings: {
+      ...fallback.settings,
+      ...parsed.settings,
+      prizePools: { ...fallback.settings.prizePools, ...parsed.settings?.prizePools },
+      ticketChance: { ...fallback.settings.ticketChance, ...parsed.settings?.ticketChance },
+    },
+    profiles: {
+      ...fallback.profiles,
+      ...parsed.profiles,
+      kid: normalizeProfile(fallback.profiles.kid, parsed.profiles?.kid),
+      parent: normalizeProfile(fallback.profiles.parent, parsed.profiles?.parent),
+    },
     rewards: { ...fallback.rewards, ...parsed.rewards },
     solveLog: { ...fallback.solveLog, ...parsed.solveLog },
   }
 }
 
+/**
+ * Like defaultDoc(), but every section is stamped `updatedAt: 0` instead of
+ * "now". Used whenever this device has no real saved progress to speak of
+ * (nothing in storage, or what was there didn't parse). A blank doc has no
+ * actual edit for mergeDocs to protect, so it must never outrank genuine
+ * progress pulled down from a synced gist - which is exactly what would
+ * happen if these all-defaults sections got a fresh Date.now() merely for
+ * having been constructed just now (see mergeDocs / gistSync.ts).
+ */
+function neverEditedDoc(): ProgressDoc {
+  const fresh = defaultDoc()
+  return {
+    ...fresh,
+    settings: { ...fresh.settings, updatedAt: 0 },
+    profiles: { ...fresh.profiles, updatedAt: 0 },
+    rewards: { ...fresh.rewards, updatedAt: 0 },
+    solveLog: { ...fresh.solveLog, updatedAt: 0 },
+  }
+}
+
 function loadInitialDoc(): ProgressDoc {
-  if (!hasLocalStorage()) return defaultDoc()
+  if (!hasLocalStorage()) return neverEditedDoc()
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return defaultDoc()
+    if (!raw) return neverEditedDoc()
     const parsed = JSON.parse(raw) as Partial<ProgressDoc>
-    if (!parsed || parsed.schemaVersion !== 1) return defaultDoc()
+    if (!parsed || parsed.schemaVersion !== 1) return neverEditedDoc()
     return normalizeDoc(parsed)
   } catch {
-    return defaultDoc()
+    return neverEditedDoc()
   }
 }
 
