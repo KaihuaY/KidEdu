@@ -1,0 +1,169 @@
+@import "tailwindcss";
+
+/*
+ * CubeClimb theme: playful, bright, high-contrast, big touch targets.
+ * Light-only (this is a kids' app meant to be cheerful in daylight), so we
+ * do not define a prefers-color-scheme: dark branch on purpose.
+ */
+:root {
+  /* Brand */
+  --cc-bg: #f4f6ff;
+  --cc-surface: #ffffff;
+  --cc-ink: #10122b;
+  --cc-ink-soft: #4b4e72;
+  --cc-primary: #6d28f6;
+  --cc-primary-ink: #ffffff;
+  --cc-accent: #ff8a00;
+  --cc-success: #1fa953;
+  --cc-danger: #e62b2b;
+  --cc-border: #e1e3f5;
+  --cc-shadow: 0 10px 24px -8px rgba(16, 18, 43, 0.18);
+
+  /* The six Rubik's cube sticker colors, in the app's solver frame:
+     U=yellow R=orange F=green D=white L=red B=blue. */
+  --cube-u: #f5d91a;
+  --cube-r: #ff8a00;
+  --cube-f: #1fa953;
+  --cube-d: #f5f5f5;
+  --cube-l: #e62b2b;
+  --cube-b: #1f5fd9;
+  --cube-unknown: #c7cad9;
+
+  /* Layout */
+  --cc-radius: 1rem;
+  --cc-touch: 56px;
+  --cc-safe-top: env(safe-area-inset-top, 0px);
+  --cc-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --cc-safe-left: env(safe-area-inset-left, 0px);
+  --cc-safe-right: env(safe-area-inset-right, 0px);
+
+  --font-sans: 'Nunito', 'Baloo 2', ui-rounded, 'Segoe UI Rounded', 'Segoe UI',
+    system-ui, -apple-system, Roboto, Arial, sans-serif;
+
+  color-scheme: light;
+  font-family: var(--font-sans);
+  color: var(--cc-ink);
+  background: var(--cc-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--cc-bg);
+  color: var(--cc-ink);
+  overscroll-behavior-y: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+/* Utility layer: big, friendly, tappable buttons everywhere by default. */
+@layer components {
+  .cc-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: var(--cc-touch);
+    min-width: var(--cc-touch);
+    padding: 0.75rem 1.25rem;
+    border-radius: var(--cc-radius);
+    font-weight: 800;
+    font-size: 1.05rem;
+    border: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+    box-shadow: var(--cc-shadow);
+  }
+
+  .cc-btn:active {
+    transform: scale(0.96);
+  }
+
+  .cc-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+  }
+
+  .cc-btn-primary {
+    background: var(--cc-primary);
+    color: var(--cc-primary-ink);
+  }
+
+  .cc-btn-accent {
+    background: var(--cc-accent);
+    color: #2b1900;
+  }
+
+  .cc-btn-surface {
+    background: var(--cc-surface);
+    color: var(--cc-ink);
+    border: 2px solid var(--cc-border);
+    box-shadow: none;
+  }
+
+  .cc-card {
+    background: var(--cc-surface);
+    border-radius: 1.5rem;
+    box-shadow: var(--cc-shadow);
+    border: 1px solid var(--cc-border);
+  }
+
+  .cc-safe-top {
+    padding-top: var(--cc-safe-top);
+  }
+
+  .cc-safe-bottom {
+    padding-bottom: var(--cc-safe-bottom);
+  }
+
+  .cc-safe-x {
+    padding-left: var(--cc-safe-left);
+    padding-right: var(--cc-safe-right);
+  }
+}
+
+/* A quick "oops, try again" wiggle - used on wrong taps/picks across the
+   Try/Climb/Spot stages, the Blind Box, and the PIN pad. */
+@keyframes cc-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-8px);
+  }
+  40% {
+    transform: translateX(8px);
+  }
+  60% {
+    transform: translateX(-6px);
+  }
+  80% {
+    transform: translateX(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

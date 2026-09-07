@@ -1,0 +1,631 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useRoute, navigate } from '../router'
+import { TwistyCube } from '../components/TwistyCube'
+import { MoveArrows } from '../components/MoveArrows'
+import { SayIt } from '../components/SayIt'
+import { fireConfetti } from '../components/Confetti'
+import { VirtualCubeInput } from '../input/CubeInput'
+import { SOLVED, parseAlg } from '../engine/cube'
+import { describeMove } from '../engine/notation'
+import { caseDisplay, lessonById, nextHoldId, type Lesson as LessonContent } from '../content/lessons'
+import { useProgress, update, type StageProgress } from '../store/progress'
+import { useActiveProfile } from '../store/activeProfile'
+import { maxStars, starsForTier, tierForClimbTries, tierForStageTries, xpForTier, type Tier } from '../store/rewards'
+
+type StageId = 'watch' | 'try' | 'spot' | 'climb'
+const STAGE_ORDER: StageId[] = ['watch', 'try', 'spot', 'climb']
+const STAGE_LABEL: Record<StageId, string> = { watch: 'Watch', try: 'Try', spot: 'Spot it', climb: 'Climb' }
+
+/** "U2" -> ["U","U"] so a sequence can be tapped with only quarter-turn buttons. */
+function expandDoubles(alg: string): string[] {
+  const out: string[] = []
+  for (const token of parseAlg(alg)) {
+    if (token.endsWith('2')) {
+      const base = token.slice(0, -1)
+      out.push(base, base)
+    } else {
+      out.push(token)
+    }
+  }
+  return out
+}
+
+function emptyStageProgress(): StageProgress {
+  return { bestTries: null, stars: 0, attempts: 0, minutes: 0 }
+}
+
+function awardStage(
+  profileId: 'kid' | 'parent',
+  holdId: string,
+  stageId: StageId,
+  tries: number,
+  tier: Tier,
+  giveToken = true,
+): void {
+  update('profiles', (profiles) => {
+    const profile = profiles[profileId]
+    const hold = profile.holds[holdId] ?? { stages: {} }
+    const prev = hold.stages[stageId] ?? emptyStageProgress()
+    const nextStage: StageProgress = {
+      bestTries: prev.bestTries === null ? tries : Math.min(prev.bestTries, tries),
+      stars: maxStars(prev.stars, starsForTier(tier)),
+      attempts: prev.attempts + tries,
+      minutes: prev.minutes,
+      completedAt: prev.completedAt ?? Date.now(),
+    }
+    return {
+      ...profiles,
+      [profileId]: {
+        ...profile,
+        holds: { ...profile.holds, [holdId]: { ...hold, stages: { ...hold.stages, [stageId]: nextStage } } },
+        tokens: giveToken ? { ...profile.tokens, [tier]: profile.tokens[tier] + 1 } : profile.tokens,
+        xp: profile.xp + (giveToken ? xpForTier(tier) : 5),
+      },
+    }
+  })
+}
+
+/** Returns true if this call is the moment the hold first becomes mastered. */
+function masterHold(profileId: 'kid' | 'parent', holdId: string): boolean {
+  let justMastered = false
+  update('profiles', (profiles) => {
+    const profile = profiles[profileId]
+    const hold = profile.holds[holdId] ?? { stages: {} }
+    if (hold.masteredAt) return profiles
+    justMastered = true
+    return {
+      ...profiles,
+      [profileId]: {
+        ...profile,
+        holds: { ...profile.holds, [holdId]: { ...hold, masteredAt: Date.now() } },
+        tokens: { ...profile.tokens, gold: profile.tokens.gold + 1 },
+      },
+    }
+  })
+  return justMastered
+}
+
+function addStageMinutes(profileId: 'kid' | 'parent', holdId: string, stageId: StageId, minutes: number): void {
+  if (minutes <= 0) return
+  update('profiles', (profiles) => {
+    const profile = profiles[profileId]
+    const hold = profile.holds[holdId] ?? { stages: {} }
+    const prev = hold.stages[stageId] ?? emptyStageProgress()
+    return {
+      ...profiles,
+      [profileId]: {
+        ...profile,
+        holds: {
+          ...profile.holds,
+          [holdId]: { ...hold, stages: { ...hold.stages, [stageId]: { ...prev, minutes: prev.minutes + minutes } } },
+        },
+      },
+    }
+  })
+}
+
+/** Tracks wall-clock time spent on one stage and flushes it to progress when it closes. */
+function useStageMinutesTracker(profileId: 'kid' | 'parent', holdId: string, stageId: StageId): void {
+  useEffect(() => {
+    const startedAt = Date.now()
+    return () => {
+      const minutes = (Date.now() - startedAt) / 60000
+      addStageMinutes(profileId, holdId, stageId, minutes)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileId, holdId, stageId])
+}
+
+// ---------------------------------------------------------------------------
+
+function MoveLabel({ move, showLetters }: { move: string; showLetters: boolean }) {
+  return (
+    <span>
+      {describeMove(move)}
+      {showLetters ? <span style={{ opacity: 0.6, fontWeight: 700 }}> ({move})</span> : null}
+    </span>
+  )
+}
+
+function WatchPanel({
+  lesson,
+  tempoScale,
+  showLetters,
+  onComplete,
+}: {
+  lesson: LessonContent
+  tempoScale: number
+  showLetters: boolean
+  onComplete: () => void
+}) {
+  const [index, setIndex] = useState(0)
+  const demo = lesson.stages.watch.demos[index]
+  const isLast = index === lesson.stages.watch.demos.length - 1
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <div className="cc-card" style={{ height: 280, padding: '0.5rem' }}>
+        <TwistyCube
+          setupAlg={demo.setupAlg ?? 'z2'}
+          alg={demo.alg}
+          tempoScale={tempoScale}
+          controls="bottom-row"
+        />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <h3 style={{ margin: 0, fontSize: '1.05rem' }}>{demo.title}</h3>
+        <SayIt text={demo.say} />
+      </div>
+      <p style={{ margin: 0, color: 'var(--cc-ink-soft)', fontWeight: 600 }}>
+        {demo.say}
+        {showLetters ? <span style={{ opacity: 0.7 }}> ({demo.alg || 'no moves'})</span> : null}
+      </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem' }}>
+        <button
+          type="button"
+          className="cc-btn cc-btn-surface"
+          disabled={index === 0}
+          onClick={() => setIndex((i) => Math.max(0, i - 1))}
+        >
+          ◀ Prev
+        </button>
+        <span style={{ alignSelf: 'center', fontWeight: 700, color: 'var(--cc-ink-soft)' }}>
+          {index + 1} / {lesson.stages.watch.demos.length}
+        </span>
+        <button
+          type="button"
+          className="cc-btn cc-btn-primary"
+          onClick={() => {
+            if (isLast) onComplete()
+            else setIndex((i) => i + 1)
+          }}
+        >
+          {isLast ? 'Done watching ✓' : 'Next ▶'}
+        </button>
+      </div>
+
+      <div className="cc-card" style={{ padding: '1rem', background: 'var(--cc-bg)' }}>
+        <strong>Show me on the real cube</strong>
+        <p style={{ margin: '0.4rem 0 0' }}>{lesson.realCubeHint}</p>
+      </div>
+    </div>
+  )
+}
+
+interface RunnerResult {
+  tries: number
+}
+
+function useSequenceRunner(sequence: string, onSuccess: (result: RunnerResult) => void) {
+  const expected = useMemo(() => expandDoubles(sequence), [sequence])
+  const cubeRef = useRef(new VirtualCubeInput(SOLVED))
+  const [progress, setProgress] = useState<string[]>([])
+  const [tries, setTries] = useState(1)
+  const [shake, setShake] = useState(false)
+
+  useEffect(() => {
+    cubeRef.current = new VirtualCubeInput(SOLVED)
+    setProgress([])
+    setTries(1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sequence])
+
+  function tapMove(move: string) {
+    const wanted = expected[progress.length]
+    if (move !== wanted) {
+      setShake(true)
+      setTimeout(() => setShake(false), 400)
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel()
+          window.speechSynthesis.speak(new SpeechSynthesisUtterance('Oops, try again!'))
+        } catch {
+          // ignore
+        }
+      }
+      cubeRef.current = new VirtualCubeInput(SOLVED)
+      setProgress([])
+      setTries((t) => t + 1)
+      return
+    }
+    cubeRef.current.apply(move)
+    const next = [...progress, move]
+    if (next.length === expected.length) {
+      // Reset immediately so the runner is ready for another attempt (Climb
+      // does 3 back-to-back runs on the same runner instance) - capture the
+      // tries this successful attempt took before resetting the counter.
+      const completedTries = tries
+      cubeRef.current = new VirtualCubeInput(SOLVED)
+      setProgress([])
+      setTries(1)
+      onSuccess({ tries: completedTries })
+      return
+    }
+    setProgress(next)
+  }
+
+  return {
+    expected,
+    progress,
+    alg: progress.join(' '),
+    nextExpected: expected[progress.length],
+    tries,
+    shake,
+    tapMove,
+  }
+}
+
+function TryPanel({
+  lesson,
+  tempoScale,
+  showLetters,
+  onComplete,
+}: {
+  lesson: LessonContent
+  tempoScale: number
+  showLetters: boolean
+  onComplete: (tries: number) => void
+}) {
+  const runner = useSequenceRunner(lesson.stages.try.sequence, ({ tries }) => onComplete(tries))
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <p style={{ margin: 0, fontWeight: 700 }}>{lesson.stages.try.prompt}</p>
+        <SayIt text={lesson.stages.try.say} />
+      </div>
+      <div
+        className="cc-card"
+        style={{
+          height: 260,
+          padding: '0.5rem',
+          animation: runner.shake ? 'cc-shake 400ms' : undefined,
+        }}
+      >
+        <TwistyCube setupAlg="z2" alg={runner.alg} tempoScale={tempoScale} controls="none" />
+      </div>
+      {runner.nextExpected && (
+        <div className="cc-card" style={{ padding: '0.75rem 1rem', background: 'var(--cc-bg)' }}>
+          Next move: <strong><MoveLabel move={runner.nextExpected} showLetters={showLetters} /></strong>
+        </div>
+      )}
+      <MoveArrows onMove={runner.tapMove} />
+      <p style={{ margin: 0, color: 'var(--cc-ink-soft)', fontSize: '0.85rem' }}>Tries this attempt: {runner.tries}</p>
+    </div>
+  )
+}
+
+function ClimbPanel({
+  lesson,
+  tempoScale,
+  showLetters,
+  onComplete,
+}: {
+  lesson: LessonContent
+  tempoScale: number
+  showLetters: boolean
+  onComplete: (totalTries: number) => void
+}) {
+  const [run, setRun] = useState(1)
+  const [totalTries, setTotalTries] = useState(0)
+  const runner = useSequenceRunner(lesson.stages.climb.sequence, ({ tries }) => {
+    const newTotal = totalTries + tries
+    if (run >= lesson.stages.climb.runs) {
+      onComplete(newTotal)
+    } else {
+      setTotalTries(newTotal)
+      setRun((r) => r + 1)
+    }
+  })
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <p style={{ margin: 0, fontWeight: 700 }}>
+          Climb run {run} of {lesson.stages.climb.runs}
+        </p>
+        <SayIt text={`Do it ${lesson.stages.climb.runs} times in a row!`} />
+      </div>
+      <div
+        className="cc-card"
+        style={{ height: 260, padding: '0.5rem', animation: runner.shake ? 'cc-shake 400ms' : undefined }}
+      >
+        <TwistyCube setupAlg="z2" alg={runner.alg} tempoScale={tempoScale} controls="none" />
+      </div>
+      {runner.nextExpected && (
+        <div className="cc-card" style={{ padding: '0.75rem 1rem', background: 'var(--cc-bg)' }}>
+          Next move: <strong><MoveLabel move={runner.nextExpected} showLetters={showLetters} /></strong>
+        </div>
+      )}
+      <MoveArrows onMove={runner.tapMove} />
+      <p style={{ margin: 0, color: 'var(--cc-ink-soft)', fontSize: '0.85rem' }}>
+        Tries so far: {totalTries + runner.tries}
+      </p>
+    </div>
+  )
+}
+
+function SpotPanel({
+  lesson,
+  tempoScale,
+  onComplete,
+}: {
+  lesson: LessonContent
+  tempoScale: number
+  onComplete: (tries: number) => void
+}) {
+  const [attempts, setAttempts] = useState(1)
+  const [hint, setHint] = useState<string | null>(null)
+  const options = lesson.stages.spot.options
+
+  function pick(correct: boolean) {
+    if (correct) {
+      onComplete(attempts)
+      return
+    }
+    setAttempts((a) => a + 1)
+    setHint('Not quite - look closely at the yellow pattern and try another cube.')
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <p style={{ margin: 0, fontWeight: 700 }}>{lesson.stages.spot.question}</p>
+        <SayIt text={lesson.stages.spot.question} />
+      </div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
+          gap: '0.75rem',
+        }}
+      >
+        {options.map((option) => (
+          <button
+            key={option.label}
+            type="button"
+            className="cc-btn cc-btn-surface"
+            onClick={() => pick(option.correct)}
+            style={{ flexDirection: 'column', padding: '0.5rem', height: 'auto' }}
+            aria-label={option.label}
+          >
+            <div style={{ width: '100%', maxWidth: 220, height: 250, margin: '0 auto' }}>
+              <TwistyCube
+                {...caseDisplay(option.alg)}
+                visualization="2D"
+                controls="none"
+                tempoScale={tempoScale}
+              />
+            </div>
+            <span style={{ fontSize: '0.8rem', fontWeight: 800 }}>{option.label}</span>
+          </button>
+        ))}
+      </div>
+      {hint && (
+        <div className="cc-card" style={{ padding: '0.75rem 1rem', background: 'var(--cc-bg)' }}>
+          {hint}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+export function Lesson() {
+  const { params } = useRoute()
+  const lesson = lessonById(params.id ?? '')
+  const progressDoc = useProgress()
+  const activeProfile = useActiveProfile()
+  const profile = progressDoc.profiles[activeProfile]
+  const isParent = activeProfile === 'parent'
+
+  const [showLetters, setShowLetters] = useState(isParent)
+  const [tempoScale, setTempoScale] = useState(1)
+  const [celebration, setCelebration] = useState<string | null>(null)
+
+  const hold = lesson ? profile.holds[lesson.id] : undefined
+  const completedCount = STAGE_ORDER.filter((s) => hold?.stages[s]?.completedAt).length
+  const unlockedCount = Math.min(completedCount + 1, STAGE_ORDER.length)
+
+  const [currentStage, setCurrentStage] = useState<StageId>(() => {
+    const firstIncomplete = STAGE_ORDER.find((s) => !hold?.stages[s]?.completedAt)
+    return firstIncomplete ?? 'climb'
+  })
+
+  useStageMinutesTracker(activeProfile, lesson?.id ?? '', currentStage)
+
+  if (!lesson) {
+    return (
+      <div className="cc-card" style={{ padding: '1.5rem', margin: '1rem' }}>
+        <h1 style={{ margin: 0, fontSize: '1.3rem' }}>Hold not found</h1>
+        <button type="button" className="cc-btn cc-btn-primary" style={{ marginTop: '1rem' }} onClick={() => navigate('/wall')}>
+          Back to the Wall
+        </button>
+      </div>
+    )
+  }
+
+  function celebrate(tier: Tier, message: string) {
+    fireConfetti(tier === 'gold' ? 'big' : 'small')
+    setCelebration(message)
+  }
+
+  function handleStageComplete(stageId: StageId, tries: number) {
+    const tier = stageId === 'climb' ? tierForClimbTries(tries) : tierForStageTries(tries)
+    const who = activeProfile === 'kid' ? progressDoc.settings.kidName : progressDoc.settings.parentName
+    if (stageId === 'watch') {
+      // Watching is not an achievement yet: mark it done (+5 XP) but no box token.
+      awardStage(activeProfile, lesson!.id, stageId, tries, tier, false)
+      celebrate('bronze', `Nice watching, ${who}! Now try it yourself. 💪`)
+      return
+    }
+    awardStage(activeProfile, lesson!.id, stageId, tries, tier)
+
+    if (stageId === 'climb') {
+      const justMastered = masterHold(activeProfile, lesson!.id)
+      if (justMastered) {
+        celebrate('gold', `${who} mastered ${lesson!.title}! 🏔️ A gold token is yours!`)
+      } else {
+        celebrate(tier, `Nice climb! You earned a ${tier} medal.`)
+      }
+      return
+    }
+
+    const niceTier = tier === 'gold' ? 'Gold' : tier === 'silver' ? 'Silver' : 'Bronze'
+    if (tries === 1 && stageId !== 'spot') {
+      celebrate(tier, `${who}, you got it in 1 try! ${niceTier} box earned!`)
+    } else {
+      celebrate(tier, `Great job! ${niceTier} box earned.`)
+    }
+    // Auto-advance to the next stage tab once this one is done.
+    const idx = STAGE_ORDER.indexOf(stageId)
+    if (idx + 1 < STAGE_ORDER.length) setCurrentStage(STAGE_ORDER[idx + 1])
+  }
+
+  const nextHold = nextHoldId(lesson.id)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1rem 1rem 2rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <button type="button" className="cc-btn cc-btn-surface" onClick={() => navigate('/wall')} aria-label="Back to the Wall">
+          ◀
+        </button>
+        <div>
+          <h1 style={{ margin: 0, fontSize: '1.3rem' }}>
+            Hold {lesson.number}: {lesson.title}
+          </h1>
+          <p style={{ margin: '0.2rem 0 0', color: 'var(--cc-ink-soft)', fontWeight: 600 }}>{lesson.goal}</p>
+        </div>
+      </div>
+
+      <p style={{ margin: 0 }}>{lesson.story}</p>
+
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        {STAGE_ORDER.map((stage, i) => {
+          const locked = i >= unlockedCount
+          const done = Boolean(hold?.stages[stage]?.completedAt)
+          return (
+            <button
+              key={stage}
+              type="button"
+              disabled={locked}
+              onClick={() => setCurrentStage(stage)}
+              className="cc-btn"
+              style={{
+                flex: 1,
+                minWidth: 80,
+                background: currentStage === stage ? 'var(--cc-primary)' : 'var(--cc-surface)',
+                color: currentStage === stage ? '#fff' : 'var(--cc-ink)',
+                border: currentStage === stage ? 'none' : '2px solid var(--cc-border)',
+                boxShadow: 'none',
+              }}
+            >
+              {done ? '✓ ' : ''}
+              {STAGE_LABEL[stage]}
+            </button>
+          )
+        })}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700 }}>
+          Speed
+          <input
+            type="range"
+            min={0.5}
+            max={2}
+            step={0.25}
+            value={tempoScale}
+            onChange={(e) => setTempoScale(Number(e.target.value))}
+          />
+          <span>{tempoScale.toFixed(2)}x</span>
+        </label>
+        {isParent && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }}>
+            <input type="checkbox" checked={showLetters} onChange={(e) => setShowLetters(e.target.checked)} />
+            Show letters
+          </label>
+        )}
+      </div>
+
+      {currentStage === 'watch' && (
+        <WatchPanel
+          lesson={lesson}
+          tempoScale={tempoScale}
+          showLetters={showLetters}
+          onComplete={() => handleStageComplete('watch', 1)}
+        />
+      )}
+      {currentStage === 'try' && (
+        <TryPanel
+          key={lesson.id}
+          lesson={lesson}
+          tempoScale={tempoScale}
+          showLetters={showLetters}
+          onComplete={(tries) => handleStageComplete('try', tries)}
+        />
+      )}
+      {currentStage === 'spot' && (
+        <SpotPanel
+          key={lesson.id}
+          lesson={lesson}
+          tempoScale={tempoScale}
+          onComplete={(tries) => handleStageComplete('spot', tries)}
+        />
+      )}
+      {currentStage === 'climb' && (
+        <ClimbPanel
+          key={lesson.id}
+          lesson={lesson}
+          tempoScale={tempoScale}
+          showLetters={showLetters}
+          onComplete={(totalTries) => handleStageComplete('climb', totalTries)}
+        />
+      )}
+
+      {celebration && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(16,18,43,0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1.5rem',
+            zIndex: 50,
+          }}
+        >
+          <div className="cc-card" style={{ padding: '1.75rem', maxWidth: 360, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <h2 style={{ margin: 0, fontSize: '1.25rem' }}>{celebration}</h2>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button type="button" className="cc-btn cc-btn-surface" onClick={() => setCelebration(null)}>
+                Keep going
+              </button>
+              {hold?.masteredAt && nextHold && (
+                <button
+                  type="button"
+                  className="cc-btn cc-btn-primary"
+                  onClick={() => {
+                    setCelebration(null)
+                    navigate(`/lesson/${nextHold}`)
+                  }}
+                >
+                  Next hold ▶
+                </button>
+              )}
+              {!nextHold && hold?.masteredAt && (
+                <button type="button" className="cc-btn cc-btn-primary" onClick={() => navigate('/wall')}>
+                  Back to the Wall
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
