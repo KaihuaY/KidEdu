@@ -7,7 +7,7 @@ import { fireConfetti } from '../components/Confetti'
 import { invertAlg } from '../engine/cube'
 import { CENTER_INDICES } from '../engine/pieces'
 import { validateFacelets } from '../engine/validate'
-import { describeMove } from '../engine/notation'
+import { NAMED_ALGS } from '../engine/notation'
 import { detectPhase, solveLBL, type PhaseId, type Solution, type SolveStep } from '../engine/solver'
 import { holdForPhase } from '../content/lessons'
 import { useActiveProfile } from '../store/activeProfile'
@@ -99,6 +99,10 @@ function Walkthrough({
     .join(' ')
   const setupAlg = 'z2 ' + invertAlg(remainingAlg)
   const namedAlgId = current.step.namedAlgId
+  const namedAlg = namedAlgId ? NAMED_ALGS.find((a) => a.id === namedAlgId) : undefined
+  const repeat = current.step.repeat ?? 1
+  // Show the trick once in standard notation (with a "× n" label) rather than the fully expanded alg.
+  const moveChips = (namedAlg ? namedAlg.alg : current.step.alg).split(' ').filter(Boolean)
   const doneCount = flatSteps.filter((_, i) => i < cursor).length
 
   return (
@@ -121,7 +125,7 @@ function Walkthrough({
         {solution.phases[current.phaseIndex].steps.length}
       </p>
 
-      <div className="cc-card" style={{ height: 260, padding: '0.5rem' }}>
+      <div className="cc-card" style={{ height: 300, padding: '0.5rem' }}>
         <TwistyCube setupAlg={setupAlg} alg={current.step.alg} controls="bottom-row" />
       </div>
 
@@ -130,17 +134,33 @@ function Walkthrough({
           <strong>{current.step.note}</strong>
           <SayIt text={current.step.note} />
         </div>
-        {namedAlgId && (
-          <p style={{ margin: 0, color: 'var(--cc-ink-soft)' }}>
-            {namedAlgId}
-            {current.step.repeat && current.step.repeat > 1 ? ` ×${current.step.repeat}` : ''} -{' '}
-            {current.step.alg
-              .split(' ')
-              .filter(Boolean)
-              .map((m) => describeMove(m))
-              .join(', ')}{' '}
-            <span style={{ opacity: 0.6 }}>({current.step.alg})</span>
-          </p>
+        {moveChips.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+            {namedAlg && (
+              <span style={{ fontWeight: 700, color: 'var(--cc-ink-soft)' }}>
+                {namedAlg.kidName}
+                {repeat > 1 ? ` × ${repeat}` : ''}
+              </span>
+            )}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }} aria-label="Moves in cube notation">
+              {moveChips.map((m, i) => (
+                <span
+                  key={i}
+                  style={{
+                    fontFamily: 'ui-monospace, Consolas, monospace',
+                    fontSize: '1.4rem',
+                    fontWeight: 800,
+                    padding: '0.35rem 0.7rem',
+                    borderRadius: '0.75rem',
+                    background: 'var(--cc-bg)',
+                    border: '1px solid var(--cc-border)',
+                  }}
+                >
+                  {m}
+                </span>
+              ))}
+            </div>
+          </div>
         )}
       </div>
 
