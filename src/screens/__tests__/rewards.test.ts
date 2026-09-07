@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
+  formatCents,
   maxStars,
   pickWeighted,
+  rollCashCents,
   rollTicket,
   starsForTier,
   tierForClimbTries,
   tierForStageTries,
   xpForTier,
 } from '../../store/rewards'
+import type { Prize } from '../../store/progress'
 
 describe('tierForStageTries', () => {
   it('1 try is gold', () => {
@@ -97,6 +100,60 @@ describe('pickWeighted', () => {
     // `roll <= 0` check must still pick a defined item, not fall through.
     const picked = pickWeighted(items, () => 0.5)
     expect(picked).toBeDefined()
+  })
+})
+
+describe('rollCashCents', () => {
+  const goldCash: Prize = { id: 'gold-cash', name: 'Cash surprise', emoji: '💵', weight: 1, kind: 'cash', minCents: 25, maxCents: 100 }
+  const silverCash: Prize = { id: 'silver-cash', name: 'Cash surprise', emoji: '💵', weight: 1, kind: 'cash', minCents: 5, maxCents: 100 }
+
+  it('stays within [minCents, maxCents] and lands on a 5-cent step over many rolls', () => {
+    let seed = 7
+    const rng = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff
+      return seed / 0x7fffffff
+    }
+    for (let i = 0; i < 500; i++) {
+      const cents = rollCashCents(goldCash, rng)
+      expect(cents).toBeGreaterThanOrEqual(25)
+      expect(cents).toBeLessThanOrEqual(100)
+      expect(cents % 5).toBe(0)
+    }
+    for (let i = 0; i < 500; i++) {
+      const cents = rollCashCents(silverCash, rng)
+      expect(cents).toBeGreaterThanOrEqual(5)
+      expect(cents).toBeLessThanOrEqual(100)
+      expect(cents % 5).toBe(0)
+    }
+  })
+
+  it('never exceeds the $1 hard limit even if a prize is misconfigured with a higher max', () => {
+    const bogus: Prize = { id: 'bogus', name: 'Cash surprise', emoji: '💵', weight: 1, kind: 'cash', minCents: 500, maxCents: 1000 }
+    expect(rollCashCents(bogus, () => 1)).toBe(100)
+    expect(rollCashCents(bogus, () => 0)).toBe(100)
+  })
+
+  it('clamps a negative minCents down to 0', () => {
+    const bogus: Prize = { id: 'bogus', name: 'Cash surprise', emoji: '💵', weight: 1, kind: 'cash', minCents: -50, maxCents: 10 }
+    expect(rollCashCents(bogus, () => 0)).toBeGreaterThanOrEqual(0)
+  })
+
+  it('falls back to the 5-100 cent default range when min/max are omitted', () => {
+    const noRange: Prize = { id: 'x', name: 'Cash surprise', emoji: '💵', weight: 1, kind: 'cash' }
+    for (const rng of [() => 0, () => 0.5, () => 1]) {
+      const cents = rollCashCents(noRange, rng)
+      expect(cents).toBeGreaterThanOrEqual(5)
+      expect(cents).toBeLessThanOrEqual(100)
+    }
+  })
+})
+
+describe('formatCents', () => {
+  it('formats whole and fractional dollar amounts', () => {
+    expect(formatCents(65)).toBe('$0.65')
+    expect(formatCents(100)).toBe('$1.00')
+    expect(formatCents(5)).toBe('$0.05')
+    expect(formatCents(0)).toBe('$0.00')
   })
 })
 

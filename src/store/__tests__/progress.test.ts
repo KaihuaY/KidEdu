@@ -181,6 +181,111 @@ describe('a brand-new (never-edited) local doc never outranks synced data', () =
   })
 })
 
+describe('fresh defaults have no fixed-dollar cash prizes', () => {
+  it('gold and silver cash prizes are kind: cash with a $0-$1 range, not a fixed name', () => {
+    const doc = defaultDoc()
+    const allPrizes = [...doc.settings.prizePools.gold, ...doc.settings.prizePools.silver, ...doc.settings.prizePools.bronze]
+    expect(allPrizes.some((p) => /^\$\d+$/.test(p.name))).toBe(false)
+
+    const gold = doc.settings.prizePools.gold.find((p) => p.id === 'gold-cash')
+    expect(gold).toEqual({ id: 'gold-cash', name: 'Cash surprise', emoji: '💵', weight: 1, kind: 'cash', minCents: 25, maxCents: 100 })
+
+    const silver = doc.settings.prizePools.silver.find((p) => p.id === 'silver-cash')
+    expect(silver).toEqual({ id: 'silver-cash', name: 'Cash surprise', emoji: '💵', weight: 1, kind: 'cash', minCents: 5, maxCents: 100 })
+  })
+})
+
+describe('normalizeDoc migrates legacy fixed-dollar cash prizes (via importJson)', () => {
+  it('replaces gold-cash-5 and silver-cash-1 with the new cash-surprise prize, keeping each pool weight', () => {
+    const legacyJson = JSON.stringify({
+      schemaVersion: 1,
+      settings: {
+        updatedAt: 1,
+        prizePools: {
+          gold: [{ id: 'gold-cash-5', name: '$5', emoji: '💵', weight: 3 }],
+          silver: [{ id: 'silver-cash-1', name: '$1', emoji: '💵', weight: 7 }],
+          bronze: [{ id: 'bronze-high-five', name: 'High five', emoji: '🙌', weight: 1 }],
+        },
+      },
+      profiles: { updatedAt: 1 },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+    })
+
+    importJson(legacyJson)
+    const doc = getDoc()
+
+    expect(doc.settings.prizePools.gold).toEqual([
+      { id: 'gold-cash', name: 'Cash surprise', emoji: '💵', weight: 3, kind: 'cash', minCents: 25, maxCents: 100 },
+    ])
+    expect(doc.settings.prizePools.silver).toEqual([
+      { id: 'silver-cash', name: 'Cash surprise', emoji: '💵', weight: 7, kind: 'cash', minCents: 5, maxCents: 100 },
+    ])
+    // A prize that never was a fixed-dollar prize passes through untouched.
+    expect(doc.settings.prizePools.bronze).toEqual([{ id: 'bronze-high-five', name: 'High five', emoji: '🙌', weight: 1 }])
+  })
+
+  it('also migrates any prize whose name matches /^\\$\\d+$/, even under a different id', () => {
+    const legacyJson = JSON.stringify({
+      schemaVersion: 1,
+      settings: {
+        updatedAt: 1,
+        prizePools: {
+          gold: [{ id: 'custom-id', name: '$20', emoji: '💵', weight: 2 }],
+        },
+      },
+      profiles: { updatedAt: 1 },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+    })
+
+    importJson(legacyJson)
+    const doc = getDoc()
+
+    expect(doc.settings.prizePools.gold).toEqual([
+      { id: 'gold-cash', name: 'Cash surprise', emoji: '💵', weight: 2, kind: 'cash', minCents: 25, maxCents: 100 },
+    ])
+  })
+
+  it('leaves an already-migrated cash prize alone', () => {
+    const json = JSON.stringify({
+      schemaVersion: 1,
+      settings: {
+        updatedAt: 1,
+        prizePools: {
+          gold: [{ id: 'gold-cash', name: 'Cash surprise', emoji: '💵', weight: 1, kind: 'cash', minCents: 10, maxCents: 50 }],
+        },
+      },
+      profiles: { updatedAt: 1 },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+    })
+
+    importJson(json)
+    const doc = getDoc()
+    expect(doc.settings.prizePools.gold).toEqual([
+      { id: 'gold-cash', name: 'Cash surprise', emoji: '💵', weight: 1, kind: 'cash', minCents: 10, maxCents: 50 },
+    ])
+  })
+
+  it('previously won tickets keep their original fixed-dollar names', () => {
+    const json = JSON.stringify({
+      schemaVersion: 1,
+      settings: { updatedAt: 1 },
+      profiles: { updatedAt: 1 },
+      rewards: {
+        updatedAt: 1,
+        tickets: [{ id: 't1', prizeId: 'gold-cash-5', name: '$5', emoji: '💵', tier: 'gold', wonAt: 1 }],
+      },
+      solveLog: { updatedAt: 1 },
+    })
+
+    importJson(json)
+    const doc = getDoc()
+    expect(doc.rewards.tickets).toEqual([{ id: 't1', prizeId: 'gold-cash-5', name: '$5', emoji: '💵', tier: 'gold', wonAt: 1 }])
+  })
+})
+
 describe('resetAll', () => {
   it('stamps every section with updatedAt 0 so a reset never beats real progress in a merge', () => {
     resetAll()

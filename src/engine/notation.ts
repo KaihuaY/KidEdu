@@ -17,13 +17,13 @@ const FAMILIES: Array<{ base: string; cw: string; ccw: string; double: string }>
   { base: 'D', cw: 'Bottom layer RIGHT', ccw: 'Bottom layer LEFT', double: 'Bottom layer twice' },
   {
     base: 'F',
-    cw: 'Front turn RIGHT (clockwise)',
+    cw: 'Front turn RIGHT (like a steering wheel)',
     ccw: 'Front turn LEFT',
     double: 'Front turn twice',
   },
   {
     base: 'B',
-    cw: 'Back turn LEFT (it is behind, so it looks backwards)',
+    cw: 'Back turn LEFT (it is hiding behind, so it looks backwards)',
     ccw: 'Back turn RIGHT',
     double: 'Back turn twice',
   },
@@ -59,8 +59,8 @@ const FAMILIES: Array<{ base: string; cw: string; ccw: string; double: string }>
   // Whole cube rotations
   {
     base: 'x',
-    cw: 'Flip the whole cube UP (the front goes to the top)',
-    ccw: 'Flip the whole cube DOWN (the top goes to the front)',
+    cw: 'Spin the whole cube UP (the front flips to the top)',
+    ccw: 'Spin the whole cube DOWN (the top flips to the front)',
     double: 'Flip the whole cube upside down',
   },
   {
@@ -128,45 +128,45 @@ export interface NamedAlg {
 export const NAMED_ALGS: NamedAlg[] = [
   {
     id: 'elevator',
-    kidName: 'The Elevator',
+    kidName: 'The Elevator 🛗',
     alg: "R U R' U'",
-    hint: 'Right side up, top layer left, right side down, top layer right. Do it again and again until the corner rides down into its home.',
+    hint: 'Right side up, top layer left, right side down, top layer right. Do it again and again. Watch the corner ride down into its home.',
   },
   {
     id: 'goRight',
-    kidName: 'Send it Right',
+    kidName: 'Send it Right ➡️',
     alg: "U R U' R' U' F' U F",
-    hint: 'The edge on top wants to go down and to the RIGHT. Push the top away from the slot first, then bring it back.',
+    hint: 'The edge on top wants to go down and to the RIGHT. Push the top away from the slot first, then bring it back home.',
   },
   {
     id: 'goLeft',
-    kidName: 'Send it Left',
+    kidName: 'Send it Left ⬅️',
     alg: "U' L' U L U F U' F'",
-    hint: 'The mirror of Send it Right: the edge on top wants to go down and to the LEFT.',
+    hint: 'This one is the mirror of Send it Right. The edge on top wants to go down and to the LEFT.',
   },
   {
     id: 'yellowCross',
-    kidName: 'Yellow Cross',
+    kidName: 'Yellow Cross ☀️',
     alg: "F R U R' U' F'",
-    hint: 'Dot, then L-shape, then line, then cross. Hold the L in the top-left corner and the line across.',
+    hint: 'Dot, then L shape, then line, then cross. Hold the L in the top-left corner, and hold the line going across.',
   },
   {
     id: 'fish',
-    kidName: 'The Fish',
+    kidName: 'The Fish 🐟',
     alg: "R U R' U R U2 R'",
     hint: 'Three yellow edges swim around the top while the front one stays home. Turn the top afterwards to line the colours up.',
   },
   {
     id: 'cornerCycle',
-    kidName: 'Corner Swap',
+    kidName: 'Corner Swap 🔄',
     alg: "U R U' L' U R' U' L",
-    hint: 'Three corners take a walk around the top while the front-right corner stays home. It tilts them on the way - the Bottom Elevator fixes that afterwards.',
+    hint: 'Three corners take a walk around the top while the front-right corner stays home. It tilts them on the way. The Bottom Elevator fixes that afterwards.',
   },
   {
     id: 'cornerTwist',
-    kidName: 'Bottom Elevator',
+    kidName: 'Bottom Elevator 🛗',
     alg: "R' D' R D",
-    hint: 'Hold the corner at the front-right-top. Do Bottom Elevator 2 or 4 times until yellow is on top. The rest of the cube will look messy - do not worry, it fixes itself at the end!',
+    hint: 'Hold the corner at the front-right-top. Do Bottom Elevator 2 or 4 times until yellow is on top. The rest of the cube might look messy. Do not worry, it fixes itself at the end!',
   },
 ]
 

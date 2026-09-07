@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useProgress, update, type Sticker, type Ticket } from '../store/progress'
 import { useActiveProfile } from '../store/activeProfile'
 import { COMMON_WEIGHT, STICKERS } from '../content/stickers'
-import { pickWeighted, rollTicket, type Tier } from '../store/rewards'
+import { formatCents, pickWeighted, rollCashCents, rollTicket, type Tier } from '../store/rewards'
 import { fireConfetti } from '../components/Confetti'
 import { PinGate } from './Settings'
 
@@ -69,8 +69,17 @@ export function BlindBox() {
         rarity: STICKERS.find((s) => s.id === wonSticker.id)?.rarity ?? 'common',
         wonAt: now,
       }
+      const cashCents = prize?.kind === 'cash' ? rollCashCents(prize) : undefined
       const ticketEntry: Ticket | undefined = prize
-        ? { id: uid(), prizeId: prize.id, name: prize.name, emoji: prize.emoji, tier, wonAt: now }
+        ? {
+            id: uid(),
+            prizeId: prize.id,
+            name: cashCents !== undefined ? formatCents(cashCents) : prize.name,
+            emoji: prize.emoji,
+            tier,
+            wonAt: now,
+            ...(cashCents !== undefined ? { amountCents: cashCents } : {}),
+          }
         : undefined
 
       update('rewards', (rewards) => ({

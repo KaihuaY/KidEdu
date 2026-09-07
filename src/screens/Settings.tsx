@@ -99,6 +99,21 @@ export function PinGate({ pin, onUnlock }: { pin: string; onUnlock: () => void }
   )
 }
 
+/** Cash range inputs work in dollars, in 5-cent steps, clamped to the $0-$1 hard limit. */
+const CASH_DOLLAR_STEP = 0.05
+const CASH_DOLLAR_MAX = 1
+
+function centsToDollarsInput(cents: number | undefined, fallback: number): string {
+  return ((cents ?? fallback) / 100).toFixed(2)
+}
+
+function dollarsInputToCents(value: string): number {
+  const dollars = Number(value)
+  if (!Number.isFinite(dollars)) return 0
+  const clamped = Math.max(0, Math.min(CASH_DOLLAR_MAX, dollars))
+  return Math.round(clamped * 100)
+}
+
 function PrizePoolEditor({ tier }: { tier: (typeof TIERS)[number] }) {
   const progress = useProgress()
   const prizes = progress.settings.prizePools[tier]
@@ -114,39 +129,103 @@ function PrizePoolEditor({ tier }: { tier: (typeof TIERS)[number] }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <strong>{TIER_LABEL[tier]} prizes</strong>
-      {prizes.map((p) => (
-        <div key={p.id} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-          <input
-            value={p.emoji}
-            onChange={(e) => updatePrize(p.id, { emoji: e.target.value })}
-            style={{ width: 44, textAlign: 'center' }}
-            aria-label="Prize emoji"
-          />
-          <input
-            value={p.name}
-            onChange={(e) => updatePrize(p.id, { name: e.target.value })}
-            style={{ flex: 1, minWidth: 0 }}
-            aria-label="Prize name"
-          />
-          <input
-            type="number"
-            min={0}
-            value={p.weight}
-            onChange={(e) => updatePrize(p.id, { weight: Number(e.target.value) })}
-            style={{ width: 56 }}
-            aria-label="Prize weight"
-          />
-          <button
-            type="button"
-            className="cc-btn cc-btn-surface"
-            style={{ minHeight: 40, minWidth: 40, padding: '0.3rem' }}
-            onClick={() => setPrizes(prizes.filter((x) => x.id !== p.id))}
-            aria-label={`Delete ${p.name}`}
-          >
-            🗑️
-          </button>
-        </div>
-      ))}
+      {prizes.map((p) => {
+        const isCash = p.kind === 'cash'
+        const minCents = p.minCents ?? 5
+        const maxCents = p.maxCents ?? 100
+        return (
+          <div key={p.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+              <input
+                value={p.emoji}
+                onChange={(e) => updatePrize(p.id, { emoji: e.target.value })}
+                style={{ width: 44, textAlign: 'center' }}
+                aria-label="Prize emoji"
+              />
+              {isCash ? (
+                <span style={{ flex: 1, minWidth: 0, fontWeight: 700, color: 'var(--cc-ink-soft)' }}>
+                  Cash surprise
+                </span>
+              ) : (
+                <input
+                  value={p.name}
+                  onChange={(e) => updatePrize(p.id, { name: e.target.value })}
+                  style={{ flex: 1, minWidth: 0 }}
+                  aria-label="Prize name"
+                />
+              )}
+              <input
+                type="number"
+                min={0}
+                value={p.weight}
+                onChange={(e) => updatePrize(p.id, { weight: Number(e.target.value) })}
+                style={{ width: 56 }}
+                aria-label="Prize weight"
+              />
+              <button
+                type="button"
+                className="cc-btn cc-btn-surface"
+                style={{ minHeight: 40, minWidth: 40, padding: '0.3rem' }}
+                onClick={() => setPrizes(prizes.filter((x) => x.id !== p.id))}
+                aria-label={`Delete ${p.name}`}
+              >
+                🗑️
+              </button>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', minHeight: 32 }}>
+              <input
+                type="checkbox"
+                checked={isCash}
+                onChange={(e) =>
+                  updatePrize(
+                    p.id,
+                    e.target.checked
+                      ? { kind: 'cash', name: 'Cash surprise', minCents: p.minCents ?? 5, maxCents: p.maxCents ?? 100 }
+                      : { kind: undefined, minCents: undefined, maxCents: undefined, name: p.name === 'Cash surprise' ? 'New prize' : p.name },
+                  )
+                }
+              />
+              Cash?
+            </label>
+            {isCash && (
+              <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', paddingLeft: '0.2rem' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.85rem' }}>
+                  Min
+                  <input
+                    type="number"
+                    min={0}
+                    max={CASH_DOLLAR_MAX}
+                    step={CASH_DOLLAR_STEP}
+                    value={centsToDollarsInput(p.minCents, 5)}
+                    onChange={(e) => {
+                      const nextMin = dollarsInputToCents(e.target.value)
+                      updatePrize(p.id, { minCents: nextMin, maxCents: Math.max(nextMin, maxCents) })
+                    }}
+                    style={{ width: 68 }}
+                    aria-label="Minimum cash amount in dollars"
+                  />
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.85rem' }}>
+                  Max
+                  <input
+                    type="number"
+                    min={0}
+                    max={CASH_DOLLAR_MAX}
+                    step={CASH_DOLLAR_STEP}
+                    value={centsToDollarsInput(p.maxCents, 100)}
+                    onChange={(e) => {
+                      const nextMax = dollarsInputToCents(e.target.value)
+                      updatePrize(p.id, { maxCents: nextMax, minCents: Math.min(minCents, nextMax) })
+                    }}
+                    style={{ width: 68 }}
+                    aria-label="Maximum cash amount in dollars"
+                  />
+                </label>
+              </div>
+            )}
+          </div>
+        )
+      })}
       <button
         type="button"
         className="cc-btn cc-btn-surface"

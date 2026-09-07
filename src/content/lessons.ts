@@ -215,13 +215,13 @@ export const LEARN_STICKERINGS = ['full', 'Daisy', 'Cross', 'F2L', 'EOLL', 'ELL'
 function helpCard(what: string): LearnCard {
   return {
     title: 'Stuck on your real cube?',
-    text: `Stuck on ${what}? Tap Help with my cube and I'll look at YOUR cube and show you every single move.`,
+    text: `Stuck on ${what}? No worries! Tap Help with my cube and I'll look at YOUR cube and show you every single move.`,
     say: "If you get stuck on your own cube, tap Help with my cube and I will show you every move.",
   }
 }
 
 function demoSay(move: string): string {
-  return `This is ${move}: ${KID_MOVE_NAMES[move] ?? move}.`
+  return `Here comes ${move}. It means ${KID_MOVE_NAMES[move] ?? move}.`
 }
 
 // ---------------------------------------------------------------------------
@@ -306,20 +306,20 @@ const basecamp: Lesson = {
   id: 'basecamp',
   number: 0,
   title: 'Base Camp',
-  goal: 'Know how to turn every side of the cube, both ways, without looking twice.',
+  goal: 'Turn every side, both ways, like a pro. No peeking needed!',
   story:
-    "Welcome to Base Camp, Nora! Before any climber heads up the wall, they learn to trust their hands. " +
-    'Every side of your cube can spin - watch which way each one goes, then give it a try yourself.',
+    "Welcome to Base Camp, Nora! 🏕️ Big climbers warm up their hands first. So let's warm up yours. " +
+    "Every side of your cube can spin. Watch which way it goes. Then try it yourself. You've got this!",
   phaseIds: [],
   namedAlgIds: [],
   realCubeHint:
-    'On your real cube: hold it with yellow on top and green facing you. Try each turn slowly and watch the colours move.',
+    'On your real cube: hold it with yellow on top and green facing you. Try each turn slowly. Watch the colours move!',
   stages: {
     learn: {
       cards: [
         {
           title: 'Hold it like a climber',
-          text: 'Put the YELLOW side on top and the GREEN side facing you. White is underneath, orange is on your right, red on your left, blue at the back.',
+          text: 'Put YELLOW on top and GREEN facing you. Look! White hides underneath. Orange is on your right, red on your left, blue is way at the back.',
           say: 'Hold your cube with yellow on top and green facing you. Keep it that way the whole time.',
           display: learnDisplay('', ''),
           backView: true,
@@ -331,51 +331,51 @@ const basecamp: Lesson = {
         },
         {
           title: 'What is a side?',
-          text: 'A side is one whole face of the cube: nine little squares. The middle square never moves, so it always tells you which colour that side belongs to.',
+          text: 'A side is one whole face of your cube. Nine little squares! The middle square never moves. It always tells you that side\'s colour.',
           say: 'A side is one whole face - nine squares. The middle square never moves, so it tells you the colour of that side.',
           display: learnDisplay('', ''),
         },
         {
           title: 'R = Right side UP',
-          text: 'R means turn the RIGHT side UP, like it is climbing. Press play and watch: only the right side moves.',
+          text: 'R means the RIGHT side goes UP, like it is climbing a ladder. Press play and watch! Only the right side moves.',
           say: 'R means right side up.',
           display: learnDisplay('', 'R'),
         },
         {
           title: "R' = Right side DOWN",
-          text: "R' means turn the RIGHT side DOWN again. Same side, other way.",
-          say: 'R prime means right side down.',
+          text: "R' means the RIGHT side goes back DOWN. Same side, other way. Easy!",
+          say: 'R backwards means right side down.',
           display: learnDisplay('', "R'"),
         },
         {
           title: 'U = Top layer LEFT',
-          text: 'U is the top layer. U slides the whole top layer to the LEFT.',
+          text: 'U is the top layer, like a hat on the cube. U slides that whole hat to the LEFT.',
           say: 'U means top layer left.',
           display: learnDisplay('', 'U'),
         },
         {
           title: "U' = Top layer RIGHT",
-          text: "U' slides the top layer back to the RIGHT.",
-          say: 'U prime means top layer right.',
+          text: "U' slides the top layer back to the RIGHT. Whoosh, back it goes!",
+          say: 'U backwards means top layer right.',
           display: learnDisplay('', "U'"),
         },
         {
           title: 'F = the Front side',
-          text: 'F is the side looking straight at you - the green one. F spins it like a little steering wheel to the right.',
+          text: 'F is the side looking right at you, the green one. F spins it like a little steering wheel to the right.',
           say: 'F is the front side. It spins like a steering wheel to the right.',
           display: learnDisplay('', 'F'),
         },
         {
           title: 'D = the Bottom layer',
-          text: 'D is the bottom layer, the one hiding underneath. Watch the little back picture to see it move.',
+          text: 'D is the bottom layer. It hides way underneath. Watch the little back picture to catch it moving!',
           say: 'D is the bottom layer, underneath the cube.',
           display: learnDisplay('', 'D'),
           backView: true,
         },
         {
           title: "The little ' means backwards",
-          text: "Every letter has a backwards twin. R goes up, R' comes back down. Do one and then the other and your cube is exactly how it started.",
-          say: 'The little mark means backwards. R goes up, R prime comes back down.',
+          text: "Every letter has a backwards twin. R goes up, R' comes right back down. Do one, then the other. Ta-da! Your cube looks exactly like it started.",
+          say: 'The little mark means backwards. R goes up, R backwards comes back down.',
           display: learnDisplay('', "R R'"),
           checklist: [
             'On your cube: do R (right side UP)',
@@ -385,7 +385,7 @@ const basecamp: Lesson = {
         },
         {
           title: 'y = turn the WHOLE cube',
-          text: 'y is not a side at all. It turns the WHOLE cube like a steering wheel, so a new colour comes to the front. Yellow stays on top.',
+          text: 'y is not one side. It spins the WHOLE cube, like turning a steering wheel. A new colour swings to the front. Yellow stays on top the whole time.',
           say: 'y turns the whole cube like a steering wheel. A new colour comes to the front and yellow stays on top.',
           display: learnDisplay('', 'y'),
         },
@@ -409,7 +409,7 @@ const basecamp: Lesson = {
       estimatedMinutes: STAGE_MINUTES.try,
     },
     spot: {
-      question: 'Which cube shows the Right side (R) turned UP?',
+      question: 'Which cube shows the Right side (R) going UP?',
       options: [
         { label: 'Cube A', alg: forwardAlg('R'), correct: true },
         { label: 'Cube B', alg: forwardAlg('L'), correct: false },
@@ -429,45 +429,45 @@ const cross: Lesson = {
   id: 'cross',
   number: 1,
   title: 'The Daisy Ledge',
-  goal: 'A white cross on the bottom, with each white edge sitting next to its matching side colour.',
+  goal: 'Grow a white cross on the bottom. Each white edge sits next to its matching colour. 🌼',
   story:
-    'Time to grow a daisy! Flip the white edges up next to the yellow center so they look like petals. ' +
-    'Once your daisy is perfect, tuck each petal straight down to make a white cross on the bottom.',
+    "Time to grow a daisy! 🌼 Flip white edges up next to the yellow centre. Look, petals! " +
+    'Once your daisy is perfect, tuck each petal straight down. Ta-da, a white cross!',
   phaseIds: ['daisy', 'cross'],
   namedAlgIds: [],
   realCubeHint:
-    'On your real cube: hold it yellow on top, green facing you. Find a white edge piece, spin it up next to the yellow center to make a petal, then match all four petals to make a daisy.',
+    'On your real cube: hold it yellow on top, green facing you. Find a white edge piece. Spin it up next to the yellow centre to make a petal. Match all four petals to grow your daisy.',
   stages: {
     learn: {
       cards: [
         {
           title: 'Grow a daisy',
-          text: 'Find the YELLOW centre on top - that is the middle of our flower. Four WHITE edges standing up around it are the petals. Four petals means the daisy is done.',
+          text: 'Find the YELLOW centre on top. That is the middle of our flower! Four WHITE edges standing up around it are the petals. Four petals means your daisy is done.',
           say: 'Find the yellow centre on top. Four white edges standing around it are the petals of your daisy.',
           display: learnDisplay(DAISY_MOVES, ''),
           stickering: 'Daisy',
         },
         {
           title: 'A white edge on the bottom',
-          text: 'This white edge is down on the bottom with white pointing DOWN. Turn that whole side twice and it flies straight up into a petal.',
+          text: 'Look, a white edge down on the bottom, pointing DOWN. Turn that whole side twice. Whoosh! It flies straight up into a petal.',
           say: 'A white edge on the bottom with white pointing down. Turn that side twice and up it comes.',
           display: learnDisplay(CROSS_CASE_BOTTOM, 'F2'),
         },
         {
           title: 'A white edge in the middle row',
-          text: 'This white edge is stuck in the middle row. One turn of that side lifts it up to the top as a petal. If a petal is already sitting in that spot, turn the TOP first to move it out of the way.',
+          text: 'This white edge is stuck in the middle row. One turn of that side lifts it right up to the top as a petal. If a petal is already sitting there, turn the TOP first to make room.',
           say: 'A white edge in the middle row. Turn that side once to lift it up. If a petal is in the way, turn the top first.',
           display: learnDisplay(CROSS_CASE_MIDDLE, 'R'),
         },
         {
           title: 'White is pointing sideways',
-          text: 'This edge is on top already, but its white sticker looks at YOU instead of at the sky. Turn it out of the top, then bring it up the next side - now white looks up.',
+          text: 'This edge is on top already, but its white sticker looks at YOU, not at the sky. Turn it out, then bring it up the next side. Now white looks up. There it is!',
           say: 'This white edge is on top but pointing sideways. Turn it out, then bring it up the next side.',
           display: learnDisplay(CROSS_CASE_FLIPPED, "F' L'"),
         },
         {
           title: 'Tuck the petals down',
-          text: "Daisy done! Look at a petal's OTHER colour. Turn the top until that colour sits above the matching centre, then turn that whole side TWICE. The petal drops down into the white cross.",
+          text: "Daisy done! Look at a petal's OTHER colour. Turn the top until that colour sits above its matching centre. Now turn that side TWICE. The petal drops down into your white cross.",
           say: 'Match a petal to the centre below it, then turn that side twice. The petal drops down into the white cross.',
           display: learnDisplay(DAISY_MOVES, 'F2'),
           backView: true,
@@ -499,7 +499,7 @@ const cross: Lesson = {
       estimatedMinutes: STAGE_MINUTES.watch,
     },
     try: {
-      prompt: 'Practice turning a petal into place.',
+      prompt: 'Practice turning a petal into place. You can do it!',
       sequence: 'F2',
       say: 'Turn the front side twice to make a petal.',
       estimatedMinutes: STAGE_MINUTES.try,
@@ -527,39 +527,39 @@ const corners: Lesson = {
   id: 'corners',
   number: 2,
   title: 'Corner Crack',
-  goal: 'All four white corners tucked into the bottom layer, matching the sides around them.',
+  goal: 'All four white corners tucked into the bottom, matching the colours around them. 📦',
   story:
-    'Now for the tricky bit - corners! When a white corner is stuck on top, ' +
-    'The Elevator trick rides it down into its home. Do it again and again until it clicks into place.',
+    "Now for the fun part, corners! When a white corner is stuck up top, " +
+    "The Elevator trick 🛗 rides it down home. Click, click, click! Do it again and again until it pops into place.",
   phaseIds: ['corners'],
   namedAlgIds: ['elevator'],
   realCubeHint:
-    "On your real cube: find a white corner on the top layer, put its home spot below it, and repeat the Elevator (R U R' U') until the white sticker faces down.",
+    "On your real cube: find a white corner on the top layer. Put its home spot right below it. Do the Elevator (R U R' U') again and again until the white sticker faces down.",
   stages: {
     learn: {
       cards: [
         {
           title: 'Corners have THREE colours',
-          text: 'An edge has two colours, but a corner has three. Every corner with WHITE on it belongs downstairs, in the bottom layer under your white cross.',
+          text: 'An edge has two colours, but a corner has three. Every corner with WHITE on it belongs downstairs, tucked under your white cross.',
           say: 'A corner has three colours. Every corner with white on it belongs in the bottom layer.',
           display: learnDisplay('', ''),
           backView: true,
         },
         {
           title: 'White corner on top: find its home',
-          text: 'This white corner is up on top. Turn the top until it sits right ABOVE its home - the gap between its two other colours. Hold that gap at the front-right and do The Elevator.',
+          text: 'This white corner is up on top. Turn the top until it sits right ABOVE its home, the little gap between its two other colours. Hold that gap at the front-right. Now do The Elevator!',
           say: 'Turn the top until the white corner sits above its home. Hold that home at the front right and do the Elevator.',
           display: caseDisplay(ELEVATOR),
         },
         {
           title: 'Sometimes it takes three rides',
-          text: 'Same corner, same trick - this one just needs three rides. Keep doing The Elevator until the white sticker points DOWN. Never turn the cube round in the middle!',
+          text: 'Same corner, same trick, but this one needs three rides. Keep doing The Elevator until the white sticker points DOWN. Do not turn the whole cube around in the middle!',
           say: 'Keep doing the Elevator until the white sticker points down. Sometimes that takes three rides.',
           display: caseDisplay(repeatAlg(ELEVATOR, 3)),
         },
         {
           title: 'A white corner stuck downstairs',
-          text: 'This white corner is already in the bottom, but it is twisted the wrong way round. Hold it at the front-right and do ONE Elevator to pop it back up on top. Now it is the easy case again.',
+          text: 'This white corner is already in the bottom, but it is twisted the wrong way. Hold it at the front-right and do ONE Elevator to pop it back up top. Now it is the easy case again. Nice!',
           say: 'If a white corner is in the bottom but twisted, do one Elevator to pop it up, then bring it down properly.',
           display: learnDisplay(CORNER_CASE_STUCK, ELEVATOR),
           checklist: [
@@ -591,7 +591,7 @@ const corners: Lesson = {
       estimatedMinutes: STAGE_MINUTES.try,
     },
     spot: {
-      question: 'Which cube has every corner home?',
+      question: 'Which cube has every corner home already?',
       options: [
         { label: 'Cube A', alg: '', correct: true },
         { label: 'Cube B', alg: cornersNamed?.alg ?? "R U R' U'", correct: false },
@@ -614,45 +614,45 @@ const middle: Lesson = {
   id: 'middle',
   number: 3,
   title: 'Middle Traverse',
-  goal: 'The middle layer edges tucked in next to their matching colours - no yellow anywhere but the top.',
+  goal: 'Tuck every middle edge next to its matching colour. No yellow anywhere but the top!',
   story:
-    "Almost to the yellow layer! Edges stuck on top that don't have any yellow on them belong in the middle row. " +
-    'Send it Right if the edge wants to go right, or Send it Left if it wants to go left.',
+    "Almost at the yellow layer! Edges on top with no yellow on them belong in the middle row. " +
+    "Send it Right if the edge wants to go right. Send it Left if it wants to go left. Easy peasy!",
   phaseIds: ['middle'],
   namedAlgIds: ['goRight', 'goLeft'],
   realCubeHint:
-    'On your real cube: find a top edge with no yellow sticker. Look at its front colour and decide - does it slide home to the right or the left?',
+    'On your real cube: find a top edge with no yellow sticker. Look at its front colour and decide, does it slide home to the right or the left?',
   stages: {
     learn: {
       cards: [
         {
           title: 'No yellow? It lives in the middle',
-          text: 'Two layers are done - the grey top layer here is the part still to do. Any edge up there with NO yellow on it does not belong on top. It belongs in the middle row.',
+          text: 'Two layers are done, hooray! The grey top layer here is what is left. Any edge up there with NO yellow on it does not belong on top. It belongs in the middle row.',
           say: 'An edge on top with no yellow on it belongs in the middle row.',
           display: learnDisplay('', ''),
           stickering: 'F2L',
         },
         {
           title: 'Line it up first',
-          text: "Turn the TOP until the edge's front colour matches the centre of the front side. It makes a little T shape. Now you can see where it wants to go.",
+          text: "Turn the TOP until the edge's front colour matches the front centre. Look, a little T shape! Now you can see where it wants to go.",
           say: 'Turn the top until the front colour of the edge matches the front centre. That makes a little T.',
           display: learnDisplay(invertAlg(GO_RIGHT) + " U'", 'U'),
         },
         {
           title: 'Top colour on the RIGHT side? Send it Right',
-          text: 'Green matches the front. The colour on TOP of that edge is orange, and orange is the RIGHT side. So this edge wants to go right - do Send it Right.',
+          text: 'Green matches the front. The colour on TOP of that edge is orange, and orange lives on the RIGHT. This edge wants to go right, so do Send it Right!',
           say: 'The top colour is orange, and orange is the right side. Do Send it Right.',
           display: caseDisplay(GO_RIGHT),
         },
         {
           title: 'Top colour on the LEFT side? Send it Left',
-          text: 'Green matches the front again, but this time the top colour is red - and red is the LEFT side. So do Send it Left, the mirror move.',
+          text: 'Green matches the front again. This time the top colour is red, and red lives on the LEFT. So do Send it Left, the mirror move!',
           say: 'The top colour is red, and red is the left side. Do Send it Left.',
           display: caseDisplay(GO_LEFT),
         },
         {
           title: 'A middle spot with the wrong edge in it',
-          text: 'This middle spot has a yellow edge jammed into it. Put any top edge above it, hold the spot at the front-right and do Send it Right - the wrong edge pops back up on top. Then send it home properly.',
+          text: 'Uh oh, a yellow edge is jammed into this middle spot. Put any top edge above it, hold the spot at the front-right, and do Send it Right. The wrong edge pops back up on top! Now send it home properly.',
           say: 'If a middle spot has the wrong edge in it, do Send it Right to pop it up, then send it home properly.',
           display: learnDisplay(MIDDLE_CASE_STUCK, GO_RIGHT),
           checklist: [
@@ -683,7 +683,7 @@ const middle: Lesson = {
       estimatedMinutes: STAGE_MINUTES.watch,
     },
     try: {
-      prompt: `Try both moves: ${goRight?.kidName ?? 'Send it Right'} and ${goLeft?.kidName ?? 'Send it Left'}.`,
+      prompt: `Try both moves: ${goRight?.kidName ?? 'Send it Right'} and ${goLeft?.kidName ?? 'Send it Left'}. You can do it!`,
       sequence: goRight?.alg ?? "U R U' R' U' F' U F",
       sequences: [goRight?.alg ?? "U R U' R' U' F' U F", goLeft?.alg ?? "U' L' U L U F U' F'"],
       say: goRight?.hint ?? '',
@@ -712,41 +712,41 @@ const yellowCross: Lesson = {
   id: 'yellowCross',
   number: 4,
   title: 'Yellow Cross Ridge',
-  goal: 'A yellow cross on top - four yellow edges pointing out from the yellow center.',
+  goal: 'A yellow cross on top! Four yellow edges pointing out from the yellow centre. ☀️',
   story:
-    'Flip the cube so yellow faces up. Look at the top: is it a dot, an L, or a line? ' +
-    'The Yellow Cross trick turns any of those into a full cross. Dot, then L, then line, then cross!',
+    'Flip the cube so yellow faces up. Look at the top. Is it a dot, an L, or a line? ' +
+    'The Yellow Cross trick turns any of those into a full cross. Dot, then L, then line, then cross! Ta-da!',
   phaseIds: ['yellowCross'],
   namedAlgIds: ['yellowCross'],
   realCubeHint:
-    "On your real cube: hold the L shape in the top-left, or the line going straight across, then do F R U R' U' F'. Do it again if you still see a dot.",
+    "On your real cube: hold the L shape in the top-left, or the line going straight across. Then do F R U R' U' F'. See a dot? Just do it again.",
   stages: {
     learn: {
       cards: [
         {
           title: 'Dot, L, or line?',
-          text: 'Look ONLY at the four edges around the yellow centre - the corners do not count yet. No yellow edges at all is a DOT.',
+          text: 'Look ONLY at the four edges around the yellow centre. Corners do not count yet! No yellow edges at all? That is a DOT.',
           say: 'Look only at the four edges around the yellow centre. No yellow at all is a dot.',
           display: learnDisplay(invertAlg(YC_DOT_FIX), ''),
           stickering: 'EOLL',
         },
         {
           title: 'The L',
-          text: "Two yellow edges NEXT TO each other make an L. Turn the top until the L points to the BACK and to the LEFT - like a clock at 9 o'clock. Then do the Yellow Cross trick: first you get a line, then the cross.",
+          text: "Two yellow edges NEXT TO each other make an L. Turn the top until the L points BACK and LEFT, like 9 o'clock on a clock. Now do the Yellow Cross trick. First a line, then the cross!",
           say: 'Two yellow edges next to each other make an L. Hold the L pointing back and left, then do the trick.',
           display: caseDisplay(YC_L_FIX),
           stickering: 'EOLL',
         },
         {
           title: 'The line',
-          text: 'Two yellow edges ACROSS from each other make a line. Hold the line going LEFT to RIGHT, then do the Yellow Cross trick once and the cross appears.',
+          text: 'Two yellow edges ACROSS from each other make a line. Hold it going LEFT to RIGHT. Do the Yellow Cross trick once and, look, the cross appears!',
           say: 'Two yellow edges across from each other make a line. Hold it left to right and do the trick once.',
           display: caseDisplay(YC_LINE_FIX),
           stickering: 'EOLL',
         },
         {
           title: 'A dot needs it up to three times',
-          text: 'From a dot: do the trick and you get an L. Turn the top so the L points back and left, do it again for a line, then once more for the cross. The rest of the cube looks wild in between - that is fine!',
+          text: 'From a dot: do the trick and get an L. Turn the top so the L points back and left, do it again for a line, then once more for the cross. The rest of the cube looks wild in between. Do not worry, that is normal!',
           say: 'From a dot, do the trick three times: dot, then L, then line, then cross.',
           display: caseDisplay(YC_DOT_FIX),
           checklist: [
@@ -777,7 +777,7 @@ const yellowCross: Lesson = {
       estimatedMinutes: STAGE_MINUTES.watch,
     },
     try: {
-      prompt: `Do ${yellowCrossNamed?.kidName ?? 'the Yellow Cross'} trick!`,
+      prompt: `Do ${yellowCrossNamed?.kidName ?? 'the Yellow Cross'} trick! Watch it shine!`,
       sequence: yellowCrossNamed?.alg ?? "F R U R' U' F'",
       say: yellowCrossNamed?.hint ?? '',
       estimatedMinutes: STAGE_MINUTES.try,
@@ -805,34 +805,34 @@ const yellowEdges: Lesson = {
   id: 'yellowEdges',
   number: 5,
   title: 'Edge Ledge',
-  goal: 'Every yellow-top edge matched up with the side colour next to it (corners can still look messy).',
+  goal: 'Match every yellow-top edge to the colour beside it. (Corners can still look silly, that is next!)',
   story:
-    'Your yellow cross is glowing - now line up its edges! Turn the top until two of them match their side colours. ' +
-    'If those two are right next to each other, hold them at the back and the right, then do the Fish to fix the rest.',
+    "Your yellow cross is glowing! Now let's line up its edges. Turn the top until two of them match their side colours. " +
+    'If those two sit right next to each other, hold them at the back and the right. Then do the Fish 🐟 to fix the rest.',
   phaseIds: ['yellowEdges'],
   namedAlgIds: ['fish'],
   realCubeHint:
-    "On your real cube: keep the yellow cross on top. Turn the top layer until two edges match the colour beside them. If they're side by side, put them at the back and right, then do the Fish (R U R' U R U2 R').",
+    "On your real cube: keep the yellow cross on top. Turn the top layer until two edges match the colour beside them. Side by side? Put them at the back and right, then do the Fish (R U R' U R U2 R').",
   stages: {
     learn: {
       cards: [
         {
           title: 'Match the edges to their centres',
-          text: 'Your yellow cross is done. Now look at the SIDE colour of each yellow edge and the centre below it. Turn the TOP until as many as you can match up.',
+          text: 'Your yellow cross is done, hooray! Now look at the SIDE colour of each yellow edge, and the centre below it. Turn the TOP until as many as you can match up.',
           say: 'Turn the top until as many yellow edges as possible match the centre below them.',
           display: learnDisplay(invertAlg(EDGES_ADJACENT_FIX), ''),
           stickering: 'ELL',
         },
         {
           title: 'Two matching, side by side',
-          text: 'Here the BACK edge and the RIGHT edge both match their centres. Hold those two at the back and the right, do the Fish, then turn the top to line everything up.',
+          text: 'Here the BACK edge and the RIGHT edge both match their centres. Hold those two at the back and the right. Do the Fish, then turn the top to line everything up.',
           say: 'Two matching edges next to each other. Hold them at the back and the right and do the Fish.',
           display: caseDisplay(EDGES_ADJACENT_FIX),
           stickering: 'ELL',
         },
         {
           title: 'Two matching, across from each other',
-          text: 'These two match, but they are opposite each other - so there is no back-and-right pair to hold. Do the Fish once anywhere, then look again: now two matching edges will be side by side.',
+          text: 'These two match, but they sit across from each other. No back-and-right pair to hold yet! Do the Fish once anywhere, then look again. Now two matching edges will be side by side.',
           say: 'If the two matching edges are across from each other, do the Fish once anywhere and look again.',
           display: learnDisplay(invertAlg(EDGES_OPPOSITE_FIX), FISH),
           stickering: 'ELL',
@@ -859,7 +859,7 @@ const yellowEdges: Lesson = {
       estimatedMinutes: STAGE_MINUTES.watch,
     },
     try: {
-      prompt: `Do ${fish?.kidName ?? 'the Fish'} trick!`,
+      prompt: `Do ${fish?.kidName ?? 'the Fish'} trick! Watch it swim.`,
       sequence: fish?.alg ?? "R U R' U R U2 R'",
       say: fish?.hint ?? '',
       estimatedMinutes: STAGE_MINUTES.try,
@@ -887,35 +887,35 @@ const cornerPosition: Lesson = {
   id: 'cornerPosition',
   number: 6,
   title: 'Corner Shuffle',
-  goal: 'Every corner piece in its own spot around the top layer (colours might still be twisted - that is next).',
+  goal: "Every corner in its own spot around the top. (Twisted colours are fine for now, that's next!)",
   story:
-    'So close to the summit! Sometimes the yellow corners are in the wrong spots. ' +
-    'Corner Shuffle sends three of them for a walk around the top while one stays home, until every corner belongs where it is. ' +
-    "If none of the corners is home yet, do it once anyway and look again.",
+    "So close to the summit! Sometimes the yellow corners are in the wrong spots. " +
+    "Corner Shuffle sends three of them for a walk around the top while one stays home. Shuffle, shuffle, until every corner belongs where it is. " +
+    "If none of them is home yet, just do it once anyway and look again.",
   phaseIds: ['cornerPosition'],
   namedAlgIds: ['cornerCycle'],
   realCubeHint:
-    'On your real cube: find a corner that is already in the right spot (even if twisted) and hold it at the front-right. Do Corner Shuffle to walk the other three home - repeat once or twice.',
+    'On your real cube: find a corner that is already in the right spot (even if twisted) and hold it at the front-right. Do Corner Shuffle to walk the other three home. Repeat once or twice.',
   stages: {
     learn: {
       cards: [
         {
           title: 'When is a corner HOME?',
-          text: 'A corner is HOME when its three colours match the three centres around it - even if it is twisted the wrong way round. Twisted is fine for now! Hunt for one that is home.',
+          text: 'A corner is HOME when its three colours match the three centres around it, even if it is twisted the wrong way. Twisted is fine for now! Go hunt for one that is home.',
           say: 'A corner is home when its three colours match the three centres around it, even if it is twisted.',
           display: learnDisplay(invertAlg(CORNER_SWAP), ''),
           stickering: 'CPLL',
         },
         {
           title: 'One corner home? Hold it at the front-right',
-          text: 'The front-right corner here is already home. Keep it right there and do Corner Swap - the other three walk around it. Then look again: you might need it one more time.',
+          text: 'The front-right corner here is already home. Keep it right there and do Corner Swap. The other three walk around it! Look again, you might need it one more time.',
           say: 'Hold the corner that is already home at the front right, then do Corner Swap and look again.',
           display: caseDisplay(CORNER_SWAP),
           stickering: 'CPLL',
         },
         {
           title: 'No corner home? Do it once anyway',
-          text: 'Sometimes NO corner is home. Do not worry - do Corner Swap once with any corner at the front-right. Look again and one corner will be home.',
+          text: 'Sometimes NO corner is home. Do not worry! Do Corner Swap once with any corner at the front-right. Look again and one corner will be home.',
           say: 'If no corner is home, do Corner Swap once anywhere, then look again.',
           display: learnDisplay(CORNERS_NONE_HOME, CORNER_SWAP),
           stickering: 'CPLL',
@@ -942,7 +942,7 @@ const cornerPosition: Lesson = {
       estimatedMinutes: STAGE_MINUTES.watch,
     },
     try: {
-      prompt: `Do ${cornerCycle?.kidName ?? 'Corner Shuffle'}!`,
+      prompt: `Do ${cornerCycle?.kidName ?? 'Corner Shuffle'}! Watch them walk.`,
       sequence: cornerCycle?.alg ?? "U R U' L' U R' U' L",
       say: cornerCycle?.hint ?? '',
       estimatedMinutes: STAGE_MINUTES.try,
@@ -970,52 +970,52 @@ const cornerOrient: Lesson = {
   id: 'cornerOrient',
   number: 7,
   title: 'THE SUMMIT',
-  goal: 'A fully solved cube - every corner twisted the right way, every colour matched. You made it to the top!',
+  goal: 'A fully solved cube! Every corner twisted just right, every colour matched. You made it to the top! 🏔️',
   story:
-    "The very last step! Hold a corner that needs fixing at the front-right-top and do the Bottom Elevator - " +
-    "2 times or 4 times - until yellow faces up on that corner. The cube will look messy in the middle - that's " +
-    'normal! Keep going, it fixes itself. Then turn only the TOP layer to bring the next corner around, and repeat.',
+    "The very last step! Hold a corner that needs fixing at the front-right-top. Do the Bottom Elevator, " +
+    "2 times or 4 times, until yellow faces up on that corner. The cube might look messy in the middle. " +
+    "That's totally normal! Keep going, it fixes itself. Then turn only the TOP layer to bring the next corner around, and do it again.",
   phaseIds: ['cornerOrient'],
   namedAlgIds: ['cornerTwist'],
   realCubeHint:
-    "On your real cube: put a corner that needs twisting at the front-right-top. Do the Bottom Elevator (R' D' R D) 2 or 4 times until it shows yellow on top. Turn ONLY the top layer to bring the next corner to the front-right and repeat - don't turn anything else. When every corner shows yellow on top, you solved the whole cube!",
+    "On your real cube: put a corner that needs twisting at the front-right-top. Do the Bottom Elevator (R' D' R D) 2 or 4 times until it shows yellow on top. Turn ONLY the top layer to bring the next corner to the front-right and repeat, don't turn anything else. When every corner shows yellow on top, you solved the whole cube!",
   stages: {
     learn: {
       cards: [
         {
           title: 'Every corner is home - some are just twisted',
-          text: 'Look at the top: every corner is in the right SPOT, but some of them do not show yellow on top. Find one that is not yellow yet and hold it at the front-right.',
+          text: 'Look at the top. Every corner is in the right SPOT, but some do not show yellow on top yet. Find one that is not yellow and hold it at the front-right.',
           say: 'Every corner is in the right spot, but some are twisted. Hold one that is not yellow on top at the front right.',
           display: learnDisplay(SUMMIT_SETUP, ''),
           stickering: 'OCLL',
         },
         {
           title: 'Two rides of the Bottom Elevator',
-          text: "Do R' D' R D twice - count them out loud: one, two. Yellow comes up on that front-right corner.",
+          text: "Do R' D' R D twice. Count them out loud: one, two! Look, yellow comes up on that front-right corner.",
           say: 'Do the Bottom Elevator two times and watch yellow come up on the front right corner.',
           display: learnDisplay(SUMMIT_SETUP, repeatAlg(BOTTOM_ELEVATOR, 2)),
         },
         {
           title: 'It looks broken - keep going!',
-          text: 'Halfway through, the bottom of the cube goes messy. That is completely normal and it fixes itself at the end. Never turn the whole cube round in the middle - just keep riding.',
+          text: 'Uh oh, the middle of the cube looks messy right now! Do not worry. That is totally normal and it fixes itself at the end. Never turn the whole cube around, just keep riding.',
           say: 'The bottom will look broken in the middle of this. That is normal - keep going and it fixes itself.',
           display: learnDisplay(SUMMIT_SETUP + ' ' + BOTTOM_ELEVATOR, ''),
         },
         {
           title: 'Turn ONLY the top',
-          text: 'That corner shows yellow now. Turn ONLY the top layer to bring the next twisted corner round to the front-right. Do not turn anything else!',
+          text: 'That corner shows yellow now, yay! Turn ONLY the top layer to bring the next twisted corner round to the front-right. Do not turn anything else!',
           say: 'Turn only the top layer to bring the next twisted corner to the front right.',
           display: learnDisplay(SUMMIT_SETUP + ' ' + repeatAlg(BOTTOM_ELEVATOR, 2), 'U'),
         },
         {
           title: 'Sometimes it takes four rides',
-          text: 'This corner needs the Bottom Elevator FOUR times. Count in twos: two, four. Then yellow is up. It is always two or four - never three.',
+          text: 'This corner needs the Bottom Elevator FOUR times. Count in twos: two, four! Now yellow is up. It is always two or four, never three.',
           say: 'This corner needs the Bottom Elevator four times. Count in twos: two, four.',
           display: learnDisplay(SUMMIT_SETUP + ' ' + repeatAlg(BOTTOM_ELEVATOR, 2) + ' U', repeatAlg(BOTTOM_ELEVATOR, 4)),
         },
         {
           title: 'One last top turn - SUMMIT!',
-          text: 'Every corner shows yellow. One last turn of the top layer and the whole cube clicks together. You did it - you are at the top of the mountain!',
+          text: 'Every corner shows yellow! One last turn of the top layer and the whole cube clicks together. You did it! You are standing on top of the mountain!',
           say: 'One last turn of the top and the whole cube is solved. You made it to the summit!',
           display: learnDisplay(
             SUMMIT_SETUP + ' ' + repeatAlg(BOTTOM_ELEVATOR, 2) + ' U ' + repeatAlg(BOTTOM_ELEVATOR, 4),
@@ -1045,7 +1045,7 @@ const cornerOrient: Lesson = {
       estimatedMinutes: STAGE_MINUTES.watch,
     },
     try: {
-      prompt: `Do ${cornerTwist?.kidName ?? 'the Bottom Elevator'}!`,
+      prompt: `Do ${cornerTwist?.kidName ?? 'the Bottom Elevator'}! You are almost at the top!`,
       sequence: cornerTwist?.alg ?? "R' D' R D",
       say: cornerTwist?.hint ?? 'The middle may look messy while you do this - that is normal!',
       estimatedMinutes: STAGE_MINUTES.try,

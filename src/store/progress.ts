@@ -9,6 +9,11 @@ export interface Prize {
   name: string
   emoji: string
   weight: number
+  /** When 'cash', this prize pays out a random amount instead of a fixed reward. */
+  kind?: 'cash'
+  /** Cash prize range, in whole cents. Only meaningful when kind === 'cash'. */
+  minCents?: number
+  maxCents?: number
 }
 
 export interface Settings {
@@ -91,6 +96,8 @@ export interface Ticket {
   tier: 'gold' | 'silver' | 'bronze'
   wonAt: number
   redeemedAt?: number
+  /** Set when this ticket was won from a cash prize; the actual rolled amount, in cents. */
+  amountCents?: number
 }
 
 export interface BoxHistoryEntry {
@@ -136,6 +143,16 @@ function prize(id: string, name: string, emoji: string, weight = 1): Prize {
   return { id, name, emoji, weight }
 }
 
+/** The gold-tier cash surprise: a random amount between $0.25 and $1.00. */
+function goldCashPrize(weight = 1): Prize {
+  return { id: 'gold-cash', name: 'Cash surprise', emoji: '💵', weight, kind: 'cash', minCents: 25, maxCents: 100 }
+}
+
+/** The silver-tier cash surprise: a random amount between $0.05 and $1.00. */
+function silverCashPrize(weight = 1): Prize {
+  return { id: 'silver-cash', name: 'Cash surprise', emoji: '💵', weight, kind: 'cash', minCents: 5, maxCents: 100 }
+}
+
 function emptyProfile(): ProfileProgress {
   return {
     holds: {},
@@ -157,12 +174,12 @@ export function defaultDoc(): ProgressDoc {
       sessionMinutes: 10,
       prizePools: {
         gold: [
-          prize('gold-cash-5', '$5', '💵'),
+          goldCashPrize(),
           prize('gold-dinner', 'Choose dinner', '🍕'),
           prize('gold-movie-night', 'Movie night', '🎬'),
         ],
         silver: [
-          prize('silver-cash-1', '$1', '💵'),
+          silverCashPrize(),
           prize('silver-snack', 'Snack', '🍪'),
           prize('silver-story', 'Extra story', '📖'),
         ],
@@ -223,6 +240,24 @@ function normalizeProfile(fallback: ProfileProgress, parsed: Partial<ProfileProg
   }
 }
 
+/** True for a prize that predates cash-surprise ranges: the old fixed-dollar prizes. */
+function isLegacyFixedCashPrize(p: Prize): boolean {
+  return p.id === 'gold-cash-5' || p.id === 'silver-cash-1' || /^\$\d+$/.test(p.name)
+}
+
+/**
+ * Migrates a saved prize pool so any old fixed-dollar prize ($5, $1, or any
+ * prize carrying one of their legacy ids/names) becomes the tier's cash
+ * surprise, preserving the pool's own weight for that slot. Prizes that are
+ * already a cash prize (or never were a dollar prize) pass through as-is.
+ */
+function migratePrizePool(pool: Prize[], tier: 'gold' | 'silver' | 'bronze'): Prize[] {
+  return pool.map((p) => {
+    if (p.kind === 'cash' || !isLegacyFixedCashPrize(p)) return p
+    return tier === 'gold' ? goldCashPrize(p.weight) : silverCashPrize(p.weight)
+  })
+}
+
 /**
  * Backfills any field added to the schema after a doc was first persisted,
  * without bumping schemaVersion (schemaVersion covers *shape-breaking*
@@ -231,13 +266,18 @@ function normalizeProfile(fallback: ProfileProgress, parsed: Partial<ProfileProg
  */
 function normalizeDoc(parsed: Partial<ProgressDoc>): ProgressDoc {
   const fallback = defaultDoc()
+  const mergedPrizePools = { ...fallback.settings.prizePools, ...parsed.settings?.prizePools }
   return {
     ...fallback,
     ...parsed,
     settings: {
       ...fallback.settings,
       ...parsed.settings,
-      prizePools: { ...fallback.settings.prizePools, ...parsed.settings?.prizePools },
+      prizePools: {
+        gold: migratePrizePool(mergedPrizePools.gold, 'gold'),
+        silver: migratePrizePool(mergedPrizePools.silver, 'silver'),
+        bronze: migratePrizePool(mergedPrizePools.bronze, 'bronze'),
+      },
       ticketChance: { ...fallback.settings.ticketChance, ...parsed.settings?.ticketChance },
     },
     profiles: {
