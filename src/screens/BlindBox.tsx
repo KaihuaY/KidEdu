@@ -4,6 +4,7 @@ import { useActiveProfile } from '../store/activeProfile'
 import { COMMON_WEIGHT, STICKERS } from '../content/stickers'
 import { pickWeighted, rollTicket, type Tier } from '../store/rewards'
 import { fireConfetti } from '../components/Confetti'
+import { PinGate } from './Settings'
 
 const TIER_META: Record<Tier, { label: string; emoji: string; color: string }> = {
   gold: { label: 'Gold Box', emoji: '🟡', color: '#f5d91a' },
@@ -26,6 +27,8 @@ export function BlindBox() {
   const activeProfile = useActiveProfile()
   const profile = progress.profiles[activeProfile]
   const [tab, setTab] = useState<'stickers' | 'tickets'>('stickers')
+  const [redeeming, setRedeeming] = useState<Ticket | null>(null)
+  const [redeemMsg, setRedeemMsg] = useState<string | null>(null)
   const [opening, setOpening] = useState<Tier | null>(null)
   const [result, setResult] = useState<OpenResult | null>(null)
 
@@ -231,6 +234,49 @@ export function BlindBox() {
         </div>
       )}
 
+      {tab === 'tickets' && redeemMsg && (
+        <div className="cc-card" style={{ padding: '1rem', background: 'var(--cc-bg)', fontWeight: 700 }}>{redeemMsg}</div>
+      )}
+      {redeeming && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(16,18,43,0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1.5rem',
+            zIndex: 50,
+          }}
+        >
+          <div className="cc-card" style={{ padding: '1.25rem', maxWidth: 420, width: '100%', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <h2 style={{ margin: 0, fontSize: '1.15rem' }}>
+              Hand over {redeeming.emoji} {redeeming.name}
+            </h2>
+            <p style={{ margin: 0, color: 'var(--cc-ink-soft)' }}>A grown-up enters the PIN to mark this ticket as redeemed.</p>
+            <PinGate
+              pin={progress.settings.pin}
+              onUnlock={() => {
+                const id = redeeming.id
+                const name = redeeming.name
+                update('rewards', (r) => ({
+                  ...r,
+                  tickets: r.tickets.map((x) => (x.id === id ? { ...x, redeemedAt: Date.now() } : x)),
+                }))
+                fireConfetti('small')
+                setRedeeming(null)
+                setRedeemMsg(`Enjoy your ${name}, ${progress.settings.kidName}! 🎉`)
+              }}
+            />
+            <button type="button" className="cc-btn cc-btn-surface" onClick={() => setRedeeming(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       {tab === 'tickets' && (
         <div className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
           {tickets.length === 0 && <p style={{ margin: 0, color: 'var(--cc-ink-soft)' }}>No tickets yet.</p>}
@@ -252,9 +298,20 @@ export function BlindBox() {
               <span style={{ fontWeight: 700, flex: 1 }}>
                 {t.emoji} {t.name}
               </span>
-              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--cc-ink-soft)' }}>
-                {t.redeemedAt ? 'Redeemed' : 'Not redeemed yet'}
-              </span>
+              {t.redeemedAt ? (
+                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--cc-ink-soft)' }}>
+                  Redeemed {new Date(t.redeemedAt).toLocaleDateString()}
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="cc-btn cc-btn-primary"
+                  style={{ minHeight: 44, padding: '0 0.9rem' }}
+                  onClick={() => setRedeeming(t)}
+                >
+                  Redeem 🎟️
+                </button>
+              )}
             </div>
           ))}
         </div>

@@ -41,7 +41,7 @@ function downscaleImage(file: File): Promise<string> {
   })
 }
 
-function PinGate({ pin, onUnlock }: { pin: string; onUnlock: () => void }) {
+export function PinGate({ pin, onUnlock }: { pin: string; onUnlock: () => void }) {
   const [entry, setEntry] = useState('')
   const [shake, setShake] = useState(false)
 

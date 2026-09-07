@@ -363,8 +363,13 @@ export function importJson(text: string): void {
   notify()
 }
 
+/**
+ * Wipes this device. Sections are stamped updatedAt: 0 so a reset can never
+ * out-rank real progress on another device during a sync merge; the other
+ * device simply re-uploads its data. Reset every device to reset everything.
+ */
 export function resetAll(): void {
-  doc = defaultDoc()
+  doc = neverEditedDoc()
   persist()
   notify()
 }

@@ -180,3 +180,17 @@ describe('a brand-new (never-edited) local doc never outranks synced data', () =
     expect(merged.settings.kidName).toBe('Synced Kid')
   })
 })
+
+describe('resetAll', () => {
+  it('stamps every section with updatedAt 0 so a reset never beats real progress in a merge', () => {
+    resetAll()
+    const local = getDoc()
+    expect(local.profiles.updatedAt).toBe(0)
+    expect(local.rewards.updatedAt).toBe(0)
+    const remote = defaultDoc()
+    remote.profiles.updatedAt = 1
+    remote.profiles.kid.xp = 300
+    const merged = mergeDocs(local, remote)
+    expect(merged.profiles.kid.xp).toBe(300)
+  })
+})
