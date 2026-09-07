@@ -5,11 +5,17 @@ import {
   exportJson,
   importJson,
   resetAll,
+  setGoalMinutes,
   type Prize,
 } from '../store/progress'
 import { clearToken, getToken, setToken, start as startSync, stop as stopSync, useSyncStatus } from '../store/gistSync'
+import { PinGate } from '../components/PinGate'
 
-const SESSION_OPTIONS = [5, 10, 15, 20]
+// Re-exported so BlindBox.tsx's `import { PinGate } from './Settings'` keeps working.
+export { PinGate } from '../components/PinGate'
+
+const CUBE_GOAL_OPTIONS = [5, 10, 15, 20]
+const PIANO_GOAL_OPTIONS = [10, 15, 20, 30]
 const TIERS: Array<'gold' | 'silver' | 'bronze'> = ['gold', 'silver', 'bronze']
 const TIER_LABEL: Record<(typeof TIERS)[number], string> = { gold: 'Gold', silver: 'Silver', bronze: 'Bronze' }
 
@@ -39,64 +45,6 @@ function downscaleImage(file: File): Promise<string> {
     }
     reader.readAsDataURL(file)
   })
-}
-
-export function PinGate({ pin, onUnlock }: { pin: string; onUnlock: () => void }) {
-  const [entry, setEntry] = useState('')
-  const [shake, setShake] = useState(false)
-
-  function press(digit: string) {
-    const next = (entry + digit).slice(0, 4)
-    setEntry(next)
-    if (next.length === 4) {
-      if (next === pin) {
-        onUnlock()
-      } else {
-        setShake(true)
-        setTimeout(() => {
-          setShake(false)
-          setEntry('')
-        }, 400)
-      }
-    }
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.25rem', padding: '2rem 1rem' }}>
-      <h1 style={{ margin: 0, fontSize: '1.3rem' }}>Coach&apos;s Settings</h1>
-      <p style={{ margin: 0, color: 'var(--cc-ink-soft)' }}>Enter the 4-digit PIN.</p>
-      <div style={{ display: 'flex', gap: '0.6rem', animation: shake ? 'cc-shake 400ms' : undefined }}>
-        {[0, 1, 2, 3].map((i) => (
-          <span
-            key={i}
-            style={{
-              width: 20,
-              height: 20,
-              borderRadius: '50%',
-              background: i < entry.length ? 'var(--cc-primary)' : 'var(--cc-border)',
-            }}
-          />
-        ))}
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.6rem', width: 240 }}>
-        {['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'].map((key, i) =>
-          key === '' ? (
-            <span key={i} />
-          ) : (
-            <button
-              key={i}
-              type="button"
-              className="cc-btn cc-btn-surface"
-              style={{ fontSize: '1.2rem' }}
-              onClick={() => (key === '⌫' ? setEntry((e) => e.slice(0, -1)) : press(key))}
-            >
-              {key}
-            </button>
-          ),
-        )}
-      </div>
-    </div>
-  )
 }
 
 /** Cash range inputs work in dollars, in 5-cent steps, clamped to the $0-$1 hard limit. */
@@ -259,7 +207,7 @@ export function Settings() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'cubeclimb-backup.json'
+    a.download = 'practice-backup.json'
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -270,7 +218,7 @@ export function Settings() {
       const text = await file.text()
       importJson(text)
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : 'That file did not look like a CubeClimb backup.')
+      setImportError(err instanceof Error ? err.message : 'That file did not look like a practice backup.')
     }
   }
 
@@ -308,26 +256,51 @@ export function Settings() {
         </label>
       </section>
 
-      <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Session length</h2>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          {SESSION_OPTIONS.map((minutes) => (
-            <button
-              key={minutes}
-              type="button"
-              className="cc-btn"
-              onClick={() => update('settings', (s) => ({ ...s, sessionMinutes: minutes }))}
-              style={{
-                flex: 1,
-                background: settings.sessionMinutes === minutes ? 'var(--cc-primary)' : 'var(--cc-surface)',
-                color: settings.sessionMinutes === minutes ? '#fff' : 'var(--cc-ink)',
-                border: settings.sessionMinutes === minutes ? 'none' : '2px solid var(--cc-border)',
-                boxShadow: 'none',
-              }}
-            >
-              {minutes} min
-            </button>
-          ))}
+      <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Daily goals</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <span style={{ fontWeight: 700, color: 'var(--cc-ink-soft)' }}>🧊 Cube</span>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {CUBE_GOAL_OPTIONS.map((minutes) => (
+              <button
+                key={minutes}
+                type="button"
+                className="cc-btn"
+                onClick={() => setGoalMinutes('cube', minutes)}
+                style={{
+                  flex: 1,
+                  background: settings.goalMinutes.cube === minutes ? 'var(--cc-primary)' : 'var(--cc-surface)',
+                  color: settings.goalMinutes.cube === minutes ? '#fff' : 'var(--cc-ink)',
+                  border: settings.goalMinutes.cube === minutes ? 'none' : '2px solid var(--cc-border)',
+                  boxShadow: 'none',
+                }}
+              >
+                {minutes} min
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <span style={{ fontWeight: 700, color: 'var(--cc-ink-soft)' }}>🎹 Piano</span>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {PIANO_GOAL_OPTIONS.map((minutes) => (
+              <button
+                key={minutes}
+                type="button"
+                className="cc-btn"
+                onClick={() => setGoalMinutes('piano', minutes)}
+                style={{
+                  flex: 1,
+                  background: settings.goalMinutes.piano === minutes ? 'var(--cc-primary)' : 'var(--cc-surface)',
+                  color: settings.goalMinutes.piano === minutes ? '#fff' : 'var(--cc-ink)',
+                  border: settings.goalMinutes.piano === minutes ? 'none' : '2px solid var(--cc-border)',
+                  boxShadow: 'none',
+                }}
+              >
+                {minutes} min
+              </button>
+            ))}
+          </div>
         </div>
       </section>
 

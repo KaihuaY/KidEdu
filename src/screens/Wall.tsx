@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { navigate } from '../router'
-import { useProgress, update, type HoldProgress, type ProfileProgress } from '../store/progress'
+import { useProgress, type HoldProgress, type ProfileProgress } from '../store/progress'
 import { useActiveProfile } from '../store/activeProfile'
+import { lastNDays, logCubeSession, formatClock } from '../store/sessions'
 import {
   estimateDaysToSummit,
   estimateMinutesRemaining,
@@ -10,6 +11,10 @@ import {
 } from '../store/planner'
 import { HOLD_ORDER, LESSON_LIST, type Lesson } from '../content/lessons'
 import { fireConfetti } from '../components/Confetti'
+import { CubeTabs } from '../components/CubeTabs'
+import { RingTimer } from '../components/RingTimer'
+import { WeekDots } from '../components/WeekDots'
+import { TokenPill } from '../components/TokenPill'
 
 const STAGE_IDS = ['learn', 'watch', 'try', 'spot', 'climb'] as const
 const STAGE_LABEL: Record<(typeof STAGE_IDS)[number], string> = {
@@ -66,89 +71,12 @@ function holdStars(hold: HoldProgress | undefined): 0 | 1 | 2 | 3 {
   return Math.min(...stars) as 0 | 1 | 2 | 3
 }
 
-function toISODate(d: Date): string {
-  return d.toISOString().slice(0, 10)
-}
-
-function lastNDays(n: number): string[] {
-  const out: string[] = []
-  const now = new Date()
-  for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(now)
-    d.setDate(d.getDate() - i)
-    out.push(toISODate(d))
-  }
-  return out
-}
-
-function formatClock(totalSeconds: number): string {
-  const m = Math.floor(totalSeconds / 60)
-  const s = totalSeconds % 60
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
-
-function RingTimer({ progress, label }: { progress: number; label: string }) {
-  const size = 96
-  const stroke = 10
-  const r = (size - stroke) / 2
-  const c = 2 * Math.PI * r
-  const clamped = Math.max(0, Math.min(1, progress))
-  return (
-    <svg width={size} height={size} role="img" aria-label={label} style={{ flexShrink: 0 }}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--cc-border)" strokeWidth={stroke} />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        fill="none"
-        stroke="var(--cc-primary)"
-        strokeWidth={stroke}
-        strokeLinecap="round"
-        strokeDasharray={c}
-        strokeDashoffset={c * (1 - clamped)}
-        transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        style={{ transition: 'stroke-dashoffset 250ms linear' }}
-      />
-      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" fontSize="1rem" fontWeight={800} fill="var(--cc-ink)">
-        {label}
-      </text>
-    </svg>
-  )
-}
-
-function updateStreakAndLogSession(profileId: 'kid' | 'parent', minutes: number): void {
-  const today = toISODate(new Date())
-  update('profiles', (profiles) => {
-    const profile = profiles[profileId]
-    const already = profile.sessions.some((s) => s.day === today)
-    const yesterday = toISODate(new Date(Date.now() - 86400000))
-    let streak = profile.streak
-    if (!already) {
-      let current: number
-      if (profile.streak.lastDay === yesterday) current = profile.streak.current + 1
-      else if (profile.streak.lastDay === today) current = profile.streak.current
-      else current = 1
-      streak = { current, best: Math.max(profile.streak.best, current), lastDay: today }
-    }
-    return {
-      ...profiles,
-      [profileId]: {
-        ...profile,
-        sessions: already
-          ? profile.sessions
-          : [...profile.sessions, { day: today, minutes, stagesDone: 0 }],
-        streak,
-      },
-    }
-  })
-}
-
 export function Wall() {
   const progressDoc = useProgress()
   const activeProfile = useActiveProfile()
   const profile = progressDoc.profiles[activeProfile]
   const kidName = progressDoc.settings.kidName
-  const sessionMinutes = progressDoc.settings.sessionMinutes
+  const sessionMinutes = progressDoc.settings.goalMinutes.cube
   const timer = useSessionTimer(sessionMinutes)
   const [celebrating, setCelebrating] = useState(false)
   const [hasCelebratedThisRun, setHasCelebratedThisRun] = useState(false)
@@ -159,7 +87,7 @@ export function Wall() {
       setCelebrating(true)
       timer.pause()
       fireConfetti('big')
-      updateStreakAndLogSession(activeProfile, sessionMinutes)
+      logCubeSession(activeProfile, sessionMinutes)
     }
   }, [timer.reachedTarget, hasCelebratedThisRun, activeProfile, sessionMinutes, timer])
 
@@ -176,7 +104,9 @@ export function Wall() {
   const nextUp = findNextUp(profile)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1rem 1rem 2rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '2rem' }}>
+      <CubeTabs />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '0 1rem' }}>
       {nextUp ? (
         <button
           type="button"
@@ -224,17 +154,7 @@ export function Wall() {
           <span aria-hidden="true">⭐</span>
           <span>{profile.xp} XP</span>
         </div>
-        <button
-          type="button"
-          onClick={() => navigate('/box')}
-          className="cc-btn cc-btn-surface"
-          style={{ marginLeft: 'auto', gap: '0.5rem', padding: '0.4rem 0.75rem', minHeight: 40 }}
-          aria-label="Open the Blind Box screen"
-        >
-          <span>🟡{profile.tokens.gold}</span>
-          <span>⚪{profile.tokens.silver}</span>
-          <span>🟤{profile.tokens.bronze}</span>
-        </button>
+        <TokenPill tokens={profile.tokens} style={{ marginLeft: 'auto' }} />
       </div>
 
       <div className="cc-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -267,20 +187,7 @@ export function Wall() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.35rem' }} aria-label="This week's practice days">
-          {week.map((day) => (
-            <span
-              key={day}
-              title={day}
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                background: sessionDays.has(day) ? 'var(--cc-success)' : 'var(--cc-border)',
-              }}
-            />
-          ))}
-        </div>
+        <WeekDots days={week} done={sessionDays} />
       </div>
 
       <div
@@ -383,6 +290,7 @@ export function Wall() {
             </div>
           )
         })}
+      </div>
       </div>
 
       {celebrating && (

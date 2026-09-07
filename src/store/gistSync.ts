@@ -226,6 +226,13 @@ function applyRemoteContent(remoteJson: string): boolean {
   } catch {
     return false
   }
+  // Defensive: a raw remote doc could be anything (a stray non-JSON string,
+  // or some other gist file entirely) - mergeDocs() assumes it can read
+  // `.updatedAt` off each section, so refuse anything that isn't at least a
+  // same-schema-version progress doc rather than letting it crash the merge.
+  if (!remoteDoc || typeof remoteDoc !== 'object' || (remoteDoc as { schemaVersion?: unknown }).schemaVersion !== 1) {
+    return false
+  }
   applyingRemote = true
   try {
     const merged = mergeDocs(getDoc(), remoteDoc)

@@ -17,7 +17,7 @@ function applySetupLink(): void {
       setToken(token.trim())
       localStorage.setItem('cubeclimb.unlocked', '1')
     }
-    window.history.replaceState(null, '', window.location.pathname + '#/wall')
+    window.history.replaceState(null, '', window.location.pathname + '#/home')
   } catch {
     // ignore - the parent can still paste the token in Settings
   }

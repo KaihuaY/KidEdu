@@ -13,6 +13,7 @@ import { holdForPhase } from '../content/lessons'
 import { useActiveProfile } from '../store/activeProfile'
 import { useProgress } from '../store/progress'
 import { logSolve } from '../store/solves'
+import { CubeTabs } from '../components/CubeTabs'
 
 const NET_STORAGE_KEY = 'cubeclimb.help.net'
 const CENTER_LETTERS = ['U', 'R', 'F', 'D', 'L', 'B']
@@ -228,7 +229,9 @@ export function HelpMyCube() {
     const startHoldLesson = phaseAtStart === 'solved' ? undefined : holdForPhase(phaseAtStart)
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1rem 1rem 2rem' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <CubeTabs />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '0 1rem 2rem' }}>
         <h1 style={{ margin: 0, fontSize: '1.4rem' }}>Let&apos;s solve it together!</h1>
         {startHoldLesson && (
           <button
@@ -258,12 +261,15 @@ export function HelpMyCube() {
             </div>
           </div>
         )}
+        </div>
       </div>
     )
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', paddingTop: '1.5rem', paddingLeft: '1.5rem', paddingRight: '1.5rem', paddingBottom: '2rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <CubeTabs />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', paddingTop: '0.5rem', paddingLeft: '1.5rem', paddingRight: '1.5rem', paddingBottom: '2rem' }}>
       <h1 style={{ margin: 0, fontSize: '1.5rem' }}>Help with my cube</h1>
       <p style={{ margin: 0, color: 'var(--cc-ink-soft)' }}>
         Copy your real, scrambled cube onto this picture, sticker by sticker. Tap a colour below, then tap the squares
@@ -298,6 +304,7 @@ export function HelpMyCube() {
       >
         Solve it!
       </button>
+      </div>
     </div>
   )
 }

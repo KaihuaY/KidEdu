@@ -1,10 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
 
 // A tiny hash router - no react-router. Good enough for a handful of
-// top-level screens (#/wall, #/lesson/2, #/help, #/box, #/solves,
-// #/settings) with the occasional :param.
+// top-level screens (#/home, #/cube, #/piano, #/box, #/settings, ...) with
+// the occasional :param.
 
-const ROUTE_PATTERNS = ['/wall', '/lesson/:id', '/help', '/box', '/solves', '/settings']
+const ROUTE_PATTERNS = [
+  '/home',
+  '/cube',
+  '/wall',
+  '/lesson/:id',
+  '/help',
+  '/solves',
+  '/piano',
+  '/piano/record',
+  '/piano/review',
+  '/box',
+  '/settings',
+]
 
 export interface Route {
   path: string
@@ -13,10 +25,16 @@ export interface Route {
 }
 
 function currentHashPath(): string {
-  if (typeof window === 'undefined') return '/wall'
+  if (typeof window === 'undefined') return '/home'
   const hash = window.location.hash
   const path = hash.startsWith('#') ? hash.slice(1) : hash
-  return path || '/wall'
+  return path || '/home'
+}
+
+/** Whether `path` belongs to the cube area or the piano area (for nav highlighting and the CubeTabs strip). */
+export function isInArea(path: string, area: 'cube' | 'piano'): boolean {
+  if (area === 'piano') return path === '/piano' || path.startsWith('/piano/')
+  return path === '/cube' || path === '/wall' || path.startsWith('/lesson/') || path === '/help' || path === '/solves'
 }
 
 function matchParams(path: string): Record<string, string> {

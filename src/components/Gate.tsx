@@ -79,7 +79,7 @@ export function Gate({ children }: { children: ReactNode }) {
         <span style={{ fontSize: '3.5rem', lineHeight: 1 }} aria-hidden="true">
           🧊
         </span>
-        <h1 style={{ margin: 0, fontSize: '1.5rem' }}>CubeClimb</h1>
+        <h1 style={{ margin: 0, fontSize: '1.5rem' }}>Practice</h1>
         <p style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Hi! What&apos;s the secret word?</p>
 
         <form onSubmit={handleSubmit} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>

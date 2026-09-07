@@ -1,4 +1,4 @@
-name: Deploy CubeClimb to GitHub Pages
+name: Deploy KidEdu to GitHub Pages
 
 on:
   push:

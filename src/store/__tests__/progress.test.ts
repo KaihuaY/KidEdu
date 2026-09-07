@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   defaultDoc,
+  emptyPiano,
   exportJson,
   getDoc,
   importJson,
   mergeDocs,
   resetAll,
+  setGoalMinutes,
   update,
   type ProgressDoc,
 } from '../progress'
@@ -81,7 +83,8 @@ describe('mergeDocs', () => {
 
 describe('export / import round trip', () => {
   it('restores an identical doc after export then import', () => {
-    update('settings', (s) => ({ ...s, kidName: 'Nora the Great', sessionMinutes: 15 }))
+    update('settings', (s) => ({ ...s, kidName: 'Nora the Great' }))
+    setGoalMinutes('cube', 15)
     update('rewards', (r) => ({
       ...r,
       stickers: [...r.stickers, { id: 's1', kind: 'emoji', value: '🎉', rarity: 'common', wonAt: 123 }],
@@ -297,5 +300,101 @@ describe('resetAll', () => {
     remote.profiles.kid.xp = 300
     const merged = mergeDocs(local, remote)
     expect(merged.profiles.kid.xp).toBe(300)
+  })
+
+  it('stamps piano.updatedAt 0 too', () => {
+    resetAll()
+    expect(getDoc().piano.updatedAt).toBe(0)
+    const remote = defaultDoc()
+    remote.piano.updatedAt = 1
+    remote.piano.streak.current = 4
+    const merged = mergeDocs(getDoc(), remote)
+    expect(merged.piano.streak.current).toBe(4)
+  })
+})
+
+describe('piano schema and migration', () => {
+  it('normalizeDoc derives goalMinutes.cube from a legacy sessionMinutes, defaults piano goal to 15, and defaults piano.updatedAt to 0', () => {
+    const legacyJson = JSON.stringify({
+      schemaVersion: 1,
+      settings: { sessionMinutes: 15, updatedAt: 1 },
+      profiles: { updatedAt: 1 },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+    })
+    importJson(legacyJson)
+    const doc = getDoc()
+    expect(doc.settings.goalMinutes).toEqual({ cube: 15, piano: 15 })
+    expect(doc.settings.sessionMinutes).toBe(15)
+    expect(doc.piano).toEqual(emptyPiano(0))
+  })
+
+  it('mergeDocs with a remote lacking piano (an old build upload) keeps local and does not throw', () => {
+    const local = defaultDoc()
+    local.piano.updatedAt = 500
+    local.piano.streak.current = 3
+    // Simulate a raw remote JSON uploaded by a pre-piano build: no `piano` key at all.
+    const rawRemote: Record<string, unknown> = { ...defaultDoc() }
+    delete rawRemote.piano
+    const remote = rawRemote as unknown as ProgressDoc
+    expect(() => mergeDocs(local, remote)).not.toThrow()
+    const merged = mergeDocs(local, remote)
+    expect(merged.piano).toEqual(local.piano)
+  })
+
+  it('mergeDocs picks the newer piano section either way (LWW both directions)', () => {
+    const local = defaultDoc()
+    local.piano.updatedAt = 100
+    local.piano.streak.current = 1
+    const remoteNewer = defaultDoc()
+    remoteNewer.piano.updatedAt = 200
+    remoteNewer.piano.streak.current = 9
+    expect(mergeDocs(local, remoteNewer).piano.streak.current).toBe(9)
+
+    const remoteOlder = defaultDoc()
+    remoteOlder.piano.updatedAt = 50
+    remoteOlder.piano.streak.current = 9
+    expect(mergeDocs(local, remoteOlder).piano.streak.current).toBe(1)
+  })
+
+  it('export/import round-trips the piano section', () => {
+    update('piano', (p) => ({
+      ...p,
+      takes: [
+        {
+          id: 't1',
+          day: '2026-09-07',
+          pieceId: null,
+          startedAt: 1,
+          durationSec: 30,
+          activeSec: 20,
+          mimeType: 'audio/mp4',
+          sizeBytes: 1234,
+          hasAudio: true,
+          deviceId: 'device-1',
+        },
+      ],
+      days: { '2026-09-07': { goalReachedAt: 1 } },
+      streak: { current: 2, best: 2, lastDay: '2026-09-07' },
+    }))
+
+    const before = getDoc()
+    const json = exportJson()
+    resetAll()
+    expect(getDoc().piano).not.toEqual(before.piano)
+    importJson(json)
+    expect(getDoc().piano).toEqual(before.piano)
+  })
+})
+
+describe('setGoalMinutes', () => {
+  it('sets the goal for the given activity and mirrors sessionMinutes only for cube', () => {
+    setGoalMinutes('cube', 20)
+    expect(getDoc().settings.goalMinutes.cube).toBe(20)
+    expect(getDoc().settings.sessionMinutes).toBe(20)
+
+    setGoalMinutes('piano', 30)
+    expect(getDoc().settings.goalMinutes.piano).toBe(30)
+    expect(getDoc().settings.sessionMinutes).toBe(20) // unchanged by the piano goal
   })
 })

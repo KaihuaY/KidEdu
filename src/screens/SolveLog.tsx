@@ -3,6 +3,7 @@ import { useProgress } from '../store/progress'
 import { useActiveProfile } from '../store/activeProfile'
 import { logSolve } from '../store/solves'
 import { fireConfetti } from '../components/Confetti'
+import { CubeTabs } from '../components/CubeTabs'
 
 function formatTime(totalMs: number): string {
   const totalCentis = Math.floor(totalMs / 10)
@@ -58,7 +59,9 @@ export function SolveLog() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1rem 1rem 2rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      <CubeTabs />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '0 1rem 2rem' }}>
       <h1 style={{ margin: 0, fontSize: '1.4rem' }}>Solve Log</h1>
 
       {isFirstSolveEver && (
@@ -119,6 +122,7 @@ export function SolveLog() {
             <span style={{ fontWeight: 700 }}>{s.seconds !== null ? formatTime(s.seconds * 1000) : 'no time'}</span>
           </div>
         ))}
+      </div>
       </div>
 
       {celebration && (

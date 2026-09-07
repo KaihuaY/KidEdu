@@ -16,11 +16,26 @@ export interface Prize {
   maxCents?: number
 }
 
+export type ActivityId = 'cube' | 'piano'
+
+export interface PianoPiece {
+  id: string
+  name: string
+  emoji: string
+}
+
 export interface Settings {
   kidName: string
   parentName: string
   pin: string
+  /** Kept as a mirror of goalMinutes.cube, for old cached builds that only know this field. */
   sessionMinutes: number
+  goalMinutes: Record<ActivityId, number>
+  pianoPieces: PianoPiece[]
+  /** How many days of local audio to keep before pruning. */
+  recordingKeepDays: number
+  /** Parent-entered once, synced via the private gist. Undefined = uploads off. */
+  driveUpload?: { scriptUrl: string; secret: string; folderName: string }
   prizePools: {
     gold: Prize[]
     silver: Prize[]
@@ -125,15 +140,55 @@ export interface SolveLog {
   updatedAt: number
 }
 
+export type SelfRating = 1 | 2 | 3 // 😕 🙂 🤩
+export type ParentStars = 1 | 2 | 3
+
+export interface PianoTake {
+  id: string
+  day: string // local YYYY-MM-DD
+  pieceId: string | null
+  startedAt: number
+  durationSec: number
+  activeSec: number
+  selfRating?: SelfRating
+  mimeType: string
+  sizeBytes: number
+  hasAudio: boolean
+  audioPrunedAt?: number
+  deviceId: string
+  upload?: {
+    status: 'pending' | 'uploading' | 'done' | 'failed'
+    attempts: number
+    driveFileId?: string
+    driveUrl?: string
+    lastError?: string
+    updatedAt: number
+  }
+}
+
+export interface PianoDay {
+  goalReachedAt?: number
+  parentStars?: ParentStars
+  parentRatedAt?: number
+}
+
+export interface PianoSection {
+  takes: PianoTake[]
+  days: Record<string, PianoDay>
+  streak: Streak
+  updatedAt: number
+}
+
 export interface ProgressDoc {
   schemaVersion: 1
   settings: Settings
   profiles: Profiles
   rewards: Rewards
   solveLog: SolveLog
+  piano: PianoSection
 }
 
-export type SectionKey = 'settings' | 'profiles' | 'rewards' | 'solveLog'
+export type SectionKey = 'settings' | 'profiles' | 'rewards' | 'solveLog' | 'piano'
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -163,6 +218,16 @@ function emptyProfile(): ProfileProgress {
   }
 }
 
+/** An empty piano section stamped with the given `updatedAt` (0 for "never edited on this device"). */
+export function emptyPiano(updatedAt: number): PianoSection {
+  return {
+    takes: [],
+    days: {},
+    streak: { current: 0, best: 0, lastDay: '' },
+    updatedAt,
+  }
+}
+
 export function defaultDoc(): ProgressDoc {
   const now = Date.now()
   return {
@@ -172,6 +237,9 @@ export function defaultDoc(): ProgressDoc {
       parentName: 'Coach',
       pin: '1234',
       sessionMinutes: 10,
+      goalMinutes: { cube: 10, piano: 15 },
+      pianoPieces: [],
+      recordingKeepDays: 14,
       prizePools: {
         gold: [
           goldCashPrize(),
@@ -208,6 +276,7 @@ export function defaultDoc(): ProgressDoc {
       solves: [],
       updatedAt: now,
     },
+    piano: emptyPiano(now),
   }
 }
 
@@ -259,6 +328,24 @@ function migratePrizePool(pool: Prize[], tier: 'gold' | 'silver' | 'bronze'): Pr
 }
 
 /**
+ * Fills in a piano section's nested fields from a blank piano section, so a
+ * doc saved before `piano` existed - or one that only partially round-tripped
+ * through a merge/import - doesn't leave `undefined` where every screen
+ * assumes a value is present. A piano section that's missing outright
+ * defaults to `emptyPiano(0)`, never `Date.now()` - see neverEditedDoc().
+ */
+function normalizePiano(parsed: Partial<PianoSection> | undefined): PianoSection {
+  const fallback = emptyPiano(0)
+  return {
+    ...fallback,
+    ...parsed,
+    takes: parsed?.takes ?? fallback.takes,
+    days: { ...fallback.days, ...parsed?.days },
+    streak: { ...fallback.streak, ...parsed?.streak },
+  }
+}
+
+/**
  * Backfills any field added to the schema after a doc was first persisted,
  * without bumping schemaVersion (schemaVersion covers *shape-breaking*
  * changes; new optional-in-spirit fields with sane defaults are handled
@@ -267,12 +354,23 @@ function migratePrizePool(pool: Prize[], tier: 'gold' | 'silver' | 'bronze'): Pr
 function normalizeDoc(parsed: Partial<ProgressDoc>): ProgressDoc {
   const fallback = defaultDoc()
   const mergedPrizePools = { ...fallback.settings.prizePools, ...parsed.settings?.prizePools }
+  // A legacy doc only ever had `sessionMinutes`; goalMinutes.cube inherits it
+  // (piano keeps the default) so an old cached build's edits aren't lost.
+  const goalMinutes = parsed.settings?.goalMinutes
+    ? { ...fallback.settings.goalMinutes, ...parsed.settings.goalMinutes }
+    : { cube: parsed.settings?.sessionMinutes ?? fallback.settings.goalMinutes.cube, piano: fallback.settings.goalMinutes.piano }
   return {
     ...fallback,
     ...parsed,
     settings: {
       ...fallback.settings,
       ...parsed.settings,
+      goalMinutes,
+      // Mirror goalMinutes.cube so old cached builds that only read
+      // sessionMinutes keep working until they update.
+      sessionMinutes: goalMinutes.cube,
+      pianoPieces: parsed.settings?.pianoPieces ?? fallback.settings.pianoPieces,
+      recordingKeepDays: parsed.settings?.recordingKeepDays ?? fallback.settings.recordingKeepDays,
       prizePools: {
         gold: migratePrizePool(mergedPrizePools.gold, 'gold'),
         silver: migratePrizePool(mergedPrizePools.silver, 'silver'),
@@ -288,6 +386,7 @@ function normalizeDoc(parsed: Partial<ProgressDoc>): ProgressDoc {
     },
     rewards: { ...fallback.rewards, ...parsed.rewards },
     solveLog: { ...fallback.solveLog, ...parsed.solveLog },
+    piano: normalizePiano(parsed.piano),
   }
 }
 
@@ -308,6 +407,7 @@ function neverEditedDoc(): ProgressDoc {
     profiles: { ...fresh.profiles, updatedAt: 0 },
     rewards: { ...fresh.rewards, updatedAt: 0 },
     solveLog: { ...fresh.solveLog, updatedAt: 0 },
+    piano: emptyPiano(0),
   }
 }
 
@@ -371,20 +471,34 @@ export function update<K extends SectionKey>(
 }
 
 /**
+ * Picks whichever of two sections has the newer `updatedAt`, local wins
+ * ties. `remote` may be `undefined` - a doc uploaded by an old build that
+ * predates this section (e.g. `piano` before it existed) - in which case
+ * `local` always wins outright.
+ */
+function newer<T extends { updatedAt: number }>(local: T, remote: T | undefined): T {
+  if (!remote) return local
+  return remote.updatedAt > local.updatedAt ? remote : local
+}
+
+/**
  * Merges two docs section-by-section: whichever side has the newer
  * `updatedAt` for a given section wins outright (sections are not merged
  * field-by-field - each section is a single unit). This keeps sync simple:
  * two devices editing *different* sections both survive; editing the *same*
  * section concurrently means the loser's edits to that section are dropped,
- * but nothing from other sections is ever lost.
+ * but nothing from other sections is ever lost. Every section goes through
+ * `newer()` so a remote doc uploaded by an old build that doesn't know about
+ * a given section (e.g. `piano`) never crashes the merge.
  */
 export function mergeDocs(local: ProgressDoc, remote: ProgressDoc): ProgressDoc {
   return {
     schemaVersion: 1,
-    settings: remote.settings.updatedAt > local.settings.updatedAt ? remote.settings : local.settings,
-    profiles: remote.profiles.updatedAt > local.profiles.updatedAt ? remote.profiles : local.profiles,
-    rewards: remote.rewards.updatedAt > local.rewards.updatedAt ? remote.rewards : local.rewards,
-    solveLog: remote.solveLog.updatedAt > local.solveLog.updatedAt ? remote.solveLog : local.solveLog,
+    settings: newer(local.settings, remote.settings),
+    profiles: newer(local.profiles, remote.profiles),
+    rewards: newer(local.rewards, remote.rewards),
+    solveLog: newer(local.solveLog, remote.solveLog),
+    piano: newer(local.piano ?? emptyPiano(0), remote.piano),
   }
 }
 
@@ -396,7 +510,7 @@ export function exportJson(): string {
 export function importJson(text: string): void {
   const parsed = JSON.parse(text) as Partial<ProgressDoc>
   if (!parsed || typeof parsed !== 'object' || parsed.schemaVersion !== 1) {
-    throw new Error('Unrecognized CubeClimb progress file')
+    throw new Error('Unrecognized practice progress file')
   }
   doc = normalizeDoc(parsed)
   persist()
@@ -412,4 +526,16 @@ export function resetAll(): void {
   doc = neverEditedDoc()
   persist()
   notify()
+}
+
+/** Sets the daily goal for one activity. Mirrors sessionMinutes when activity is 'cube'. */
+export function setGoalMinutes(activity: ActivityId, minutes: number): void {
+  update('settings', (s) => {
+    const goalMinutes = { ...s.goalMinutes, [activity]: minutes }
+    return {
+      ...s,
+      goalMinutes,
+      sessionMinutes: activity === 'cube' ? minutes : s.sessionMinutes,
+    }
+  })
 }
