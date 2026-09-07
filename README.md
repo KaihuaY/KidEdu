@@ -97,4 +97,92 @@ Settings.
 
 ## Piano
 
-Piano practice, recording, and parent rating are documented in a later step.
+Piano practice lives at the 🎹 Piano tab. It's built for acoustic piano at
+an iPad propped on the music stand, microphone only - no MIDI, no teaching.
+
+- **Record.** From Piano home, Nora picks a piece (or "🎵 Free play") and
+  taps one big 🎙️ button to start. A ring fills only while the app hears
+  real playing, not just wall-clock time - "silence doesn't count" is shown,
+  not explained. If it goes quiet for 20 seconds she gets a gentle "I can't
+  hear the piano" nudge, never a buzzer. One giant ⏹ Stop ends the take;
+  closing the tab or backgrounding Safari mid-take also stops it cleanly and
+  keeps whatever was captured.
+- **Rating, three layers.**
+  1. **Active minutes** are measured automatically from microphone level -
+     only real playing counts toward the daily goal, not idle time with the
+     recorder running.
+  2. **Nora self-rates** each take right after recording it (😕 🙂 🤩) - purely
+     for her own reflection, it never affects tokens.
+  3. **The parent listens later** (on any device, behind the Settings PIN,
+     under "👀 Grown-up review") and gives 1-3 stars. Two stars awards a
+     silver token, three stars gold, mirroring the cube's reward economy;
+     one rating per day.
+- **Tokens.** Reaching the daily active-minutes goal awards a bronze token
+  once per day and bumps Nora's piano streak, same shape as the cube's
+  streak. All tokens land in the same shared economy spent on blind boxes.
+- **Microphone permission on iPad.** Safari only grants microphone access on
+  a secure origin (see `npm run dev:https` above) or the deployed HTTPS
+  site. The first time Record is tapped, Safari asks to allow the
+  microphone - allow it. If it was denied by mistake: **Settings app →
+  Safari → [or, for the installed PWA, Settings app → Practice] →
+  Microphone → Allow**, then reopen the app. The Record screen shows this
+  same guidance and a Back button if it detects a denial, so it's never a
+  dead end.
+- **Add to Home Screen.** Open the site in Safari, tap the Share icon, then
+  **Add to Home Screen**. Running as an installed PWA keeps the browser
+  chrome out of the way during recording and keeps the screen awake where
+  supported. A home-screen app's storage is separate from Safari tabs (see
+  "Testing on an iPad over the local network" above) - install once and
+  keep using that icon.
+- **Recordings are local, and pruned.** Audio lives only in this device's
+  IndexedDB (never in the synced gist, which carries only take metadata:
+  times, active minutes, ratings, and the Drive link once uploaded).
+  Recordings older than the **Settings → Recordings → Keep local audio
+  for** setting (7 / 14 / 30 days, default 14) are deleted automatically the
+  next time Piano home opens; a take recorded on another device always
+  shows as "recorded on another device" once its local copy is gone. Use
+  **Settings → Recordings → 🗑️ Delete all recordings on this device** to
+  clear them immediately (a two-tap confirm).
+
+### Google Drive upload
+
+So the parent can listen and rate from a phone or laptop, not just on
+Nora's iPad, every take is automatically uploaded to a Google Drive folder
+of the parent's choosing. It's a small Google Apps Script web app the
+parent deploys once - the iPad never signs in to Google, it just posts to a
+URL the script owns.
+
+**Setup (once, about 3 minutes):**
+
+1. Open <https://script.google.com> and click **New project**.
+2. Delete the sample code, paste in the whole contents of
+   [`scripts/drive-uploader.gs`](scripts/drive-uploader.gs) from this repo,
+   and change the `SECRET` constant near the top to any long word of your
+   own (letters/digits, no spaces).
+3. Click **Deploy → New deployment**, type **Web app**. Set **Execute as**
+   to **Me** and **Who has access** to **Anyone**. Click **Deploy**,
+   authorize when Google asks, and copy the **Web app URL** (it ends in
+   `/exec`).
+4. In Practice: **Settings (PIN) → Google Drive upload**, paste the URL and
+   the same secret, optionally change the folder name (default
+   "Nora Piano"), then press **Test**. Enter it once on the laptop - the
+   iPad picks it up through gist sync within a minute.
+
+Redeploying after editing the script: **Deploy → Manage deployments →
+pencil icon → Version: New version → Deploy** (the URL stays the same).
+
+Recordings upload in the background after every take, on Piano home
+opening, and whenever the device comes back online; a small chip on
+Settings shows "☁️ N saved · N waiting · N failed", with "Retry failed"
+when anything failed. A stuck upload never blocks Nora - the take is saved
+locally and any token already awarded before an upload is even attempted;
+it just quietly retries with backoff (1 min, then 5 min, then 30 min) up to
+8 attempts before giving up, and can always be retried by hand.
+
+**Smoke test**, from a terminal, once deployed:
+
+```sh
+curl -sL -X POST "<your web app URL>" -H "Content-Type: text/plain" \
+     -d '{"secret":"<your SECRET>","ping":true}'
+# -> {"ok":true,"pong":true}
+```

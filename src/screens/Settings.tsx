@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   useProgress,
   update,
@@ -6,16 +6,21 @@ import {
   importJson,
   resetAll,
   setGoalMinutes,
+  type PianoPiece,
   type Prize,
 } from '../store/progress'
 import { clearToken, getToken, setToken, start as startSync, stop as stopSync, useSyncStatus } from '../store/gistSync'
 import { PinGate } from '../components/PinGate'
+import { navigate } from '../router'
+import { formatBytes, getRecordingStore } from '../store/recordings'
+import { retryFailedUploads, testDriveConnection, useUploadSummary, type DriveConfig } from '../store/driveUpload'
 
 // Re-exported so BlindBox.tsx's `import { PinGate } from './Settings'` keeps working.
 export { PinGate } from '../components/PinGate'
 
 const CUBE_GOAL_OPTIONS = [5, 10, 15, 20]
 const PIANO_GOAL_OPTIONS = [10, 15, 20, 30]
+const RECORDING_KEEP_OPTIONS = [7, 14, 30]
 const TIERS: Array<'gold' | 'silver' | 'bronze'> = ['gold', 'silver', 'bronze']
 const TIER_LABEL: Record<(typeof TIERS)[number], string> = { gold: 'Gold', silver: 'Silver', bronze: 'Bronze' }
 
@@ -185,6 +190,58 @@ function PrizePoolEditor({ tier }: { tier: (typeof TIERS)[number] }) {
   )
 }
 
+function PianoPiecesEditor() {
+  const progress = useProgress()
+  const pieces = progress.settings.pianoPieces
+
+  function setPieces(next: PianoPiece[]) {
+    update('settings', (s) => ({ ...s, pianoPieces: next }))
+  }
+
+  function updatePiece(id: string, patch: Partial<PianoPiece>) {
+    setPieces(pieces.map((p) => (p.id === id ? { ...p, ...patch } : p)))
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      {pieces.map((p) => (
+        <div key={p.id} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+          <input
+            value={p.emoji}
+            onChange={(e) => updatePiece(p.id, { emoji: e.target.value })}
+            style={{ width: '3ch', textAlign: 'center' }}
+            aria-label="Piece emoji"
+          />
+          <input
+            value={p.name}
+            onChange={(e) => updatePiece(p.id, { name: e.target.value })}
+            placeholder="Piece name"
+            style={{ flex: 1, minWidth: 0 }}
+            aria-label="Piece name"
+          />
+          <button
+            type="button"
+            className="cc-btn cc-btn-surface"
+            style={{ minHeight: 40, minWidth: 40, padding: '0.3rem' }}
+            onClick={() => setPieces(pieces.filter((x) => x.id !== p.id))}
+            aria-label={`Delete ${p.name || 'piece'}`}
+          >
+            🗑️
+          </button>
+        </div>
+      ))}
+      {pieces.length === 0 && <p style={{ margin: 0, color: 'var(--cc-ink-soft)' }}>No pieces added yet.</p>}
+      <button
+        type="button"
+        className="cc-btn cc-btn-surface"
+        onClick={() => setPieces([...pieces, { id: uid(), name: '', emoji: '🎵' }])}
+      >
+        ＋ Add piece
+      </button>
+    </div>
+  )
+}
+
 export function Settings() {
   const progress = useProgress()
   const syncStatus = useSyncStatus()
@@ -193,14 +250,61 @@ export function Settings() {
   const [newPin, setNewPin] = useState('')
   const [importError, setImportError] = useState<string | null>(null)
   const [confirmingReset, setConfirmingReset] = useState(false)
+  const [recordingStats, setRecordingStats] = useState<{ count: number; bytes: number } | null>(null)
+  const [confirmingDeleteRecordings, setConfirmingDeleteRecordings] = useState(false)
+  const [driveTestMessage, setDriveTestMessage] = useState<string | null>(null)
+  const [testingDrive, setTestingDrive] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
+  const uploadSummary = useUploadSummary()
+
+  function refreshRecordingStats() {
+    const store = getRecordingStore()
+    Promise.all([store.list(), store.usageBytes()]).then(([items, bytes]) => {
+      setRecordingStats({ count: items.length, bytes })
+    })
+  }
+
+  useEffect(() => {
+    refreshRecordingStats()
+    // Runs once on mount - the recordings store lives outside React state,
+    // so this is the "load once, refresh after actions that change it"
+    // pattern rather than something that reacts to a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   if (!unlocked) {
     return <PinGate pin={progress.settings.pin} onUnlock={() => setUnlocked(true)} />
   }
 
   const settings = progress.settings
+  const driveCfg: DriveConfig = settings.driveUpload ?? { scriptUrl: '', secret: '', folderName: 'Nora Piano' }
+
+  function setDriveField(patch: Partial<DriveConfig>) {
+    const next = { ...driveCfg, ...patch }
+    update('settings', (s) => ({
+      ...s,
+      driveUpload: next.scriptUrl.trim() === '' && next.secret.trim() === '' ? undefined : next,
+    }))
+  }
+
+  async function handleTestDrive() {
+    setTestingDrive(true)
+    setDriveTestMessage(null)
+    const result = await testDriveConnection({
+      scriptUrl: driveCfg.scriptUrl,
+      secret: driveCfg.secret,
+      folderName: driveCfg.folderName || 'Nora Piano',
+    })
+    setDriveTestMessage(result.message)
+    setTestingDrive(false)
+  }
+
+  async function handleDeleteAllRecordings() {
+    await getRecordingStore().clear()
+    setConfirmingDeleteRecordings(false)
+    refreshRecordingStats()
+  }
 
   function handleExport() {
     const blob = new Blob([exportJson()], { type: 'application/json' })
@@ -237,6 +341,15 @@ export function Settings() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '1rem 1rem 3rem' }}>
       <h1 style={{ margin: 0, fontSize: '1.4rem' }}>Coach&apos;s Settings</h1>
+
+      <button
+        type="button"
+        className="cc-btn cc-btn-surface"
+        style={{ alignSelf: 'flex-start' }}
+        onClick={() => navigate('/piano/review')}
+      >
+        👀 Grown-up review
+      </button>
 
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Names</h2>
@@ -302,6 +415,135 @@ export function Settings() {
             ))}
           </div>
         </div>
+      </section>
+
+      <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>This week&apos;s piano pieces</h2>
+        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+          Nora picks one of these before she records.
+        </p>
+        <PianoPiecesEditor />
+      </section>
+
+      <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Recordings</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <span style={{ fontWeight: 700, color: 'var(--cc-ink-soft)' }}>Keep local audio for</span>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {RECORDING_KEEP_OPTIONS.map((days) => (
+              <button
+                key={days}
+                type="button"
+                className="cc-btn"
+                onClick={() => update('settings', (s) => ({ ...s, recordingKeepDays: days }))}
+                style={{
+                  flex: 1,
+                  background: settings.recordingKeepDays === days ? 'var(--cc-primary)' : 'var(--cc-surface)',
+                  color: settings.recordingKeepDays === days ? '#fff' : 'var(--cc-ink)',
+                  border: settings.recordingKeepDays === days ? 'none' : '2px solid var(--cc-border)',
+                  boxShadow: 'none',
+                }}
+              >
+                {days} days
+              </button>
+            ))}
+          </div>
+        </div>
+        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+          Recordings on this device: {recordingStats?.count ?? '…'} ·{' '}
+          {recordingStats ? formatBytes(recordingStats.bytes) : '…'}
+        </p>
+        {!confirmingDeleteRecordings ? (
+          <button
+            type="button"
+            className="cc-btn cc-btn-surface"
+            onClick={() => setConfirmingDeleteRecordings(true)}
+          >
+            🗑️ Delete all recordings on this device
+          </button>
+        ) : (
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button
+              type="button"
+              className="cc-btn"
+              style={{ background: 'var(--cc-danger)', color: '#fff' }}
+              onClick={() => void handleDeleteAllRecordings()}
+            >
+              Really delete?
+            </button>
+            <button
+              type="button"
+              className="cc-btn cc-btn-surface"
+              onClick={() => setConfirmingDeleteRecordings(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+      </section>
+
+      <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Google Drive upload</h2>
+        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+          ☁️ {uploadSummary.done} saved · {uploadSummary.pending} waiting · {uploadSummary.failed} failed
+        </p>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontWeight: 700 }}>
+          Script URL
+          <input
+            value={driveCfg.scriptUrl}
+            onChange={(e) => setDriveField({ scriptUrl: e.target.value })}
+            placeholder="https://script.google.com/macros/s/.../exec"
+          />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontWeight: 700 }}>
+          Secret
+          <input
+            type="password"
+            value={driveCfg.secret}
+            onChange={(e) => setDriveField({ secret: e.target.value })}
+          />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontWeight: 700 }}>
+          Folder name
+          <input
+            value={driveCfg.folderName}
+            onChange={(e) => setDriveField({ folderName: e.target.value })}
+            placeholder="Nora Piano"
+          />
+        </label>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="cc-btn cc-btn-surface"
+            disabled={testingDrive}
+            onClick={() => void handleTestDrive()}
+          >
+            {testingDrive ? 'Testing…' : 'Test'}
+          </button>
+          {uploadSummary.failed > 0 && (
+            <button type="button" className="cc-btn cc-btn-surface" onClick={() => retryFailedUploads()}>
+              Retry failed
+            </button>
+          )}
+        </div>
+        {driveTestMessage && <p style={{ margin: 0, fontSize: '0.85rem' }}>{driveTestMessage}</p>}
+        <details>
+          <summary style={{ cursor: 'pointer', fontWeight: 700 }}>How to set this up</summary>
+          <ol style={{ margin: '0.5rem 0 0', paddingLeft: '1.25rem', fontSize: '0.9rem' }}>
+            <li>
+              Open <code>script.google.com</code> and click "New project".
+            </li>
+            <li>
+              Delete the sample code, paste in the whole <code>scripts/drive-uploader.gs</code> file from this
+              repo, and change <code>SECRET</code> to a word of your own.
+            </li>
+            <li>
+              Click Deploy → New deployment → type Web app. Set "Execute as" to Me and "Who has access" to
+              Anyone, then Deploy and authorize when asked. Copy the Web app URL (it ends in <code>/exec</code>).
+            </li>
+            <li>Paste that URL and the same secret above, then press Test.</li>
+          </ol>
+        </details>
       </section>
 
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>

@@ -1,0 +1,162 @@
+import { beforeEach, describe, expect, it } from 'vitest'
+import { awardGoalIfReached, markAudioPruned, saveTake, setParentStars, setSelfRating } from '../piano'
+import { getDoc, resetAll, type PianoTake } from '../progress'
+
+// Same in-memory localStorage mock as progress.test.ts / sessions.test.ts -
+// piano.ts writes through progress.ts's `update`, which persists there.
+class MemoryStorage implements Storage {
+  private map = new Map<string, string>()
+  get length() {
+    return this.map.size
+  }
+  clear(): void {
+    this.map.clear()
+  }
+  getItem(key: string): string | null {
+    return this.map.has(key) ? this.map.get(key)! : null
+  }
+  key(index: number): string | null {
+    return Array.from(this.map.keys())[index] ?? null
+  }
+  removeItem(key: string): void {
+    this.map.delete(key)
+  }
+  setItem(key: string, value: string): void {
+    this.map.set(key, value)
+  }
+}
+
+beforeEach(() => {
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: new MemoryStorage(),
+    configurable: true,
+    writable: true,
+  })
+  resetAll()
+})
+
+function makeTake(overrides: Partial<PianoTake> = {}): PianoTake {
+  return {
+    id: 'take-1',
+    day: '2026-09-07',
+    pieceId: null,
+    startedAt: Date.now(),
+    durationSec: 120,
+    activeSec: 60,
+    mimeType: 'audio/webm',
+    sizeBytes: 5000,
+    hasAudio: true,
+    deviceId: 'device-1',
+    ...overrides,
+  }
+}
+
+describe('saveTake', () => {
+  it('appends the take and bumps piano.updatedAt', () => {
+    const before = getDoc().piano.updatedAt
+    saveTake(makeTake({ id: 'a' }))
+    const doc = getDoc()
+    expect(doc.piano.takes.map((t) => t.id)).toEqual(['a'])
+    expect(doc.piano.updatedAt).toBeGreaterThanOrEqual(before)
+  })
+})
+
+describe('setSelfRating', () => {
+  it('sets the rating on the matching take only', () => {
+    saveTake(makeTake({ id: 'a' }))
+    saveTake(makeTake({ id: 'b' }))
+    setSelfRating('a', 3)
+    const doc = getDoc()
+    expect(doc.piano.takes.find((t) => t.id === 'a')?.selfRating).toBe(3)
+    expect(doc.piano.takes.find((t) => t.id === 'b')?.selfRating).toBeUndefined()
+  })
+})
+
+describe('awardGoalIfReached', () => {
+  it('awards bronze + xp once per day and bumps the streak', () => {
+    const day = '2026-09-07'
+    saveTake(makeTake({ id: 'a', day, activeSec: 900 }))
+
+    expect(awardGoalIfReached(day, 15)).toBe(true)
+
+    let doc = getDoc()
+    expect(doc.piano.days[day]?.goalReachedAt).toBeTruthy()
+    expect(doc.piano.streak.current).toBe(1)
+    expect(doc.profiles.kid.tokens.bronze).toBe(1)
+    expect(doc.profiles.kid.xp).toBe(10)
+
+    // Second call the same day: no-op, no double award.
+    expect(awardGoalIfReached(day, 15)).toBe(false)
+
+    doc = getDoc()
+    expect(doc.profiles.kid.tokens.bronze).toBe(1)
+    expect(doc.profiles.kid.xp).toBe(10)
+  })
+
+  it('does not award before the goal is reached', () => {
+    saveTake(makeTake({ id: 'a', day: '2026-09-07', activeSec: 100 }))
+    expect(awardGoalIfReached('2026-09-07', 15)).toBe(false)
+    expect(getDoc().piano.days['2026-09-07']).toBeUndefined()
+    expect(getDoc().profiles.kid.tokens.bronze).toBe(0)
+  })
+})
+
+describe('setParentStars', () => {
+  it('1 star stores the rating but awards no token', () => {
+    const tier = setParentStars('2026-09-07', 1)
+    expect(tier).toBeNull()
+    const doc = getDoc()
+    expect(doc.piano.days['2026-09-07']?.parentStars).toBe(1)
+    expect(doc.profiles.kid.tokens.gold).toBe(0)
+    expect(doc.profiles.kid.tokens.silver).toBe(0)
+  })
+
+  it('2 stars awards silver', () => {
+    expect(setParentStars('2026-09-07', 2)).toBe('silver')
+    expect(getDoc().profiles.kid.tokens.silver).toBe(1)
+  })
+
+  it('3 stars awards gold', () => {
+    expect(setParentStars('2026-09-07', 3)).toBe('gold')
+    expect(getDoc().profiles.kid.tokens.gold).toBe(1)
+  })
+
+  it('only allows one rating per day - a second call the same day changes nothing', () => {
+    setParentStars('2026-09-07', 2)
+    const before = getDoc()
+
+    const second = setParentStars('2026-09-07', 3)
+
+    expect(second).toBeNull()
+    const after = getDoc()
+    expect(after.piano.days['2026-09-07']?.parentStars).toBe(2)
+    expect(after.profiles.kid.tokens.gold).toBe(0)
+    expect(after.profiles.kid.tokens.silver).toBe(1)
+    expect(after.piano).toEqual(before.piano)
+    expect(after.profiles).toEqual(before.profiles)
+  })
+})
+
+describe('markAudioPruned', () => {
+  it('marks only the given takes as pruned', () => {
+    saveTake(makeTake({ id: 'a' }))
+    saveTake(makeTake({ id: 'b' }))
+
+    markAudioPruned(['a'], 12345)
+
+    const doc = getDoc()
+    const a = doc.piano.takes.find((t) => t.id === 'a')!
+    const b = doc.piano.takes.find((t) => t.id === 'b')!
+    expect(a.hasAudio).toBe(false)
+    expect(a.audioPrunedAt).toBe(12345)
+    expect(b.hasAudio).toBe(true)
+    expect(b.audioPrunedAt).toBeUndefined()
+  })
+
+  it('is a no-op for an empty list', () => {
+    saveTake(makeTake({ id: 'a' }))
+    const before = getDoc()
+    markAudioPruned([])
+    expect(getDoc()).toEqual(before)
+  })
+})

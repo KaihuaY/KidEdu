@@ -3,6 +3,7 @@ import { isInArea, useRoute } from './router'
 import { useProgress } from './store/progress'
 import { useSyncStatus, type SyncStatus } from './store/gistSync'
 import { toggleActiveProfile, useActiveProfile } from './store/activeProfile'
+import { isRecordingActive, useRecordingSession } from './audio/recordingSession'
 import { Home } from './screens/Home'
 import { Wall } from './screens/Wall'
 import { Lesson } from './screens/Lesson'
@@ -10,6 +11,8 @@ import { HelpMyCube } from './screens/HelpMyCube'
 import { BlindBox } from './screens/BlindBox'
 import { SolveLog } from './screens/SolveLog'
 import { Settings } from './screens/Settings'
+import { PianoHome } from './screens/piano/PianoHome'
+import { Record } from './screens/piano/Record'
 
 interface NavItem {
   path: string
@@ -27,15 +30,12 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/settings', label: 'Settings', emoji: '⚙️' },
 ]
 
-/** Step 3 will replace this literal with the recording session's "is a take in progress" state. */
-function PianoPlaceholder() {
-  const progress = useProgress()
+/** Step 4 replaces this with the real parent-side ParentReview screen. */
+function PianoReviewPlaceholder() {
   return (
     <div style={{ padding: '1rem' }}>
       <div className="cc-card" style={{ padding: '1.5rem', textAlign: 'center' }}>
-        <p style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>
-          🎹 Piano is coming soon, {progress.settings.kidName}!
-        </p>
+        <p style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>👀 Grown-up review is coming soon.</p>
       </div>
     </div>
   )
@@ -59,7 +59,9 @@ function Screen({ path }: { path: string }) {
   if (path === '/solves') return <SolveLog />
   if (path === '/settings') return <Settings />
   if (path.startsWith('/lesson/')) return <Lesson />
-  if (path.startsWith('/piano')) return <PianoPlaceholder />
+  if (path === '/piano') return <PianoHome />
+  if (path === '/piano/record') return <Record />
+  if (path === '/piano/review') return <PianoReviewPlaceholder />
   return <Home />
 }
 
@@ -68,13 +70,14 @@ function App() {
   const progress = useProgress()
   const syncStatus = useSyncStatus()
   const activeProfile = useActiveProfile()
+  const recordingSession = useRecordingSession()
 
   const activeName =
     activeProfile === 'kid' ? progress.settings.kidName : progress.settings.parentName
 
-  // Step 3 wires this to the recording session: true while a piano take is
-  // in progress, so Record.tsx can render full-screen with no header/nav.
-  const hideChrome = false
+  // Full-screen, no header/nav, while a piano take is actively being
+  // recorded (not just while sitting on /piano/record in some other state).
+  const hideChrome = path === '/piano/record' && isRecordingActive(recordingSession)
 
   return (
     <Gate>
