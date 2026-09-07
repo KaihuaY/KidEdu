@@ -14,6 +14,7 @@ import { PinGate } from '../components/PinGate'
 import { navigate } from '../router'
 import { formatBytes, getRecordingStore } from '../store/recordings'
 import { retryFailedUploads, testDriveConnection, useUploadSummary, type DriveConfig } from '../store/driveUpload'
+import { markAudioPruned } from '../store/piano'
 
 // Re-exported so BlindBox.tsx's `import { PinGate } from './Settings'` keeps working.
 export { PinGate } from '../components/PinGate'
@@ -301,7 +302,10 @@ export function Settings() {
   }
 
   async function handleDeleteAllRecordings() {
-    await getRecordingStore().clear()
+    const store = getRecordingStore()
+    const items = await store.list()
+    await store.clear()
+    markAudioPruned(items.map((item) => item.id))
     setConfirmingDeleteRecordings(false)
     refreshRecordingStats()
   }

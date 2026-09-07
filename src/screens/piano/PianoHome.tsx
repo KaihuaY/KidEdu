@@ -6,10 +6,13 @@ import { activeSecondsForDay, goalProgress, pianoDaysDone } from '../../store/pi
 import { formatClock, lastNDays, localDay } from '../../store/sessions'
 import { getAudioBackend, startTake } from '../../audio/recordingSession'
 import { getRecordingStore, useLocalAudioIds } from '../../store/recordings'
+import { buildFileName } from '../../store/driveUpload'
+import { extensionFor } from '../../audio/mime'
 import { RingTimer } from '../../components/RingTimer'
 import { WeekDots } from '../../components/WeekDots'
 import { SayIt } from '../../components/SayIt'
 import { SelfRatingButtons } from '../../components/SelfRatingButtons'
+import { TakePlayer } from '../../components/TakePlayer'
 
 const PIECE_STORAGE_KEY = 'cubeclimb.piano.piece'
 
@@ -34,28 +37,74 @@ function pieceLabel(piece: PianoPiece | undefined): string {
   return piece ? `${piece.emoji} ${piece.name}` : '🎵 Free play'
 }
 
+/** True when the platform can share an audio file of this mime type through the native share sheet. */
+function useCanShareFiles(mimeType: string): boolean {
+  return useMemo(() => {
+    try {
+      if (typeof navigator === 'undefined') return false
+      if (typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function') return false
+      // A tiny probe file is enough - canShare only checks type/shape, not content.
+      const probe = new File([new Uint8Array(1)], `probe.${extensionFor(mimeType)}`, { type: mimeType })
+      return navigator.canShare({ files: [probe] })
+    } catch {
+      return false
+    }
+  }, [mimeType])
+}
+
+/** Share (native share sheet) or download the local blob for a take. Renders nothing without a local blob. */
+function ShareOrDownload({ take, piece }: { take: PianoTake; piece: PianoPiece | undefined }) {
+  const canShare = useCanShareFiles(take.mimeType)
+  const [busy, setBusy] = useState(false)
+
+  async function handleShare() {
+    setBusy(true)
+    try {
+      const blob = await getRecordingStore().get(take.id)
+      if (!blob) return
+      const file = new File([blob], buildFileName(take, piece?.name ?? null), { type: take.mimeType })
+      await navigator.share({ files: [file] })
+    } catch {
+      // The share sheet was cancelled or failed silently - nothing to report.
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDownload() {
+    setBusy(true)
+    try {
+      const blob = await getRecordingStore().get(take.id)
+      if (!blob) return
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = buildFileName(take, piece?.name ?? null)
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (canShare) {
+    return (
+      <button type="button" className="cc-btn cc-btn-surface" disabled={busy} onClick={() => void handleShare()}>
+        📤 Share
+      </button>
+    )
+  }
+
+  return (
+    <button type="button" className="cc-btn cc-btn-surface" disabled={busy} onClick={() => void handleDownload()}>
+      ⬇ Download
+    </button>
+  )
+}
+
 function TakeCard({ take, piece }: { take: PianoTake; piece: PianoPiece | undefined }) {
   const localAudioIds = useLocalAudioIds()
   const isLocal = localAudioIds.has(take.id)
-  const [objectUrl, setObjectUrl] = useState<string | null>(null)
-  const [loadingAudio, setLoadingAudio] = useState(false)
-
-  useEffect(() => {
-    return () => {
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
-    }
-  }, [objectUrl])
-
-  async function handleListen() {
-    if (objectUrl || loadingAudio) return
-    setLoadingAudio(true)
-    try {
-      const blob = await getRecordingStore().get(take.id)
-      if (blob) setObjectUrl(URL.createObjectURL(blob))
-    } finally {
-      setLoadingAudio(false)
-    }
-  }
 
   const wallTime = new Date(take.startedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   const uploadLine =
@@ -75,24 +124,8 @@ function TakeCard({ take, piece }: { take: PianoTake; piece: PianoPiece | undefi
       </div>
       <span style={{ fontWeight: 700 }}>{formatClock(take.activeSec)} played</span>
       <SelfRatingButtons value={take.selfRating} onChange={(rating) => setSelfRating(take.id, rating)} />
-      {isLocal ? (
-        objectUrl ? (
-          <audio controls playsInline src={objectUrl} style={{ width: '100%' }} />
-        ) : (
-          <button
-            type="button"
-            className="cc-btn cc-btn-surface"
-            disabled={loadingAudio}
-            onClick={() => void handleListen()}
-          >
-            ▶ {loadingAudio ? 'Loading…' : 'Listen'}
-          </button>
-        )
-      ) : take.upload?.driveUrl ? (
-        <audio controls src={take.upload.driveUrl} style={{ width: '100%' }} />
-      ) : (
-        <span style={{ color: 'var(--cc-ink-soft)', fontSize: '0.85rem' }}>Recorded on another device</span>
-      )}
+      <TakePlayer take={take} />
+      {isLocal && <ShareOrDownload take={take} piece={piece} />}
       {uploadLine && <span style={{ color: 'var(--cc-ink-soft)', fontSize: '0.8rem' }}>{uploadLine}</span>}
     </div>
   )

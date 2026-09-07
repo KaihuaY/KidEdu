@@ -13,6 +13,7 @@ import { SolveLog } from './screens/SolveLog'
 import { Settings } from './screens/Settings'
 import { PianoHome } from './screens/piano/PianoHome'
 import { Record } from './screens/piano/Record'
+import { ParentReview } from './screens/piano/ParentReview'
 
 interface NavItem {
   path: string
@@ -29,17 +30,6 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/box', label: 'Box', emoji: '🎁' },
   { path: '/settings', label: 'Settings', emoji: '⚙️' },
 ]
-
-/** Step 4 replaces this with the real parent-side ParentReview screen. */
-function PianoReviewPlaceholder() {
-  return (
-    <div style={{ padding: '1rem' }}>
-      <div className="cc-card" style={{ padding: '1.5rem', textAlign: 'center' }}>
-        <p style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>👀 Grown-up review is coming soon.</p>
-      </div>
-    </div>
-  )
-}
 
 const SYNC_DOT_COLOR: Record<SyncStatus, string> = {
   off: '#c7cad9',
@@ -61,7 +51,7 @@ function Screen({ path }: { path: string }) {
   if (path.startsWith('/lesson/')) return <Lesson />
   if (path === '/piano') return <PianoHome />
   if (path === '/piano/record') return <Record />
-  if (path === '/piano/review') return <PianoReviewPlaceholder />
+  if (path === '/piano/review') return <ParentReview />
   return <Home />
 }
 

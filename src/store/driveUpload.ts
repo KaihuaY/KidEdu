@@ -288,8 +288,14 @@ export function useUploadSummary(): { pending: number; failed: number; done: num
   return useSyncExternalStore(subscribe, getUploadSummarySnapshot, getUploadSummarySnapshot)
 }
 
-function getUploadSummarySnapshot(): { pending: number; failed: number; done: number } {
+// useSyncExternalStore needs a referentially stable snapshot while nothing
+// changed, so the summary is cached against the takes array identity.
+let summaryForTakes: PianoTake[] | null = null
+let summaryCache: { pending: number; failed: number; done: number } = { pending: 0, failed: 0, done: 0 }
+
+export function getUploadSummarySnapshot(): { pending: number; failed: number; done: number } {
   const takes = getDoc().piano.takes
+  if (takes === summaryForTakes) return summaryCache
   let pending = 0
   let failed = 0
   let done = 0
@@ -298,7 +304,9 @@ function getUploadSummarySnapshot(): { pending: number; failed: number; done: nu
     else if (t.upload?.status === 'failed') failed += 1
     else if (t.upload?.status === 'done') done += 1
   }
-  return { pending, failed, done }
+  summaryForTakes = takes
+  summaryCache = { pending, failed, done }
+  return summaryCache
 }
 
 /** Settings "Test" button: pings the script with the given config, without touching any take. */

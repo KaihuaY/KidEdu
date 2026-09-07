@@ -351,3 +351,12 @@ describe('testDriveConnection', () => {
     expect(fetchFn).not.toHaveBeenCalled()
   })
 })
+
+describe('getUploadSummarySnapshot', () => {
+  it('returns the same object while takes are unchanged (useSyncExternalStore stability)', async () => {
+    const { getUploadSummarySnapshot } = await import('../driveUpload')
+    const a = getUploadSummarySnapshot()
+    const b = getUploadSummarySnapshot()
+    expect(a).toBe(b)
+  })
+})

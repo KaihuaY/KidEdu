@@ -5,7 +5,7 @@
 // `update()` plus one React hook.
 
 import { useProgress, update, type ParentStars, type PianoSection, type PianoTake, type SelfRating } from './progress'
-import { bumpStreak } from './sessions'
+import { bumpStreak, dayOffset } from './sessions'
 import { xpForTier, type Tier } from './rewards'
 import { activeSecondsForDay, goalReached, PIANO_GOAL_TIER, tokenForParentStars } from './pianoRewards'
 import { getRecordingStore } from './recordings'
@@ -54,8 +54,17 @@ export function getDeviceId(): string {
   return cachedDeviceId
 }
 
+/** How many days of take *metadata* to keep (the doc, not the audio - see recordingKeepDays for that). */
+const TAKE_RETENTION_DAYS = 180
+
 export function saveTake(take: PianoTake): void {
-  update('piano', (piano) => ({ ...piano, takes: [...piano.takes, take] }))
+  update('piano', (piano) => {
+    const cutoff = dayOffset(take.day, -(TAKE_RETENTION_DAYS - 1))
+    // Drop metadata for takes older than the retention window, but never the
+    // take being saved right now even if the clock is somehow off.
+    const kept = piano.takes.filter((t) => t.day >= cutoff || t.day === take.day)
+    return { ...piano, takes: [...kept, take] }
+  })
 }
 
 export function setSelfRating(takeId: string, rating: SelfRating): void {

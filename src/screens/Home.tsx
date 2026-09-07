@@ -2,6 +2,7 @@ import { navigate } from '../router'
 import { useProgress } from '../store/progress'
 import { useActiveProfile } from '../store/activeProfile'
 import { localDay } from '../store/sessions'
+import { activeSecondsForDay, goalProgress } from '../store/pianoRewards'
 import { SayIt } from '../components/SayIt'
 import { ActivityCard } from '../components/ActivityCard'
 import { TokenPill } from '../components/TokenPill'
@@ -12,7 +13,18 @@ export function Home() {
   const profile = progress.profiles[activeProfile]
   const kidName = progress.settings.kidName
   const greeting = `Hi ${kidName}! What do you want to practice today?`
-  const cubeDoneToday = profile.sessions.some((s) => s.day === localDay())
+  const today = localDay()
+  const cubeDoneToday = profile.sessions.some((s) => s.day === today)
+  const pianoGoal = progress.settings.goalMinutes.piano
+  const pianoActiveSec = activeSecondsForDay(progress.piano.takes, today)
+  const pianoDoneToday = Boolean(progress.piano.days[today]?.goalReachedAt)
+  const pianoProgress = pianoDoneToday ? 1 : goalProgress(pianoActiveSec, pianoGoal)
+  const pianoMinutesLeft = Math.max(1, Math.ceil(pianoGoal - pianoActiveSec / 60))
+  const pianoStatus = pianoDoneToday
+    ? 'Done today ✅'
+    : pianoActiveSec > 0
+      ? `▶ ${pianoMinutesLeft} more min`
+      : `▶ ${pianoGoal} min`
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1rem 1rem 2rem' }}>
@@ -26,16 +38,16 @@ export function Home() {
         title="Cube"
         ringProgress={cubeDoneToday ? 1 : 0}
         streak={profile.streak.current}
-        status={cubeDoneToday ? 'Done today ✅' : `▶ ${progress.settings.goalMinutes.cube} minutes`}
+        status={cubeDoneToday ? 'Done today ✅' : `▶ ${progress.settings.goalMinutes.cube} min`}
         onClick={() => navigate('/cube')}
       />
 
       <ActivityCard
         emoji="🎹"
         title="Piano"
-        ringProgress={0}
+        ringProgress={pianoProgress}
         streak={progress.piano.streak.current}
-        status={`▶ ${progress.settings.goalMinutes.piano} minutes`}
+        status={pianoStatus}
         onClick={() => navigate('/piano')}
       />
 

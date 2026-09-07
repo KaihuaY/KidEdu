@@ -27,7 +27,9 @@ export interface Route {
 function currentHashPath(): string {
   if (typeof window === 'undefined') return '/home'
   const hash = window.location.hash
-  const path = hash.startsWith('#') ? hash.slice(1) : hash
+  const raw = hash.startsWith('#') ? hash.slice(1) : hash
+  // Drop any ?query (e.g. dev flags like ?fakeMic=1) so it never breaks route matching.
+  const path = raw.split('?')[0]
   return path || '/home'
 }
 

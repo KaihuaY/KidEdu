@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { awardGoalIfReached, markAudioPruned, saveTake, setParentStars, setSelfRating } from '../piano'
 import { getDoc, resetAll, type PianoTake } from '../progress'
+import { dayOffset } from '../sessions'
 
 // Same in-memory localStorage mock as progress.test.ts / sessions.test.ts -
 // piano.ts writes through progress.ts's `update`, which persists there.
@@ -58,6 +59,26 @@ describe('saveTake', () => {
     const doc = getDoc()
     expect(doc.piano.takes.map((t) => t.id)).toEqual(['a'])
     expect(doc.piano.updatedAt).toBeGreaterThanOrEqual(before)
+  })
+})
+
+describe('saveTake retention cap', () => {
+  it('drops take metadata older than 180 days but keeps the take being saved', () => {
+    const recentDay = '2026-09-07'
+    const oldDay = dayOffset(recentDay, -200)
+    saveTake(makeTake({ id: 'old', day: oldDay }))
+    saveTake(makeTake({ id: 'new', day: recentDay }))
+
+    expect(getDoc().piano.takes.map((t) => t.id)).toEqual(['new'])
+  })
+
+  it('keeps takes within the 180-day window', () => {
+    const recentDay = '2026-09-07'
+    const withinWindowDay = dayOffset(recentDay, -100)
+    saveTake(makeTake({ id: 'within', day: withinWindowDay }))
+    saveTake(makeTake({ id: 'new', day: recentDay }))
+
+    expect(getDoc().piano.takes.map((t) => t.id).sort()).toEqual(['new', 'within'])
   })
 })
 
