@@ -4,7 +4,7 @@
 // Mirrors the shape of src/store/sessions.ts: thin wrappers around
 // `update()` plus one React hook.
 
-import { useProgress, update, type ParentStars, type PianoSection, type PianoTake, type SelfRating } from './progress'
+import { getDoc, useProgress, update, type ParentStars, type PianoSection, type PianoTake, type SelfRating } from './progress'
 import { bumpStreak, dayOffset } from './sessions'
 import { xpForTier, type Tier } from './rewards'
 import { activeSecondsForDay, goalReached, PIANO_GOAL_TIER, tokenForParentStars } from './pianoRewards'
@@ -91,29 +91,26 @@ export function markAudioPruned(takeIds: string[], at: number = Date.now()): voi
  * (so the caller knows whether to celebrate).
  */
 export function awardGoalIfReached(day: string, goalMinutes: number): boolean {
-  let awarded = false
-  update('piano', (piano) => {
-    if (piano.days[day]?.goalReachedAt) return piano
-    const activeSec = activeSecondsForDay(piano.takes, day)
-    if (!goalReached(activeSec, goalMinutes)) return piano
-    awarded = true
-    return {
-      ...piano,
-      days: { ...piano.days, [day]: { ...piano.days[day], goalReachedAt: Date.now() } },
-      streak: bumpStreak(piano.streak, day),
-    }
-  })
-  if (awarded) {
-    update('profiles', (profiles) => ({
-      ...profiles,
-      kid: {
-        ...profiles.kid,
-        xp: profiles.kid.xp + xpForTier(PIANO_GOAL_TIER),
-        tokens: { ...profiles.kid.tokens, [PIANO_GOAL_TIER]: profiles.kid.tokens[PIANO_GOAL_TIER] + 1 },
-      },
-    }))
-  }
-  return awarded
+  // Checked before update() so a no-op never bumps piano.updatedAt, which
+  // would needlessly out-rank another device's edits during a sync merge.
+  const current = getDoc().piano
+  if (current.days[day]?.goalReachedAt) return false
+  if (!goalReached(activeSecondsForDay(current.takes, day), goalMinutes)) return false
+
+  update('piano', (piano) => ({
+    ...piano,
+    days: { ...piano.days, [day]: { ...piano.days[day], goalReachedAt: Date.now() } },
+    streak: bumpStreak(piano.streak, day),
+  }))
+  update('profiles', (profiles) => ({
+    ...profiles,
+    kid: {
+      ...profiles.kid,
+      xp: profiles.kid.xp + xpForTier(PIANO_GOAL_TIER),
+      tokens: { ...profiles.kid.tokens, [PIANO_GOAL_TIER]: profiles.kid.tokens[PIANO_GOAL_TIER] + 1 },
+    },
+  }))
+  return true
 }
 
 /**
@@ -124,18 +121,12 @@ export function awardGoalIfReached(day: string, goalMinutes: number): boolean {
  * already rated.
  */
 export function setParentStars(day: string, stars: ParentStars): Tier | null {
-  let alreadyRated = false
-  update('piano', (piano) => {
-    if (piano.days[day]?.parentStars) {
-      alreadyRated = true
-      return piano
-    }
-    return {
-      ...piano,
-      days: { ...piano.days, [day]: { ...piano.days[day], parentStars: stars, parentRatedAt: Date.now() } },
-    }
-  })
-  if (alreadyRated) return null
+  // Same pre-check as awardGoalIfReached: no doc write unless something changes.
+  if (getDoc().piano.days[day]?.parentStars) return null
+  update('piano', (piano) => ({
+    ...piano,
+    days: { ...piano.days, [day]: { ...piano.days[day], parentStars: stars, parentRatedAt: Date.now() } },
+  }))
 
   const tier = tokenForParentStars(stars)
   if (tier) {
