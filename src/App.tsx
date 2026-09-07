@@ -1,3 +1,4 @@
+import { Gate } from './components/Gate'
 import { useRoute } from './router'
 import { useProgress } from './store/progress'
 import { useSyncStatus, type SyncStatus } from './store/gistSync'
@@ -47,6 +48,7 @@ function App() {
     activeProfile === 'kid' ? progress.settings.kidName : progress.settings.parentName
 
   return (
+    <Gate>
     <div
       style={{
         display: 'flex',
@@ -142,6 +144,7 @@ function App() {
         })}
       </nav>
     </div>
+    </Gate>
   )
 }
 

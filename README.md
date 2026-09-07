@@ -31,6 +31,24 @@ dependencies, runs tests, builds, and publishes `dist/` to GitHub Pages via
 The production build is served from `/Rubik-Self-study/` (see `base` in
 `vite.config.ts`) to match this repo's GitHub Pages URL.
 
+## Secret word
+
+Before using CubeClimb, everyone must type a shared secret word once per
+device (a lightweight lock screen, not real security). The default word is
+`climb`.
+
+To change it:
+
+```sh
+node scripts/hash-password.mjs <new word>
+```
+
+Paste the printed hash into `FAMILY_PASSWORD_SHA256` in
+`src/content/access.ts`, then commit and push.
+
+A parent/coach can also force a device to re-ask for the secret word from
+**Settings → Secret word → Lock this device now**.
+
 ## Syncing progress across devices (parent setup)
 
 CubeClimb keeps all progress in the browser (`localStorage`) by default. To

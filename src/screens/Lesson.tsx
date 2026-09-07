@@ -1,20 +1,50 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRoute, navigate } from '../router'
-import { TwistyCube } from '../components/TwistyCube'
+import { TwistyCube, type TwistyCubeProps } from '../components/TwistyCube'
 import { MoveArrows } from '../components/MoveArrows'
 import { SayIt } from '../components/SayIt'
 import { fireConfetti } from '../components/Confetti'
 import { VirtualCubeInput } from '../input/CubeInput'
 import { SOLVED, parseAlg } from '../engine/cube'
 import { describeMove } from '../engine/notation'
-import { caseDisplay, lessonById, nextHoldId, type Lesson as LessonContent } from '../content/lessons'
-import { useProgress, update, type StageProgress } from '../store/progress'
+import {
+  caseDisplay,
+  lessonById,
+  nextHoldId,
+  type LearnCard,
+  type Lesson as LessonContent,
+} from '../content/lessons'
+import { useProgress, update, type HoldProgress, type StageProgress } from '../store/progress'
 import { useActiveProfile } from '../store/activeProfile'
 import { maxStars, starsForTier, tierForClimbTries, tierForStageTries, xpForTier, type Tier } from '../store/rewards'
 
-type StageId = 'watch' | 'try' | 'spot' | 'climb'
-const STAGE_ORDER: StageId[] = ['watch', 'try', 'spot', 'climb']
-const STAGE_LABEL: Record<StageId, string> = { watch: 'Watch', try: 'Try', spot: 'Spot it', climb: 'Climb' }
+type StageId = 'learn' | 'watch' | 'try' | 'spot' | 'climb'
+const STAGE_ORDER: StageId[] = ['learn', 'watch', 'try', 'spot', 'climb']
+const STAGE_LABEL: Record<StageId, string> = {
+  learn: 'Learn',
+  watch: 'Watch',
+  try: 'Try',
+  spot: 'Spot it',
+  climb: 'Climb',
+}
+
+/**
+ * Progress docs saved before the Learn stage existed have no 'learn' record,
+ * and a missing record must never re-lock a hold for someone already past it.
+ * So: a missing record counts as "not done" for a fresh climber, but once
+ * Watch is complete, Learn counts as done too - it stays open and clickable,
+ * it just doesn't block the stages above it.
+ */
+function stageIsDone(hold: HoldProgress | undefined, stage: StageId): boolean {
+  if (hold?.stages[stage]?.completedAt) return true
+  return stage === 'learn' && Boolean(hold?.stages.watch?.completedAt)
+}
+
+/** How many leading stages are unlocked, given what's already complete. */
+function unlockedStageCount(hold: HoldProgress | undefined): number {
+  const completed = STAGE_ORDER.filter((s) => stageIsDone(hold, s)).length
+  return Math.min(completed + 1, STAGE_ORDER.length)
+}
 
 /** "U2" -> ["U","U"] so a sequence can be tapped with only quarter-turn buttons. */
 function expandDoubles(alg: string): string[] {
@@ -124,6 +154,134 @@ function MoveLabel({ move, showLetters }: { move: string; showLetters: boolean }
       {describeMove(move)}
       {showLetters ? <span style={{ opacity: 0.6, fontWeight: 700 }}> ({move})</span> : null}
     </span>
+  )
+}
+
+function ChecklistItem({ label }: { label: string }) {
+  const [checked, setChecked] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={() => setChecked((c) => !c)}
+      className="cc-btn cc-btn-surface"
+      aria-pressed={checked}
+      style={{
+        width: '100%',
+        justifyContent: 'flex-start',
+        textAlign: 'left',
+        gap: '0.75rem',
+        minHeight: 56,
+        padding: '0.5rem 0.9rem',
+        background: checked ? 'var(--cc-success)' : 'var(--cc-surface)',
+        color: checked ? '#fff' : 'var(--cc-ink)',
+      }}
+    >
+      <span aria-hidden="true" style={{ fontSize: '1.4rem', lineHeight: 1 }}>
+        {checked ? '✅' : '⬜'}
+      </span>
+      <span style={{ fontWeight: 700, whiteSpace: 'normal' }}>{label}</span>
+    </button>
+  )
+}
+
+function LearnChecklist({ cardKey, items }: { cardKey: string; items: string[] }) {
+  return (
+    <div className="cc-card" style={{ padding: '0.9rem', background: 'var(--cc-bg)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      <strong>Do it on your cube</strong>
+      {items.map((item, i) => (
+        <ChecklistItem key={`${cardKey}-${i}`} label={item} />
+      ))}
+    </div>
+  )
+}
+
+function LearnPanel({
+  lesson,
+  tempoScale,
+  showLetters,
+  onComplete,
+}: {
+  lesson: LessonContent
+  tempoScale: number
+  showLetters: boolean
+  onComplete: () => void
+}) {
+  const [index, setIndex] = useState(0)
+  const cards: LearnCard[] = lesson.stages.learn.cards
+  const card = cards[Math.min(index, cards.length - 1)]
+  const isLast = index >= cards.length - 1
+  const hasAlg = Boolean(card.display?.alg)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      {card.display && (
+        <div className="cc-card" style={{ height: 300, padding: '0.5rem' }}>
+          <TwistyCube
+            key={`${lesson.id}-${index}`}
+            setupAlg={card.display.setupAlg}
+            alg={card.display.alg}
+            stickering={card.stickering as TwistyCubeProps['stickering']}
+            backView={card.backView ? 'top-right' : 'none'}
+            tempoScale={tempoScale}
+            controls={hasAlg ? 'bottom-row' : 'none'}
+          />
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{card.title}</h3>
+        <SayIt text={card.say} />
+      </div>
+      <p style={{ margin: 0, fontWeight: 600, lineHeight: 1.5 }}>
+        {card.text}
+        {showLetters && card.display?.alg ? (
+          <span style={{ opacity: 0.7, fontWeight: 800 }}> ({card.display.alg})</span>
+        ) : null}
+      </p>
+
+      {card.checklist && card.checklist.length > 0 && (
+        <LearnChecklist cardKey={`${lesson.id}-${index}`} items={card.checklist} />
+      )}
+
+      {isLast && (
+        <a
+          href="#/help"
+          className="cc-btn cc-btn-surface"
+          style={{ textDecoration: 'none', justifyContent: 'center' }}
+        >
+          🧩 Help with my cube
+        </a>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem' }}>
+        <button
+          type="button"
+          className="cc-btn cc-btn-surface"
+          disabled={index === 0}
+          onClick={() => setIndex((i) => Math.max(0, i - 1))}
+        >
+          ◀ Prev
+        </button>
+        <span style={{ alignSelf: 'center', fontWeight: 700, color: 'var(--cc-ink-soft)' }}>
+          {index + 1} / {cards.length}
+        </span>
+        <button
+          type="button"
+          className="cc-btn cc-btn-primary"
+          onClick={() => {
+            if (isLast) onComplete()
+            else setIndex((i) => i + 1)
+          }}
+        >
+          {isLast ? 'Got it! ✓' : 'Next ▶'}
+        </button>
+      </div>
+
+      <div className="cc-card" style={{ padding: '1rem', background: 'var(--cc-bg)' }}>
+        <strong>Show me on the real cube</strong>
+        <p style={{ margin: '0.4rem 0 0' }}>{lesson.realCubeHint}</p>
+      </div>
+    </div>
   )
 }
 
@@ -425,11 +583,10 @@ export function Lesson() {
   const [celebration, setCelebration] = useState<string | null>(null)
 
   const hold = lesson ? profile.holds[lesson.id] : undefined
-  const completedCount = STAGE_ORDER.filter((s) => hold?.stages[s]?.completedAt).length
-  const unlockedCount = Math.min(completedCount + 1, STAGE_ORDER.length)
+  const unlockedCount = unlockedStageCount(hold)
 
   const [currentStage, setCurrentStage] = useState<StageId>(() => {
-    const firstIncomplete = STAGE_ORDER.find((s) => !hold?.stages[s]?.completedAt)
+    const firstIncomplete = STAGE_ORDER.find((s) => !stageIsDone(hold, s))
     return firstIncomplete ?? 'climb'
   })
 
@@ -454,10 +611,18 @@ export function Lesson() {
   function handleStageComplete(stageId: StageId, tries: number) {
     const tier = stageId === 'climb' ? tierForClimbTries(tries) : tierForStageTries(tries)
     const who = activeProfile === 'kid' ? progressDoc.settings.kidName : progressDoc.settings.parentName
-    if (stageId === 'watch') {
-      // Watching is not an achievement yet: mark it done (+5 XP) but no box token.
+    if (stageId === 'learn' || stageId === 'watch') {
+      // Learning/watching is not an achievement yet: mark it done (+5 XP) but
+      // no box token, and nudge straight on to the next stage.
       awardStage(activeProfile, lesson!.id, stageId, tries, tier, false)
-      celebrate('bronze', `Nice watching, ${who}! Now try it yourself. 💪`)
+      celebrate(
+        'bronze',
+        stageId === 'learn'
+          ? `Great learning, ${who}! Now watch it in action. 🧗`
+          : `Nice watching, ${who}! Now try it yourself. 💪`,
+      )
+      const at = STAGE_ORDER.indexOf(stageId)
+      if (at + 1 < STAGE_ORDER.length) setCurrentStage(STAGE_ORDER[at + 1])
       return
     }
     awardStage(activeProfile, lesson!.id, stageId, tries, tier)
@@ -504,7 +669,7 @@ export function Lesson() {
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
         {STAGE_ORDER.map((stage, i) => {
           const locked = i >= unlockedCount
-          const done = Boolean(hold?.stages[stage]?.completedAt)
+          const done = stageIsDone(hold, stage)
           return (
             <button
               key={stage}
@@ -549,6 +714,15 @@ export function Lesson() {
         )}
       </div>
 
+      {currentStage === 'learn' && (
+        <LearnPanel
+          key={lesson.id}
+          lesson={lesson}
+          tempoScale={tempoScale}
+          showLetters={showLetters}
+          onComplete={() => handleStageComplete('learn', 1)}
+        />
+      )}
       {currentStage === 'watch' && (
         <WatchPanel
           lesson={lesson}

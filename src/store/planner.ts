@@ -5,10 +5,11 @@ import type { ProfileProgress } from './progress'
 // Pacing estimates
 // ---------------------------------------------------------------------------
 
-export type StageId = 'watch' | 'try' | 'spot' | 'climb'
+export type StageId = 'learn' | 'watch' | 'try' | 'spot' | 'climb'
 
 /** Default minutes-per-stage, used until we have real per-kid data. */
 export const STAGE_MINUTES: Record<StageId, number> = {
+  learn: 4,
   watch: 2,
   try: 5,
   spot: 3,
@@ -28,6 +29,7 @@ function isStageId(id: string): id is StageId {
  */
 export function personalPace(profile: ProfileProgress): Record<StageId, number> {
   const totals: Record<StageId, { sum: number; count: number }> = {
+    learn: { sum: 0, count: 0 },
     watch: { sum: 0, count: 0 },
     try: { sum: 0, count: 0 },
     spot: { sum: 0, count: 0 },

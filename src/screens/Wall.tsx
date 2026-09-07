@@ -8,19 +8,56 @@ import {
   useSessionTimer,
   type HoldStagesSpec,
 } from '../store/planner'
-import { HOLD_ORDER, LESSON_LIST } from '../content/lessons'
+import { HOLD_ORDER, LESSON_LIST, type Lesson } from '../content/lessons'
 import { fireConfetti } from '../components/Confetti'
 
-const STAGE_IDS = ['watch', 'try', 'spot', 'climb'] as const
+const STAGE_IDS = ['learn', 'watch', 'try', 'spot', 'climb'] as const
+const STAGE_LABEL: Record<(typeof STAGE_IDS)[number], string> = {
+  learn: 'Learn',
+  watch: 'Watch',
+  try: 'Try',
+  spot: 'Spot it',
+  climb: 'Climb',
+}
 
 type HoldState = 'locked' | 'open' | 'mastered'
 
-function holdState(profile: ProfileProgress, index: number): HoldState {
+/**
+ * Kid climbs the wall one hold at a time. Coach (the parent profile) gets
+ * every hold unlocked from the start, so they can read ahead and learn the
+ * method before teaching it.
+ */
+function holdState(profile: ProfileProgress, index: number, unlockAll: boolean): HoldState {
   const id = HOLD_ORDER[index]
   if (profile.holds[id]?.masteredAt) return 'mastered'
-  if (index === 0) return 'open'
+  if (unlockAll || index === 0) return 'open'
   const prevId = HOLD_ORDER[index - 1]
   return profile.holds[prevId]?.masteredAt ? 'open' : 'locked'
+}
+
+interface NextUp {
+  lesson: Lesson
+  stage: (typeof STAGE_IDS)[number]
+}
+
+/**
+ * The very next thing to do: the first stage of the first hold that isn't
+ * finished yet. Legacy docs saved before the Learn stage existed have no
+ * 'learn' record, so a hold whose Watch is already done is never sent back to
+ * Learn.
+ */
+function findNextUp(profile: ProfileProgress): NextUp | undefined {
+  for (const lesson of LESSON_LIST) {
+    const hold = profile.holds[lesson.id]
+    if (hold?.masteredAt) continue
+    const watched = Boolean(hold?.stages.watch?.completedAt)
+    for (const stage of STAGE_IDS) {
+      if (hold?.stages[stage]?.completedAt) continue
+      if (stage === 'learn' && watched) continue
+      return { lesson, stage }
+    }
+  }
+  return undefined
 }
 
 /** Min star rating across all 4 stages - every stage has to shine for the hold to. */
@@ -135,9 +172,49 @@ export function Wall() {
   const sessionDays = useMemo(() => new Set(profile.sessions.map((s) => s.day)), [profile.sessions])
 
   const wallOrder = HOLD_ORDER.map((_id, i) => i).reverse() // summit at top
+  const unlockAll = activeProfile === 'parent'
+  const nextUp = findNextUp(profile)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1rem 1rem 2rem' }}>
+      {nextUp ? (
+        <button
+          type="button"
+          className="cc-btn cc-btn-primary"
+          onClick={() => navigate(`/lesson/${nextUp.lesson.id}`)}
+          style={{
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: '0.2rem',
+            padding: '0.9rem 1.1rem',
+            minHeight: 72,
+            textAlign: 'left',
+          }}
+        >
+          <span style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.85 }}>
+            Continue: Hold {nextUp.lesson.number} · {nextUp.lesson.title}
+          </span>
+          <span style={{ fontSize: '1.1rem', fontWeight: 900 }}>
+            {STAGE_LABEL[nextUp.stage]} ▶
+          </span>
+        </button>
+      ) : (
+        <div className="cc-card" style={{ padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+          <strong style={{ fontSize: '1.1rem' }}>You did it, {kidName}! 🏔️</strong>
+          <span style={{ color: 'var(--cc-ink-soft)', fontWeight: 700 }}>
+            Every hold is mastered. Try Help with my cube on a real scramble, or beat your best time.
+          </span>
+          <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+            <button type="button" className="cc-btn cc-btn-primary" onClick={() => navigate('/help')}>
+              🧩 Help with my cube
+            </button>
+            <button type="button" className="cc-btn cc-btn-surface" onClick={() => navigate('/solves')}>
+              ⏱ Beat your time
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="cc-card" style={{ padding: '1rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 800 }}>
           <span aria-hidden="true">🔥</span>
@@ -221,7 +298,7 @@ export function Wall() {
         </h2>
         {wallOrder.map((index, rowPos) => {
           const lesson = LESSON_LIST[index]
-          const state = holdState(profile, index)
+          const state = holdState(profile, index, unlockAll)
           const stars = holdStars(profile.holds[lesson.id])
           const remainingMinutes =
             state !== 'mastered'

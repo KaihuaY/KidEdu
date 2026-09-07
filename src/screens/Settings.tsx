@@ -366,6 +366,29 @@ export function Settings() {
       </section>
 
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Secret word</h2>
+        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+          Everyone must type the secret word once per device. Default: <strong>climb</strong>. To change it, run{' '}
+          <code>node scripts/hash-password.mjs &lt;new word&gt;</code> and paste the result into{' '}
+          <code>src/content/access.ts</code>, then push.
+        </p>
+        <button
+          type="button"
+          className="cc-btn cc-btn-surface"
+          onClick={() => {
+            try {
+              localStorage.removeItem('cubeclimb.unlocked')
+            } catch {
+              // Nothing to clean up if storage is unavailable.
+            }
+            window.location.reload()
+          }}
+        >
+          Lock this device now
+        </button>
+      </section>
+
+      <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <h2 style={{ margin: 0, fontSize: '1.05rem' }}>GitHub sync</h2>
         <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>Status: {syncStatus}</p>
         {getToken() ? (
