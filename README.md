@@ -71,8 +71,8 @@ node scripts/hash-password.mjs <new word>
 Paste the printed hash into `FAMILY_PASSWORD_SHA256` in
 `src/content/access.ts`, then commit and push.
 
-A parent/coach can also force a device to re-ask for the secret word from
-**Settings → Secret word → Lock this device now**.
+A grown-up can also force a device to re-ask for the secret word from
+**Settings (grown-up PIN) → Secret word → Lock this device now**.
 
 ## Syncing progress across devices (parent setup)
 
@@ -113,7 +113,7 @@ an iPad propped on the music stand, microphone only - no MIDI, no teaching.
      recorder running.
   2. **Nora self-rates** each take right after recording it (😕 🙂 🤩) - purely
      for her own reflection, it never affects tokens.
-  3. **The parent listens later** (on any device, behind the Settings PIN,
+  3. **The parent listens later** (on any device, behind the grown-up PIN,
      under "👀 Grown-up review") and gives 1-3 stars. Two stars awards a
      silver token, three stars gold, mirroring the cube's reward economy;
      one rating per day.
@@ -163,8 +163,8 @@ URL the script owns.
    to **Me** and **Who has access** to **Anyone**. Click **Deploy**,
    authorize when Google asks, and copy the **Web app URL** (it ends in
    `/exec`).
-4. In Practice: **Settings (PIN) → Google Drive upload**, paste the URL and
-   the same secret, optionally change the folder name (default
+4. In Practice: **Settings (grown-up PIN) → Google Drive upload**, paste the
+   URL and the same secret, optionally change the folder name (default
    "Nora Piano"), then press **Test**. Enter it once on the laptop - the
    iPad picks it up through gist sync within a minute.
 
@@ -172,11 +172,14 @@ Redeploying after editing the script: **Deploy → Manage deployments →
 pencil icon → Version: New version → Deploy** (the URL stays the same).
 
 Recordings upload in the background after every take, on Piano home
-opening, and whenever the device comes back online; a small chip on
-Settings shows "☁️ N saved · N waiting · N failed", with "Retry failed"
-when anything failed. A stuck upload never blocks Nora - the take is saved
-locally and any token already awarded before an upload is even attempted;
-it just quietly retries with backoff (1 min, then 5 min, then 30 min) up to
+opening, every 30 seconds, and whenever the device comes back online - this
+also picks up any take recorded before Drive was configured at all, not
+just ones recorded since. A small chip under each take shows "☁️ Saved to
+Drive", "☁️ Uploading…", "☁️ Uploading soon" (with an inline "Upload now"),
+or "☁️ Upload failed" (with "Try again") - both buttons skip straight past
+the wait. A stuck upload never blocks Nora - the take is saved locally and
+any token already awarded before an upload is even attempted; it just
+quietly retries with backoff (10s, then 60s, then 5 min, then 30 min) up to
 8 attempts before giving up, and can always be retried by hand.
 
 **Smoke test**, from a terminal, once deployed:

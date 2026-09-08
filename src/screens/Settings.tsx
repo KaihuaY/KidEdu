@@ -344,7 +344,7 @@ export function Settings() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '1rem 1rem 3rem' }}>
-      <h1 style={{ margin: 0, fontSize: '1.4rem' }}>Coach&apos;s Settings</h1>
+      <h1 style={{ margin: 0, fontSize: '1.4rem' }}>Grown-up settings</h1>
 
       <button
         type="button"
@@ -362,13 +362,6 @@ export function Settings() {
           <input
             value={settings.kidName}
             onChange={(e) => update('settings', (s) => ({ ...s, kidName: e.target.value }))}
-          />
-        </label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontWeight: 700 }}>
-          Parent&apos;s name
-          <input
-            value={settings.parentName}
-            onChange={(e) => update('settings', (s) => ({ ...s, parentName: e.target.value }))}
           />
         </label>
       </section>

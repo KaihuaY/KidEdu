@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { navigate } from '../../router'
 import { useProgress } from '../../store/progress'
 import { setSelfRating, usePiano } from '../../store/piano'
 import { activeSecondsForDay, goalProgress } from '../../store/pianoRewards'
 import { formatClock, localDay } from '../../store/sessions'
 import { dismiss, stopTake, useRecordingSession } from '../../audio/recordingSession'
-import { getRecordingStore, useLocalAudioIds } from '../../store/recordings'
 import { RingTimer } from '../../components/RingTimer'
 import { LevelMeter } from '../../components/LevelMeter'
 import { SelfRatingButtons } from '../../components/SelfRatingButtons'
+import { TakePlayer } from '../../components/TakePlayer'
 
 const QUIET_HINT_SEC = 20
 
@@ -23,41 +23,6 @@ const ERROR_MESSAGES: Record<string, string> = {
 function backToPiano(): void {
   dismiss()
   navigate('/piano')
-}
-
-/** Lazily loads the local blob for a take on first tap, and plays it. Renders nothing if the audio isn't on this device. */
-function Listen({ takeId }: { takeId: string }) {
-  const localAudioIds = useLocalAudioIds()
-  const isLocal = localAudioIds.has(takeId)
-  const [objectUrl, setObjectUrl] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    return () => {
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
-    }
-  }, [objectUrl])
-
-  if (!isLocal) return null
-
-  async function handleListen() {
-    if (objectUrl || loading) return
-    setLoading(true)
-    try {
-      const blob = await getRecordingStore().get(takeId)
-      if (blob) setObjectUrl(URL.createObjectURL(blob))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  if (objectUrl) return <audio controls playsInline src={objectUrl} style={{ width: '100%' }} />
-
-  return (
-    <button type="button" className="cc-btn cc-btn-surface" disabled={loading} onClick={() => void handleListen()}>
-      ▶ {loading ? 'Loading…' : 'Listen'}
-    </button>
-  )
 }
 
 export function Record() {
@@ -165,7 +130,7 @@ export function Record() {
           <p style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>You filled the ring! 🟤 +1 token</p>
         )}
         <SelfRatingButtons value={liveSelfRating} onChange={(rating) => setSelfRating(take.id, rating)} />
-        <Listen takeId={take.id} />
+        {take.hasAudio && <TakePlayer take={take} />}
         <button type="button" className="cc-btn cc-btn-primary" style={{ minHeight: 56 }} onClick={backToPiano}>
           ✅ Done
         </button>

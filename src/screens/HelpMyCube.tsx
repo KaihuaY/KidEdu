@@ -10,7 +10,6 @@ import { validateFacelets } from '../engine/validate'
 import { NAMED_ALGS } from '../engine/notation'
 import { detectPhase, solveLBL, type PhaseId, type Solution, type SolveStep } from '../engine/solver'
 import { holdForPhase } from '../content/lessons'
-import { useActiveProfile } from '../store/activeProfile'
 import { useProgress } from '../store/progress'
 import { logSolve } from '../store/solves'
 import { CubeTabs } from '../components/CubeTabs'
@@ -187,7 +186,6 @@ export function HelpMyCube() {
   const [solution, setSolution] = useState<{ original: string; solution: Solution } | null>(null)
   const [solveError, setSolveError] = useState<string | null>(null)
   const [celebrating, setCelebrating] = useState<string | null>(null)
-  const activeProfile = useActiveProfile()
   const progress = useProgress()
 
   useEffect(() => {
@@ -208,7 +206,7 @@ export function HelpMyCube() {
   }
 
   function handleFinished() {
-    const { firstEverForProfile } = logSolve(activeProfile, null)
+    const { firstEverForProfile } = logSolve('kid', null)
     fireConfetti('big')
     setCelebrating(
       firstEverForProfile

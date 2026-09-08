@@ -1,7 +1,7 @@
-// Module-level singleton store for the in-progress piano take, same pattern
-// as src/store/activeProfile.ts: plain get/subscribe functions plus a React
-// hook built on useSyncExternalStore. Owns the whole start -> recording ->
-// stop -> saved lifecycle so PianoHome and Record.tsx just render state.
+// Module-level singleton store for the in-progress piano take: plain
+// get/subscribe functions plus a React hook built on useSyncExternalStore.
+// Owns the whole start -> recording -> stop -> saved lifecycle so PianoHome
+// and Record.tsx just render state.
 
 import { useSyncExternalStore } from 'react'
 import { ActivityMeter } from './activityMeter'

@@ -6,6 +6,7 @@ import {
   processUploadQueue,
   retryFailedUploads,
   testDriveConnection,
+  uploadNow,
   useUploadSummary,
   type DriveConfig,
 } from '../driveUpload'
@@ -179,40 +180,96 @@ describe('processUploadQueue', () => {
     expect(take.upload).toMatchObject({ status: 'pending', attempts: 1, lastError: 'bad secret' })
   })
 
-  it('does nothing on a second call within the backoff window', async () => {
+  it('does nothing on a second call within the backoff window (10s after the 1st attempt)', async () => {
     addTake(makeTake({ upload: { status: 'pending', attempts: 1, updatedAt: 1_000_000, lastError: 'boom' } }))
     const fetchFn = okFetch({ ok: true, fileId: 'x', url: 'u' })
     const store = fakeStore({ 'take-1': new Blob([new Uint8Array(10)], { type: 'audio/mp4' }) })
 
-    // 30s later - still within the 60s backoff after 1 attempt.
+    // 5s later - still within the 10s backoff after 1 attempt.
     await processUploadQueue({
       fetch: fetchFn,
       store,
       deviceId: DEVICE_ID,
       online: () => true,
-      now: () => 1_030_000,
+      now: () => 1_005_000,
     })
 
     expect(fetchFn).not.toHaveBeenCalled()
     expect(getDoc().piano.takes[0].upload?.status).toBe('pending')
   })
 
-  it('retries once the backoff window has passed', async () => {
+  it('retries once the backoff window has passed (10s after the 1st attempt)', async () => {
     addTake(makeTake({ upload: { status: 'pending', attempts: 1, updatedAt: 1_000_000 } }))
     const fetchFn = okFetch({ ok: true, fileId: 'x', url: 'u' })
     const store = fakeStore({ 'take-1': new Blob([new Uint8Array(10)], { type: 'audio/mp4' }) })
 
-    // 61s later - past the 60s backoff after 1 attempt.
+    // 11s later - past the 10s backoff after 1 attempt.
     await processUploadQueue({
       fetch: fetchFn,
       store,
       deviceId: DEVICE_ID,
       online: () => true,
-      now: () => 1_061_000,
+      now: () => 1_011_000,
     })
 
     expect(fetchFn).toHaveBeenCalledTimes(1)
     expect(getDoc().piano.takes[0].upload?.status).toBe('done')
+  })
+
+  it('waits 60s after the 2nd attempt, then 5min after the 3rd, then 30min after the 4th+', async () => {
+    const schedule: Array<[attempts: number, backoffMs: number]> = [
+      [2, 60_000],
+      [3, 5 * 60_000],
+      [4, 30 * 60_000],
+      [7, 30 * 60_000], // capped - no further growth past the 4th backoff stage
+    ]
+    for (const [attempts, backoff] of schedule) {
+      addTake(makeTake({ id: `sched-${attempts}`, upload: { status: 'pending', attempts, updatedAt: 1_000_000 } }))
+      const fetchFn = okFetch({ ok: true, fileId: 'x', url: 'u' })
+      const store = fakeStore({ [`sched-${attempts}`]: new Blob([new Uint8Array(10)], { type: 'audio/mp4' }) })
+
+      // Just before the boundary: still blocked.
+      await processUploadQueue({
+        fetch: fetchFn,
+        store,
+        deviceId: DEVICE_ID,
+        online: () => true,
+        now: () => 1_000_000 + backoff - 1_000,
+      })
+      expect(fetchFn).not.toHaveBeenCalled()
+
+      // Just past the boundary: retries.
+      await processUploadQueue({
+        fetch: fetchFn,
+        store,
+        deviceId: DEVICE_ID,
+        online: () => true,
+        now: () => 1_000_000 + backoff + 1_000,
+      })
+      expect(fetchFn).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it('picks up a take that has local audio but no `upload` field at all (e.g. recorded before Drive was configured)', async () => {
+    addTake(makeTake({ upload: undefined }))
+    const fetchFn = okFetch({ ok: true, fileId: 'abc', url: 'https://drive/view' })
+    const store = fakeStore({ 'take-1': new Blob([new Uint8Array(10)], { type: 'audio/mp4' }) })
+
+    await processUploadQueue({ fetch: fetchFn, store, deviceId: DEVICE_ID, online: () => true })
+
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(getDoc().piano.takes[0].upload).toMatchObject({ status: 'done', driveFileId: 'abc' })
+  })
+
+  it('still skips a no-upload-field take recorded on another device', async () => {
+    addTake(makeTake({ deviceId: OTHER_DEVICE_ID, upload: undefined }))
+    const fetchFn = okFetch({ ok: true, fileId: 'x', url: 'u' })
+    const store = fakeStore({ 'take-1': new Blob([new Uint8Array(10)], { type: 'audio/mp4' }) })
+
+    await processUploadQueue({ fetch: fetchFn, store, deviceId: DEVICE_ID, online: () => true })
+
+    expect(fetchFn).not.toHaveBeenCalled()
+    expect(getDoc().piano.takes[0].upload).toBeUndefined()
   })
 
   it('gives up after too many attempts', async () => {
@@ -312,6 +369,71 @@ describe('retryFailedUploads', () => {
     const takes = getDoc().piano.takes
     expect(takes.find((t) => t.id === 't1')?.upload).toMatchObject({ status: 'pending', attempts: 0 })
     expect(takes.find((t) => t.id === 't2')?.upload).toMatchObject({ status: 'done' })
+  })
+})
+
+describe('uploadNow', () => {
+  it('resets a failed take (the "Try again" chip button) and uploads it immediately', async () => {
+    addTake(makeTake({ upload: { status: 'failed', attempts: 8, updatedAt: 0, lastError: 'gave up' } }))
+    const fetchFn = okFetch({ ok: true, fileId: 'x', url: 'u' })
+    const store = fakeStore({ 'take-1': new Blob([new Uint8Array(10)], { type: 'audio/mp4' }) })
+
+    await uploadNow('take-1', { fetch: fetchFn, store, deviceId: DEVICE_ID, online: () => true })
+
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(getDoc().piano.takes[0].upload?.status).toBe('done')
+  })
+
+  it('clears a pending take out of its backoff window (the "Upload now" chip button)', async () => {
+    addTake(makeTake({ upload: { status: 'pending', attempts: 1, updatedAt: 1_000_000, lastError: 'boom' } }))
+    const fetchFn = okFetch({ ok: true, fileId: 'x', url: 'u' })
+    const store = fakeStore({ 'take-1': new Blob([new Uint8Array(10)], { type: 'audio/mp4' }) })
+
+    // Still well within the 10s backoff, but uploadNow ignores that.
+    await uploadNow('take-1', { fetch: fetchFn, store, deviceId: DEVICE_ID, online: () => true, now: () => 1_001_000 })
+
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(getDoc().piano.takes[0].upload?.status).toBe('done')
+  })
+
+  it('enqueues and uploads a take with no `upload` field at all when called with its id', async () => {
+    addTake(makeTake({ upload: undefined }))
+    const fetchFn = okFetch({ ok: true, fileId: 'x', url: 'u' })
+    const store = fakeStore({ 'take-1': new Blob([new Uint8Array(10)], { type: 'audio/mp4' }) })
+
+    await uploadNow('take-1', { fetch: fetchFn, store, deviceId: DEVICE_ID, online: () => true })
+
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(getDoc().piano.takes[0].upload?.status).toBe('done')
+  })
+
+  it('leaves an already-done take alone', async () => {
+    addTake(makeTake({ upload: { status: 'done', attempts: 1, updatedAt: 0, driveFileId: 'f1' } }))
+    const fetchFn = okFetch({ ok: true, fileId: 'x', url: 'u' })
+    const store = fakeStore({ 'take-1': new Blob([new Uint8Array(10)], { type: 'audio/mp4' }) })
+
+    await uploadNow('take-1', { fetch: fetchFn, store, deviceId: DEVICE_ID, online: () => true })
+
+    expect(fetchFn).not.toHaveBeenCalled()
+    expect(getDoc().piano.takes[0].upload).toMatchObject({ status: 'done', driveFileId: 'f1' })
+  })
+
+  it('with no id, clears every pending/uploading take out of backoff and uploads them all', async () => {
+    addTake(makeTake({ id: 't1', upload: { status: 'pending', attempts: 1, updatedAt: 1_000_000 } }))
+    addTake(makeTake({ id: 't2', upload: { status: 'pending', attempts: 2, updatedAt: 1_000_000 } }))
+    addTake(makeTake({ id: 't3', upload: { status: 'failed', attempts: 8, updatedAt: 0 } })) // untouched - not "pending"
+    const fetchFn = okFetch({ ok: true, fileId: 'x', url: 'u' })
+    const store = fakeStore({
+      t1: new Blob([new Uint8Array(10)], { type: 'audio/mp4' }),
+      t2: new Blob([new Uint8Array(10)], { type: 'audio/mp4' }),
+    })
+
+    await uploadNow(undefined, { fetch: fetchFn, store, deviceId: DEVICE_ID, online: () => true, now: () => 1_001_000 })
+
+    const takes = getDoc().piano.takes
+    expect(takes.find((t) => t.id === 't1')?.upload?.status).toBe('done')
+    expect(takes.find((t) => t.id === 't2')?.upload?.status).toBe('done')
+    expect(takes.find((t) => t.id === 't3')?.upload?.status).toBe('failed')
   })
 })
 

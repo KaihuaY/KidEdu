@@ -15,7 +15,6 @@ import {
   type Lesson as LessonContent,
 } from '../content/lessons'
 import { useProgress, update, type HoldProgress, type StageProgress } from '../store/progress'
-import { useActiveProfile } from '../store/activeProfile'
 import { maxStars, starsForTier, tierForClimbTries, tierForStageTries, xpForTier, type Tier } from '../store/rewards'
 
 type StageId = 'learn' | 'watch' | 'try' | 'spot' | 'climb'
@@ -574,11 +573,11 @@ export function Lesson() {
   const { params } = useRoute()
   const lesson = lessonById(params.id ?? '')
   const progressDoc = useProgress()
-  const activeProfile = useActiveProfile()
-  const profile = progressDoc.profiles[activeProfile]
-  const isParent = activeProfile === 'parent'
+  const profile = progressDoc.profiles.kid
 
-  const [showLetters, setShowLetters] = useState(isParent)
+  // Notation letters alongside move arrows used to be a parent-only toggle;
+  // now that there's only the kid profile, it just stays off.
+  const showLetters = false
   const [tempoScale, setTempoScale] = useState(1)
   const [celebration, setCelebration] = useState<string | null>(null)
 
@@ -590,7 +589,7 @@ export function Lesson() {
     return firstIncomplete ?? 'climb'
   })
 
-  useStageMinutesTracker(activeProfile, lesson?.id ?? '', currentStage)
+  useStageMinutesTracker('kid', lesson?.id ?? '', currentStage)
 
   if (!lesson) {
     return (
@@ -610,11 +609,11 @@ export function Lesson() {
 
   function handleStageComplete(stageId: StageId, tries: number) {
     const tier = stageId === 'climb' ? tierForClimbTries(tries) : tierForStageTries(tries)
-    const who = activeProfile === 'kid' ? progressDoc.settings.kidName : progressDoc.settings.parentName
+    const who = progressDoc.settings.kidName
     if (stageId === 'learn' || stageId === 'watch') {
       // Learning/watching is not an achievement yet: mark it done (+5 XP) but
       // no box token, and nudge straight on to the next stage.
-      awardStage(activeProfile, lesson!.id, stageId, tries, tier, false)
+      awardStage('kid', lesson!.id, stageId, tries, tier, false)
       celebrate(
         'bronze',
         stageId === 'learn'
@@ -625,10 +624,10 @@ export function Lesson() {
       if (at + 1 < STAGE_ORDER.length) setCurrentStage(STAGE_ORDER[at + 1])
       return
     }
-    awardStage(activeProfile, lesson!.id, stageId, tries, tier)
+    awardStage('kid', lesson!.id, stageId, tries, tier)
 
     if (stageId === 'climb') {
-      const justMastered = masterHold(activeProfile, lesson!.id)
+      const justMastered = masterHold('kid', lesson!.id)
       if (justMastered) {
         celebrate('gold', `${who} mastered ${lesson!.title}! 🏔️ A gold token is yours!`)
       } else {
@@ -706,12 +705,6 @@ export function Lesson() {
           />
           <span>{tempoScale.toFixed(2)}x</span>
         </label>
-        {isParent && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }}>
-            <input type="checkbox" checked={showLetters} onChange={(e) => setShowLetters(e.target.checked)} />
-            Show letters
-          </label>
-        )}
       </div>
 
       {currentStage === 'learn' && (

@@ -7,19 +7,13 @@ import { dayOffset, formatClock, localDay } from '../../store/sessions'
 import { formatBytes, getRecordingStore } from '../../store/recordings'
 import { PinGate } from '../../components/PinGate'
 import { TakePlayer } from '../../components/TakePlayer'
+import { UploadChip } from '../../components/UploadChip'
 import { fireConfetti } from '../../components/Confetti'
 
 const SELF_RATING_EMOJI: Record<SelfRating, string> = { 1: '😕', 2: '🙂', 3: '🤩' }
 
 function pieceLabel(piece: PianoPiece | undefined): string {
   return piece ? `${piece.emoji} ${piece.name}` : '🎵 Free play'
-}
-
-function uploadLineFor(take: PianoTake): string | null {
-  if (take.upload?.status === 'done') return '☁️ Saved to Drive'
-  if (take.upload?.status === 'pending' || take.upload?.status === 'uploading') return '☁️ Waiting to upload'
-  if (take.upload?.status === 'failed') return '☁️ Upload failed'
-  return null
 }
 
 /** "Today", "Yesterday", or "Monday, Sep 1" for any other local day. */
@@ -32,7 +26,6 @@ function dayLabel(day: string, today: string): string {
 
 function TakeRow({ take, piece }: { take: PianoTake; piece: PianoPiece | undefined }) {
   const wallTime = new Date(take.startedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-  const uploadLine = uploadLineFor(take)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem' }}>
@@ -49,7 +42,7 @@ function TakeRow({ take, piece }: { take: PianoTake; piece: PianoPiece | undefin
         </span>
       )}
       <TakePlayer take={take} />
-      {uploadLine && <span style={{ color: 'var(--cc-ink-soft)', fontSize: '0.8rem' }}>{uploadLine}</span>}
+      <UploadChip take={take} />
     </div>
   )
 }

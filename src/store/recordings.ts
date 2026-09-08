@@ -202,7 +202,7 @@ export function formatBytes(n: number): string {
 // Screens want to know "does this take still have its audio on THIS
 // device" without threading a store instance through every component, and
 // want to re-render when that changes (a take is recorded, pruned, or
-// deleted). Mirrors the useSyncExternalStore pattern in activeProfile.ts.
+// deleted). Mirrors the useSyncExternalStore pattern in recordingSession.ts.
 
 let localAudioIds: ReadonlySet<string> = new Set()
 const idListeners = new Set<() => void>()

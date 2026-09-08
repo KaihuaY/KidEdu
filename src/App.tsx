@@ -2,8 +2,7 @@ import { Gate } from './components/Gate'
 import { isInArea, useRoute } from './router'
 import { useProgress } from './store/progress'
 import { useSyncStatus, type SyncStatus } from './store/gistSync'
-import { toggleActiveProfile, useActiveProfile } from './store/activeProfile'
-import { isRecordingActive, useRecordingSession } from './audio/recordingSession'
+import { RecordingBanner } from './components/RecordingBanner'
 import { Home } from './screens/Home'
 import { Wall } from './screens/Wall'
 import { Lesson } from './screens/Lesson'
@@ -59,15 +58,6 @@ function App() {
   const { path, navigate } = useRoute()
   const progress = useProgress()
   const syncStatus = useSyncStatus()
-  const activeProfile = useActiveProfile()
-  const recordingSession = useRecordingSession()
-
-  const activeName =
-    activeProfile === 'kid' ? progress.settings.kidName : progress.settings.parentName
-
-  // Full-screen, no header/nav, while a piano take is actively being
-  // recorded (not just while sitting on /piano/record in some other state).
-  const hideChrome = path === '/piano/record' && isRecordingActive(recordingSession)
 
   return (
     <Gate>
@@ -78,7 +68,6 @@ function App() {
         minHeight: '100%',
       }}
     >
-      {!hideChrome && (
       <header
         className="cc-safe-top cc-safe-x"
         style={{
@@ -92,18 +81,8 @@ function App() {
         }}
       >
         <strong style={{ fontSize: '1.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {activeName}&apos;s Practice
+          {progress.settings.kidName}&apos;s Practice
         </strong>
-
-        <button
-          type="button"
-          className="cc-btn cc-btn-surface"
-          style={{ minHeight: 40, padding: '0.4rem 0.9rem', flexShrink: 0 }}
-          onClick={toggleActiveProfile}
-          aria-label={`Switch profile (currently ${activeName})`}
-        >
-          🔁 {activeProfile === 'kid' ? progress.settings.parentName : progress.settings.kidName}
-        </button>
 
         <span
           title={`Sync: ${syncStatus}`}
@@ -118,13 +97,13 @@ function App() {
           }}
         />
       </header>
-      )}
 
       <main style={{ flex: 1, overflow: 'auto' }}>
         <Screen path={path} />
       </main>
 
-      {!hideChrome && (
+      <RecordingBanner path={path} />
+
       <nav
         className="cc-safe-bottom cc-safe-x"
         style={{
@@ -168,7 +147,6 @@ function App() {
           )
         })}
       </nav>
-      )}
     </div>
     </Gate>
   )

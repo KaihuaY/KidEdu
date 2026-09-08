@@ -138,6 +138,67 @@ button {
     padding-left: var(--cc-safe-left);
     padding-right: var(--cc-safe-right);
   }
+
+  /* A big, thumb-friendly seek bar for TakePlayer's custom audio player -
+     the native <input type="range"> look is too thin/fiddly for a kid. */
+  .cc-seek {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 14px;
+    margin: 0;
+    border-radius: 999px;
+    background: var(--cc-border);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .cc-seek::-webkit-slider-runnable-track {
+    height: 14px;
+    border-radius: 999px;
+    background: linear-gradient(
+      to right,
+      var(--cc-primary) 0%,
+      var(--cc-primary) calc(var(--cc-seek-fill, 0%)),
+      var(--cc-border) calc(var(--cc-seek-fill, 0%)),
+      var(--cc-border) 100%
+    );
+  }
+
+  .cc-seek::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 28px;
+    height: 28px;
+    margin-top: -7px;
+    border-radius: 50%;
+    background: var(--cc-primary);
+    border: 3px solid var(--cc-surface);
+    box-shadow: var(--cc-shadow);
+    cursor: pointer;
+  }
+
+  .cc-seek::-moz-range-track {
+    height: 14px;
+    border-radius: 999px;
+    background: var(--cc-border);
+  }
+
+  .cc-seek::-moz-range-progress {
+    height: 14px;
+    border-radius: 999px;
+    background: var(--cc-primary);
+  }
+
+  .cc-seek::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--cc-primary);
+    border: 3px solid var(--cc-surface);
+    box-shadow: var(--cc-shadow);
+    cursor: pointer;
+  }
 }
 
 /* A quick "oops, try again" wiggle - used on wrong taps/picks across the

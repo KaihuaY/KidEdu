@@ -1,6 +1,126 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
 import type { PianoTake } from '../store/progress'
 import { getRecordingStore, useLocalAudioIds } from '../store/recordings'
+import { formatClock } from '../store/sessions'
+
+const bigButtonStyle = {
+  width: 72,
+  height: 72,
+  borderRadius: '50%',
+  background: 'var(--cc-primary)',
+  color: '#fff',
+  border: 'none',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontSize: '1.8rem',
+  lineHeight: 1,
+  flexShrink: 0,
+  cursor: 'pointer',
+  padding: 0,
+} as const
+
+/**
+ * The actual playback UI, once we have a URL to play (a local blob's object
+ * URL, or a Drive URL) - a big round play/pause button plus a thick seek
+ * bar, both driven off a hidden <audio> element via React state rather than
+ * the tiny native controls. Callers key this by `src` so a different take's
+ * audio always mounts a fresh instance instead of this one trying to reset
+ * its own playing/currentTime/duration state mid-life.
+ */
+function BigPlayer({ src, fallbackDurationSec }: { src: string; fallbackDurationSec: number }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(fallbackDurationSec)
+  const [error, setError] = useState(false)
+
+  function handleLoadedMetadata() {
+    const audio = audioRef.current
+    if (!audio) return
+    // Some WebM recordings report an Infinity duration until more of the
+    // file has been read - fall back to what we already know from the take.
+    setDuration(Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : fallbackDurationSec)
+  }
+
+  function handleTimeUpdate() {
+    const audio = audioRef.current
+    if (audio) setCurrentTime(audio.currentTime)
+  }
+
+  function handleEnded() {
+    setPlaying(false)
+    setCurrentTime(0)
+  }
+
+  function togglePlay() {
+    const audio = audioRef.current
+    if (!audio) return
+    if (playing) {
+      audio.pause()
+      setPlaying(false)
+      return
+    }
+    audio
+      .play()
+      .then(() => setPlaying(true))
+      .catch(() => setError(true))
+  }
+
+  function handleSeek(e: ChangeEvent<HTMLInputElement>) {
+    const next = Number(e.target.value)
+    setCurrentTime(next)
+    if (audioRef.current) audioRef.current.currentTime = next
+  }
+
+  if (error) {
+    return <p style={{ margin: 0, color: 'var(--cc-danger)', fontWeight: 700 }}>Can&apos;t play this one. 😕</p>
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+      <audio
+        ref={audioRef}
+        src={src}
+        playsInline
+        preload="metadata"
+        onLoadedMetadata={handleLoadedMetadata}
+        onTimeUpdate={handleTimeUpdate}
+        onEnded={handleEnded}
+        onError={() => setError(true)}
+        style={{ display: 'none' }}
+      />
+      <button
+        type="button"
+        onClick={togglePlay}
+        aria-label={playing ? 'Pause' : 'Play'}
+        style={bigButtonStyle}
+      >
+        {playing ? '⏸' : '▶'}
+      </button>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+        <input
+          type="range"
+          className="cc-seek"
+          min={0}
+          max={duration || 0.01}
+          step={0.1}
+          value={Math.min(currentTime, duration || 0)}
+          onChange={handleSeek}
+          aria-label="Seek"
+          style={
+            {
+              '--cc-seek-fill': `${duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0}%`,
+            } as CSSProperties
+          }
+        />
+        <span style={{ fontSize: '0.8rem', color: 'var(--cc-ink-soft)', fontWeight: 700 }}>
+          {formatClock(Math.round(currentTime))} / {formatClock(Math.round(duration))}
+        </span>
+      </div>
+    </div>
+  )
+}
 
 /**
  * Plays back one piano take, wherever its audio lives: a local blob on this
@@ -15,6 +135,7 @@ export function TakePlayer({ take }: { take: PianoTake }) {
   const isLocal = localAudioIds.has(take.id)
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [loadingAudio, setLoadingAudio] = useState(false)
+  const [loadError, setLoadError] = useState(false)
 
   useEffect(() => {
     return () => {
@@ -25,32 +146,37 @@ export function TakePlayer({ take }: { take: PianoTake }) {
   async function handleListen() {
     if (objectUrl || loadingAudio) return
     setLoadingAudio(true)
+    setLoadError(false)
     try {
       const blob = await getRecordingStore().get(take.id)
       if (blob) setObjectUrl(URL.createObjectURL(blob))
+      else setLoadError(true)
+    } catch {
+      setLoadError(true)
     } finally {
       setLoadingAudio(false)
     }
   }
 
   if (isLocal) {
-    if (objectUrl) return <audio controls playsInline src={objectUrl} style={{ width: '100%' }} />
+    if (objectUrl) return <BigPlayer key={objectUrl} src={objectUrl} fallbackDurationSec={take.durationSec} />
+    if (loadingAudio) {
+      return <p style={{ margin: 0, fontWeight: 700, color: 'var(--cc-ink-soft)' }}>Getting your music… 🎵</p>
+    }
+    if (loadError) {
+      return <p style={{ margin: 0, color: 'var(--cc-danger)', fontWeight: 700 }}>Can&apos;t play this one. 😕</p>
+    }
     return (
-      <button
-        type="button"
-        className="cc-btn cc-btn-surface"
-        disabled={loadingAudio}
-        onClick={() => void handleListen()}
-      >
-        ▶ {loadingAudio ? 'Loading…' : 'Listen'}
+      <button type="button" onClick={() => void handleListen()} aria-label="Play" style={bigButtonStyle}>
+        ▶
       </button>
     )
   }
 
   if (take.upload?.driveUrl) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-        <audio controls preload="none" src={take.upload.driveUrl} style={{ width: '100%' }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <BigPlayer key={take.upload.driveUrl} src={take.upload.driveUrl} fallbackDurationSec={take.durationSec} />
         {take.upload.driveFileId && (
           <a
             href={`https://drive.google.com/file/d/${take.upload.driveFileId}/view`}

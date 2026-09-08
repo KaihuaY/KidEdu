@@ -4,7 +4,7 @@ import { useState } from 'react'
 export function PinGate({
   pin,
   onUnlock,
-  title = "Coach's Settings",
+  title = 'Grown-up settings',
 }: {
   pin: string
   onUnlock: () => void

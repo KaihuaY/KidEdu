@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { navigate } from '../router'
 import { useProgress, type HoldProgress, type ProfileProgress } from '../store/progress'
-import { useActiveProfile } from '../store/activeProfile'
 import { lastNDays, logCubeSession, formatClock } from '../store/sessions'
 import {
   estimateDaysToSummit,
@@ -27,15 +26,11 @@ const STAGE_LABEL: Record<(typeof STAGE_IDS)[number], string> = {
 
 type HoldState = 'locked' | 'open' | 'mastered'
 
-/**
- * Kid climbs the wall one hold at a time. Coach (the parent profile) gets
- * every hold unlocked from the start, so they can read ahead and learn the
- * method before teaching it.
- */
-function holdState(profile: ProfileProgress, index: number, unlockAll: boolean): HoldState {
+/** Kid climbs the wall one hold at a time - each one unlocks once the previous is mastered. */
+function holdState(profile: ProfileProgress, index: number): HoldState {
   const id = HOLD_ORDER[index]
   if (profile.holds[id]?.masteredAt) return 'mastered'
-  if (unlockAll || index === 0) return 'open'
+  if (index === 0) return 'open'
   const prevId = HOLD_ORDER[index - 1]
   return profile.holds[prevId]?.masteredAt ? 'open' : 'locked'
 }
@@ -73,8 +68,7 @@ function holdStars(hold: HoldProgress | undefined): 0 | 1 | 2 | 3 {
 
 export function Wall() {
   const progressDoc = useProgress()
-  const activeProfile = useActiveProfile()
-  const profile = progressDoc.profiles[activeProfile]
+  const profile = progressDoc.profiles.kid
   const kidName = progressDoc.settings.kidName
   const sessionMinutes = progressDoc.settings.goalMinutes.cube
   const timer = useSessionTimer(sessionMinutes)
@@ -87,9 +81,9 @@ export function Wall() {
       setCelebrating(true)
       timer.pause()
       fireConfetti('big')
-      logCubeSession(activeProfile, sessionMinutes)
+      logCubeSession('kid', sessionMinutes)
     }
-  }, [timer.reachedTarget, hasCelebratedThisRun, activeProfile, sessionMinutes, timer])
+  }, [timer.reachedTarget, hasCelebratedThisRun, sessionMinutes, timer])
 
   const holdSpecs: HoldStagesSpec[] = useMemo(
     () => LESSON_LIST.map((l) => ({ id: l.id, stages: [...STAGE_IDS] })),
@@ -100,7 +94,6 @@ export function Wall() {
   const sessionDays = useMemo(() => new Set(profile.sessions.map((s) => s.day)), [profile.sessions])
 
   const wallOrder = HOLD_ORDER.map((_id, i) => i).reverse() // summit at top
-  const unlockAll = activeProfile === 'parent'
   const nextUp = findNextUp(profile)
 
   return (
@@ -200,12 +193,10 @@ export function Wall() {
           gap: 0,
         }}
       >
-        <h2 style={{ margin: '0 0 0.5rem 0.25rem', fontSize: '1.1rem' }}>
-          {activeProfile === 'kid' ? `${kidName}'s Wall` : `${progressDoc.settings.parentName}'s Wall`}
-        </h2>
+        <h2 style={{ margin: '0 0 0.5rem 0.25rem', fontSize: '1.1rem' }}>{kidName}&apos;s Wall</h2>
         {wallOrder.map((index, rowPos) => {
           const lesson = LESSON_LIST[index]
-          const state = holdState(profile, index, unlockAll)
+          const state = holdState(profile, index)
           const stars = holdStars(profile.holds[lesson.id])
           const remainingMinutes =
             state !== 'mastered'

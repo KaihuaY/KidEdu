@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { useProgress, update, type Sticker, type Ticket } from '../store/progress'
-import { useActiveProfile } from '../store/activeProfile'
 import { COMMON_WEIGHT, STICKERS } from '../content/stickers'
 import { formatCents, pickWeighted, rollCashCents, rollTicket, type Tier } from '../store/rewards'
 import { fireConfetti } from '../components/Confetti'
@@ -24,8 +23,7 @@ function uid(): string {
 
 export function BlindBox() {
   const progress = useProgress()
-  const activeProfile = useActiveProfile()
-  const profile = progress.profiles[activeProfile]
+  const profile = progress.profiles.kid
   const [tab, setTab] = useState<'stickers' | 'tickets'>('stickers')
   const [redeeming, setRedeeming] = useState<Ticket | null>(null)
   const [redeemMsg, setRedeemMsg] = useState<string | null>(null)
@@ -51,8 +49,8 @@ export function BlindBox() {
     setOpening(tier)
 
     update('profiles', (profiles) => {
-      const p = profiles[activeProfile]
-      return { ...profiles, [activeProfile]: { ...p, tokens: { ...p.tokens, [tier]: p.tokens[tier] - 1 } } }
+      const p = profiles.kid
+      return { ...profiles, kid: { ...p, tokens: { ...p.tokens, [tier]: p.tokens[tier] - 1 } } }
     })
 
     setTimeout(() => {

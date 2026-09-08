@@ -84,7 +84,7 @@ export interface UploadDeps {
   deviceId?: string
 }
 
-const BACKOFF_MS = [60_000, 5 * 60_000, 30 * 60_000]
+const BACKOFF_MS = [10_000, 60_000, 5 * 60_000, 30 * 60_000]
 const MAX_ATTEMPTS = 8
 const STALE_UPLOADING_MS = 10 * 60_000
 
@@ -152,6 +152,13 @@ let uploading = false
  * Re-entrant calls while a run is already in progress are ignored - the
  * in-flight run will pick up anything new next pass (called again on a
  * timer / online event by startUploadWorker).
+ *
+ * A candidate is any take recorded on this device that still has its local
+ * audio and hasn't finished uploading - including a take with no `upload`
+ * field at all (recorded before Drive was configured, or otherwise never
+ * enqueued) and a take explicitly marked 'pending'/'uploading'. A take
+ * that's given up ('failed') is skipped here; it only comes back via
+ * retryFailedUploads() or uploadNow().
  */
 export async function processUploadQueue(deps: UploadDeps = {}): Promise<void> {
   if (uploading) return
@@ -174,7 +181,7 @@ export async function processUploadQueue(deps: UploadDeps = {}): Promise<void> {
       .piano.takes.filter((t) => {
         if (t.deviceId !== deviceId || !t.hasAudio) return false
         const upload = t.upload
-        if (!upload) return false
+        if (!upload) return true
         if (upload.status === 'pending') {
           if (upload.attempts > 0 && nowMs - upload.updatedAt < backoffMs(upload.attempts)) return false
           return true
@@ -208,21 +215,25 @@ async function uploadOne(
   const { doFetch, store, now, cfg } = ctx
   const doc = getDoc()
   const take = doc.piano.takes.find((t) => t.id === takeId)
-  if (!take || !take.upload) return
+  if (!take) return
+  // A take with no `upload` field yet (recorded before Drive was
+  // configured, or otherwise never enqueued) starts fresh, same as a
+  // freshly-enqueued pending upload.
+  const currentUpload = take.upload ?? { status: 'pending' as const, attempts: 0, updatedAt: now() }
 
   // attempts >= MAX_ATTEMPTS -> give up.
-  if (take.upload.attempts >= MAX_ATTEMPTS) {
-    setTakeUpload(takeId, { ...take.upload, status: 'failed', lastError: 'gave up', updatedAt: now() })
+  if (currentUpload.attempts >= MAX_ATTEMPTS) {
+    setTakeUpload(takeId, { ...currentUpload, status: 'failed', lastError: 'gave up', updatedAt: now() })
     return
   }
 
   const blob = await store.get(takeId)
   if (!blob) {
-    setTakeUpload(takeId, { ...take.upload, status: 'failed', lastError: 'no local audio', updatedAt: now() })
+    setTakeUpload(takeId, { ...currentUpload, status: 'failed', lastError: 'no local audio', updatedAt: now() })
     return
   }
 
-  setTakeUpload(takeId, { ...take.upload, status: 'uploading', updatedAt: now() })
+  setTakeUpload(takeId, { ...currentUpload, status: 'uploading', updatedAt: now() })
 
   const settings = getDoc().settings
   const name = pieceName(take.pieceId, settings)
@@ -340,7 +351,34 @@ export async function testDriveConnection(
 }
 
 /**
- * Installs a 60s timer plus an `online` listener that call
+ * "☁️ Upload now" / "Try again": clears whatever backoff or give-up state is
+ * blocking a take (or, with no id, every 'pending'/'uploading' take) and
+ * kicks the queue right away, instead of waiting for the next timer tick.
+ * Works on a 'failed' take too - that's exactly what the "Try again" chip
+ * button needs - and on a take with no `upload` field yet.
+ */
+export async function uploadNow(takeId?: string, deps: UploadDeps = {}): Promise<void> {
+  const now = deps.now ?? Date.now
+  const nowMs = now()
+
+  update('piano', (piano) => ({
+    ...piano,
+    takes: piano.takes.map((t) => {
+      if (t.upload?.status === 'done') return t
+      if (takeId) {
+        return t.id === takeId ? { ...t, upload: { status: 'pending', attempts: 0, updatedAt: nowMs } } : t
+      }
+      return t.upload && (t.upload.status === 'pending' || t.upload.status === 'uploading')
+        ? { ...t, upload: { status: 'pending', attempts: 0, updatedAt: nowMs } }
+        : t
+    }),
+  }))
+
+  await processUploadQueue(deps)
+}
+
+/**
+ * Installs a 30s timer plus an `online` listener that call
  * processUploadQueue(). Returns a disposer. Guards every browser global so
  * this is a safe no-op when imported in node (tests, SSR).
  */
@@ -350,7 +388,7 @@ export function startUploadWorker(): () => void {
   const tick = () => {
     void processUploadQueue()
   }
-  const interval = window.setInterval(tick, 60_000)
+  const interval = window.setInterval(tick, 30_000)
   window.addEventListener('online', tick)
   tick()
 

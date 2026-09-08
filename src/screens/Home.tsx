@@ -1,6 +1,5 @@
 import { navigate } from '../router'
 import { useProgress } from '../store/progress'
-import { useActiveProfile } from '../store/activeProfile'
 import { localDay } from '../store/sessions'
 import { activeSecondsForDay, goalProgress } from '../store/pianoRewards'
 import { SayIt } from '../components/SayIt'
@@ -9,8 +8,7 @@ import { TokenPill } from '../components/TokenPill'
 
 export function Home() {
   const progress = useProgress()
-  const activeProfile = useActiveProfile()
-  const profile = progress.profiles[activeProfile]
+  const profile = progress.profiles.kid
   const kidName = progress.settings.kidName
   const greeting = `Hi ${kidName}! What do you want to practice today?`
   const today = localDay()

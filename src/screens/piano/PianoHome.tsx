@@ -6,13 +6,14 @@ import { activeSecondsForDay, goalProgress, pianoDaysDone } from '../../store/pi
 import { formatClock, lastNDays, localDay } from '../../store/sessions'
 import { getAudioBackend, startTake } from '../../audio/recordingSession'
 import { getRecordingStore, useLocalAudioIds } from '../../store/recordings'
-import { buildFileName } from '../../store/driveUpload'
+import { buildFileName, processUploadQueue } from '../../store/driveUpload'
 import { extensionFor } from '../../audio/mime'
 import { RingTimer } from '../../components/RingTimer'
 import { WeekDots } from '../../components/WeekDots'
 import { SayIt } from '../../components/SayIt'
 import { SelfRatingButtons } from '../../components/SelfRatingButtons'
 import { TakePlayer } from '../../components/TakePlayer'
+import { UploadChip } from '../../components/UploadChip'
 
 const PIECE_STORAGE_KEY = 'cubeclimb.piano.piece'
 
@@ -107,14 +108,6 @@ function TakeCard({ take, piece }: { take: PianoTake; piece: PianoPiece | undefi
   const isLocal = localAudioIds.has(take.id)
 
   const wallTime = new Date(take.startedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-  const uploadLine =
-    take.upload?.status === 'done'
-      ? '☁️ Saved to Drive'
-      : take.upload?.status === 'pending' || take.upload?.status === 'uploading'
-        ? '☁️ Waiting to upload'
-        : take.upload?.status === 'failed'
-          ? '☁️ Upload failed'
-          : null
 
   return (
     <div className="cc-card" style={{ padding: '0.9rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -126,7 +119,7 @@ function TakeCard({ take, piece }: { take: PianoTake; piece: PianoPiece | undefi
       <SelfRatingButtons value={take.selfRating} onChange={(rating) => setSelfRating(take.id, rating)} />
       <TakePlayer take={take} />
       {isLocal && <ShareOrDownload take={take} piece={piece} />}
-      {uploadLine && <span style={{ color: 'var(--cc-ink-soft)', fontSize: '0.8rem' }}>{uploadLine}</span>}
+      <UploadChip take={take} />
     </div>
   )
 }
@@ -134,7 +127,7 @@ function TakeCard({ take, piece }: { take: PianoTake; piece: PianoPiece | undefi
 export function PianoHome() {
   const progress = useProgress()
   const piano = usePiano()
-  const { kidName, parentName, pianoPieces, goalMinutes, recordingKeepDays } = progress.settings
+  const { kidName, pianoPieces, goalMinutes, recordingKeepDays } = progress.settings
   const [selectedPieceId, setSelectedPieceId] = useState<string | null>(() => readStoredPieceId())
 
   useEffect(() => {
@@ -142,6 +135,13 @@ export function PianoHome() {
     // Runs once on mount - recordingKeepDays rarely changes mid-session, and
     // pruning again on a re-render for an unrelated reason is unnecessary.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    // Catches anything the 30s worker timer hasn't gotten to yet the moment
+    // Piano home is opened - the worker (main.tsx) already runs this on the
+    // same cadence, this is just "don't make her wait for the next tick".
+    void processUploadQueue()
   }, [])
 
   const today = localDay()
@@ -178,7 +178,7 @@ export function PianoHome() {
           <WeekDots days={week} done={daysDone} />
           {todayParentStars && (
             <span style={{ fontWeight: 700 }}>
-              {'⭐'.repeat(todayParentStars)} from {parentName}
+              {'⭐'.repeat(todayParentStars)} from your grown-up
             </span>
           )}
         </div>

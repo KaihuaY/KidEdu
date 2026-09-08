@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { useProgress } from '../store/progress'
-import { useActiveProfile } from '../store/activeProfile'
 import { logSolve } from '../store/solves'
 import { fireConfetti } from '../components/Confetti'
 import { CubeTabs } from '../components/CubeTabs'
@@ -19,7 +18,6 @@ function formatDate(at: number): string {
 
 export function SolveLog() {
   const progress = useProgress()
-  const activeProfile = useActiveProfile()
   const [running, setRunning] = useState(false)
   const [startedAt, setStartedAt] = useState<number | null>(null)
   const [elapsedMs, setElapsedMs] = useState(0)
@@ -32,7 +30,7 @@ export function SolveLog() {
   }, [running, startedAt])
 
   const mySolves = progress.solveLog.solves
-    .filter((s) => s.profile === activeProfile)
+    .filter((s) => s.profile === 'kid')
     .sort((a, b) => b.at - a.at)
   const timedSolves = mySolves.filter((s) => s.seconds !== null)
   const bestSeconds = timedSolves.length > 0 ? Math.min(...timedSolves.map((s) => s.seconds as number)) : null
@@ -48,7 +46,7 @@ export function SolveLog() {
     const seconds = withTime && startedAt !== null ? (Date.now() - startedAt) / 1000 : null
     setRunning(false)
     setStartedAt(null)
-    const { firstEverForProfile } = logSolve(activeProfile, seconds)
+    const { firstEverForProfile } = logSolve('kid', seconds)
     fireConfetti(firstEverForProfile ? 'big' : 'small')
     setCelebration(
       firstEverForProfile
