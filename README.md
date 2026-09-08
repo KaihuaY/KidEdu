@@ -98,29 +98,63 @@ Settings.
 ## Cube
 
 The Rubik's cube curriculum (`src/content/lessons.ts`) is a climbing wall of
-10 holds, unlocked one at a time from the bottom up. Each hold is a 5-stage
-lesson - **Learn → Watch → Try → Spot it → Climb** - and every hold past the
-first two also opens with a **Ready?** checkpoint card ("your cube should
-look like this, held like this") so there's always an explicit hand-off from
-the wall below, with a one-tap way back down if her cube doesn't match yet.
+10 holds, unlocked one at a time from the bottom up. Each hold is 2-5 tiny
+**missions** (3-6 minutes each) instead of one long lesson - a mission is
+**Look → Do → Check**: look at what the piece should end up like, do the
+animated steps (replayable, tap-along practice where it fits), then check
+"does yours look like this?" against her own real cube. One "✅ Yes, I did
+it!" unlocks the next mission; finishing every mission of a hold masters it.
+Most holds past the first two also open with a **Ready?** checkpoint card
+("your cube should look like this, held like this") so there's an explicit
+hand-off from the wall below, with a one-tap way back down if her cube
+doesn't match yet.
 
-| # | Hold | What it teaches |
-|---|------|------------------|
-| 0 | Base Camp | Every basic move, both directions - no solving yet |
-| 1 | The Daisy Ledge | Grow a daisy: four white edges standing around the yellow centre |
-| 2 | The White Cross Bridge | Tuck the daisy down into a white cross, then flip white to the bottom |
-| 3 | Corner Lookout | Find a white corner's home and park it above home, front-right |
-| 4 | Corner Crack | The Elevator rides each white corner down into place |
-| 5 | Middle Traverse | Send it Right / Send it Left place the middle-layer edges |
-| 6 | Yellow Cross Ridge | Dot → L → line → a full yellow cross on top |
-| 7 | Edge Ledge | The Fish lines up the yellow edges with their centres |
-| 8 | Corner Shuffle | Corner Swap walks the yellow corners into their own spots |
-| 9 | THE SUMMIT | The Bottom Elevator twists every corner yellow-up - fully solved! |
+### The daily ritual
+
+Her cube is scrambled at the start of every session, so before any hold but
+Base Camp she sees a short **orientation ritual** once per day
+(`src/components/OrientationRitual.tsx`): a reminder that the middle
+sticker of each side never moves (it always tells you that side's true
+colour), then "turn the whole cube until yellow is on top and green faces
+you" - the one frame every mission's pictures assume. She confirms
+("Yellow is on top, green faces me ✅") and moves straight into the mission.
+
+### Free "get ready" help vs. mission help
+
+Tapping **✅ Yes, I did it!** with no help at all earns the best medal. If
+she's not sure, **🔁 Show me again** replays the mission's own Do steps at no
+cost, and **📷 Show me my cube** (offered on missions that map to a solver
+phase) scans her real cube: if it's not even ready for *this* mission yet -
+say she's mid-scramble on a later hold - a **free** "Get me ready" walkthrough
+first replays the steps she already mastered from earlier holds, with no
+effect on her token; only walking her through *this* mission's own new step
+counts as help.
+
+**Token tiers**, one per mission (plus a bonus gold for mastering the whole
+hold): 🥇 gold - no help at all; 🥈 silver - she only used the camera to
+check, no walkthrough; 🥉 bronze - the app walked her through it. A replay
+never earns a second token but can upgrade a mission's medal if she does
+better the next time.
+
+| # | Hold | Missions | What it teaches |
+|---|------|----------|------------------|
+| 0 | Base Camp | 5 | Every basic move, both directions - no solving yet |
+| 1 | The Daisy Ledge | 4 | Grow a daisy: four white edges standing around the yellow centre |
+| 2 | The White Cross Bridge | 3 | Tuck the daisy down into a white cross |
+| 3 | Corner Lookout | 2 | Find a white corner's home and park it above home, front-right |
+| 4 | Corner Crack | 3 | The Elevator rides each white corner down into place |
+| 5 | Middle Traverse | 4 | Send it Right / Send it Left place the middle-layer edges |
+| 6 | Yellow Cross Ridge | 2 | Dot → L → line → a full yellow cross on top |
+| 7 | Edge Ledge | 2 | The Fish lines up the yellow edges with their centres |
+| 8 | Corner Shuffle | 2 | Corner Swap walks the yellow corners into their own spots |
+| 9 | THE SUMMIT | 2 | The Bottom Elevator twists every corner yellow-up - fully solved! |
 
 Holds 1-2 and 3-4 used to each be a single combined hold (`cross` covered
 daisy-growing *and* cross-tucking; `corners` covered corner-hunting *and*
 the Elevator); they were split so each hold teaches one idea at a time. Old
-saved progress migrates automatically (`src/store/progress.ts`).
+saved progress migrates automatically (`src/store/progress.ts`); a hold
+mastered under the old Watch/Try/Spot/Climb stages still shows every mission
+done.
 
 ### Scanning a real cube with the camera
 
@@ -194,6 +228,13 @@ an iPad propped on the music stand, microphone only - no MIDI, no teaching.
   shows as "recorded on another device" once its local copy is gone. Use
   **Settings → Recordings → 🗑️ Delete all recordings on this device** to
   clear them immediately (a two-tap confirm).
+- **A take survives a crash or an accidental reload.** While recording, each
+  ~1-second chunk from the microphone is saved to this device as it's
+  captured, not just at the end - so if the tab is killed, the iPad reboots,
+  or an app update happens to land mid-take, nothing but the last second or
+  so is ever at risk. The next time the app opens, any leftover in-progress
+  audio is stitched back together into a normal take automatically (see
+  "Your data is safe" below).
 
 ### Google Drive upload
 
@@ -240,3 +281,50 @@ curl -sL -X POST "<your web app URL>" -H "Content-Type: text/plain" \
      -d '{"secret":"<your SECRET>","ping":true}'
 # -> {"ok":true,"pong":true}
 ```
+
+## Your data is safe
+
+Deploying a new build only ever replaces the app's own code - the progress
+doc (`localStorage`) and recorded audio (IndexedDB) are separate, per-origin
+browser storage that a deploy never touches. A few things still deserve
+their own protection, and are handled automatically:
+
+- **Updates never interrupt a mission or a take.** The app checks for a new
+  build in the background, but never applies it on its own - it waits for
+  an idle moment (Home, Cube, Piano home, Box, or Settings; never mid-lesson
+  or mid-recording) and shows a small "✨ New version ready · ⬆ Update"
+  banner. Nothing reloads until that banner is tapped.
+- **An interrupted piano take is still recovered.** As covered above under
+  Piano, each second of a take is saved as it's recorded, not only at the
+  end. If the app never gets to finish the take cleanly (a crash, a forced
+  quit, a reload), the next launch stitches the leftover audio back into a
+  normal take and shows "We saved an unfinished recording from earlier 💾"
+  on Piano home.
+- **A migration always leaves a way back.** Whenever the app notices a saved
+  progress file needs updating to a new shape - or is being opened by a
+  newly-installed build for the first time - it stashes a copy of the
+  pre-update file first, keeping the last 3. **Settings (grown-up PIN) →
+  Backup → Automatic backups** lists them with their date and app version,
+  each with a two-tap **Restore**; restoring itself takes one more backup
+  first, so it's always reversible. The bottom of that section also shows
+  **Version:**, the exact build a device is running - handy when confirming
+  everyone updated.
+- **Recordings ask to be protected from storage cleanup.** Some browsers
+  quietly clear the oldest site data if a page hasn't been opened in about a
+  week. The app asks the browser to exempt Practice's storage from that the
+  moment it's unlocked; an **Add to Home Screen** install (see above) is the
+  most reliable way to get - and keep - that protection. **Settings →
+  Recordings** shows "Storage: protected ✅" once it's confirmed, or a
+  reminder to install it if not, plus how much storage is in use.
+- **Progress gets a second, independent backup.** Beyond the private-gist
+  sync above, whenever Google Drive upload is configured the whole progress
+  export is also uploaded to that same Drive folder once a day, as
+  `practice-progress-<date>.json` - so a lost or revoked gist token still
+  leaves a same-day copy sitting somewhere the parent can already see.
+  **Settings → Google Drive upload** shows the date of the last one.
+
+What none of this covers: deleting the home-screen icon, clearing the
+browser's site data by hand, or a full device wipe still removes local
+audio and any progress that never made it to a sync. Keep GitHub sync and/or
+Drive upload configured on at least one device so there's always an
+off-device copy.

@@ -9,6 +9,7 @@ const ROUTE_PATTERNS = [
   '/cube',
   '/wall',
   '/lesson/:id',
+  '/lesson/:id/:missionId',
   '/help',
   '/solves',
   '/piano',

@@ -2,27 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { navigate } from '../router'
 import { useProgress, type HoldProgress, type ProfileProgress } from '../store/progress'
 import { lastNDays, logCubeSession, formatClock } from '../store/sessions'
-import {
-  estimateDaysToSummit,
-  estimateMinutesRemaining,
-  useSessionTimer,
-  type HoldStagesSpec,
-} from '../store/planner'
-import { HOLD_ORDER, LESSON_LIST, type Lesson } from '../content/lessons'
+import { estimateDaysToSummit, estimateMinutesRemaining, useSessionTimer, type HoldMissionsSpec } from '../store/planner'
+import { firstOpenMission, missionsDoneCount, missionStars } from '../store/missions'
+import { HOLD_ORDER, LESSON_LIST, missionById, type Lesson } from '../content/lessons'
 import { fireConfetti } from '../components/Confetti'
 import { CubeTabs } from '../components/CubeTabs'
 import { RingTimer } from '../components/RingTimer'
 import { WeekDots } from '../components/WeekDots'
 import { TokenPill } from '../components/TokenPill'
-
-const STAGE_IDS = ['learn', 'watch', 'try', 'spot', 'climb'] as const
-const STAGE_LABEL: Record<(typeof STAGE_IDS)[number], string> = {
-  learn: 'Learn',
-  watch: 'Watch',
-  try: 'Try',
-  spot: 'Spot it',
-  climb: 'Climb',
-}
 
 type HoldState = 'locked' | 'open' | 'mastered'
 
@@ -37,33 +24,23 @@ function holdState(profile: ProfileProgress, index: number): HoldState {
 
 interface NextUp {
   lesson: Lesson
-  stage: (typeof STAGE_IDS)[number]
+  missionId: string
 }
 
-/**
- * The very next thing to do: the first stage of the first hold that isn't
- * finished yet. Legacy docs saved before the Learn stage existed have no
- * 'learn' record, so a hold whose Watch is already done is never sent back to
- * Learn.
- */
+/** The very next thing to do: the first open mission of the first hold that isn't mastered yet. */
 function findNextUp(profile: ProfileProgress): NextUp | undefined {
   for (const lesson of LESSON_LIST) {
     const hold = profile.holds[lesson.id]
     if (hold?.masteredAt) continue
-    const watched = Boolean(hold?.stages.watch?.completedAt)
-    for (const stage of STAGE_IDS) {
-      if (hold?.stages[stage]?.completedAt) continue
-      if (stage === 'learn' && watched) continue
-      return { lesson, stage }
-    }
+    const missionIds = lesson.missions.map((m) => m.id)
+    const openId = firstOpenMission(hold, missionIds)
+    if (openId) return { lesson, missionId: openId }
   }
   return undefined
 }
 
-/** Min star rating across all 4 stages - every stage has to shine for the hold to. */
-function holdStars(hold: HoldProgress | undefined): 0 | 1 | 2 | 3 {
-  const stars = STAGE_IDS.map((s) => hold?.stages[s]?.stars ?? 0)
-  return Math.min(...stars) as 0 | 1 | 2 | 3
+function holdSpecFor(lesson: Lesson): HoldMissionsSpec {
+  return { id: lesson.id, missions: lesson.missions.map((m) => ({ id: m.id, estimatedMinutes: m.estimatedMinutes })) }
 }
 
 export function Wall() {
@@ -85,26 +62,24 @@ export function Wall() {
     }
   }, [timer.reachedTarget, hasCelebratedThisRun, sessionMinutes, timer])
 
-  const holdSpecs: HoldStagesSpec[] = useMemo(
-    () => LESSON_LIST.map((l) => ({ id: l.id, stages: [...STAGE_IDS] })),
-    [],
-  )
+  const holdSpecs: HoldMissionsSpec[] = useMemo(() => LESSON_LIST.map(holdSpecFor), [])
   const daysToSummit = estimateDaysToSummit(profile, holdSpecs, sessionMinutes)
   const week = lastNDays(7)
   const sessionDays = useMemo(() => new Set(profile.sessions.map((s) => s.day)), [profile.sessions])
 
   const wallOrder = HOLD_ORDER.map((_id, i) => i).reverse() // summit at top
   const nextUp = findNextUp(profile)
+  const nextUpMission = nextUp ? missionById(nextUp.lesson.id, nextUp.missionId) : undefined
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '2rem' }}>
       <CubeTabs />
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '0 1rem' }}>
-      {nextUp ? (
+      {nextUp && nextUpMission ? (
         <button
           type="button"
           className="cc-btn cc-btn-primary"
-          onClick={() => navigate(`/lesson/${nextUp.lesson.id}`)}
+          onClick={() => navigate(`/lesson/${nextUp.lesson.id}/${nextUp.missionId}`)}
           style={{
             flexDirection: 'column',
             alignItems: 'flex-start',
@@ -117,9 +92,7 @@ export function Wall() {
           <span style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.85 }}>
             Continue: Hold {nextUp.lesson.number} · {nextUp.lesson.title}
           </span>
-          <span style={{ fontSize: '1.1rem', fontWeight: 900 }}>
-            {STAGE_LABEL[nextUp.stage]} ▶
-          </span>
+          <span style={{ fontSize: '1.1rem', fontWeight: 900 }}>{nextUpMission.title} ▶</span>
         </button>
       ) : (
         <div className="cc-card" style={{ padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
@@ -197,11 +170,14 @@ export function Wall() {
         {wallOrder.map((index, rowPos) => {
           const lesson = LESSON_LIST[index]
           const state = holdState(profile, index)
-          const stars = holdStars(profile.holds[lesson.id])
+          const hold: HoldProgress | undefined = profile.holds[lesson.id]
+          const missionIds = lesson.missions.map((m) => m.id)
+          const done = missionsDoneCount(hold, missionIds)
+          const stars = missionStars(hold, missionIds)
+          const nextOpenId = firstOpenMission(hold, missionIds)
+          const nextOpenTitle = nextOpenId ? missionById(lesson.id, nextOpenId)?.title : undefined
           const remainingMinutes =
-            state !== 'mastered'
-              ? estimateMinutesRemaining(profile, [{ id: lesson.id, stages: [...STAGE_IDS] }])
-              : 0
+            state !== 'mastered' ? estimateMinutesRemaining(profile, [holdSpecFor(lesson)]) : 0
           const isLast = rowPos === wallOrder.length - 1
           return (
             <div key={lesson.id} style={{ display: 'flex', alignItems: 'stretch' }}>
@@ -264,28 +240,24 @@ export function Wall() {
                 }}
               >
                 <span style={{ fontSize: '1rem', fontWeight: 800 }}>{lesson.title}</span>
-                {lesson.checkpoint && (
+                {state === 'mastered' ? (
+                  <span style={{ fontSize: '0.8rem', color: 'var(--cc-ink-soft)', fontWeight: 700 }}>
+                    All done {'⭐'.repeat(Math.max(stars, 1))}
+                  </span>
+                ) : state === 'open' ? (
                   <span
                     style={{
-                      fontSize: '0.75rem',
+                      fontSize: '0.8rem',
                       color: 'var(--cc-ink-soft)',
-                      fontWeight: 600,
+                      fontWeight: 700,
                       width: '100%',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    Starts from: {lesson.checkpoint.look}
-                  </span>
-                )}
-                {state === 'mastered' ? (
-                  <span aria-label={`${stars} stars`} style={{ fontSize: '0.85rem' }}>
-                    {'⭐'.repeat(stars) || '—'}
-                  </span>
-                ) : state === 'open' ? (
-                  <span style={{ fontSize: '0.8rem', color: 'var(--cc-ink-soft)', fontWeight: 700 }}>
-                    ~{remainingMinutes} min to go
+                    {done}/{missionIds.length} missions
+                    {nextOpenTitle ? ` · Next: ${nextOpenTitle}` : ''} · ~{remainingMinutes} min to go
                   </span>
                 ) : (
                   <span style={{ fontSize: '0.8rem', color: 'var(--cc-ink-soft)', fontWeight: 700 }}>
