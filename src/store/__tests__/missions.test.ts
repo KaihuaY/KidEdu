@@ -1,0 +1,190 @@
+import { beforeEach, describe, expect, it } from 'vitest'
+import {
+  addMissionMinutes,
+  bumpMissionTries,
+  completeMission,
+  firstOpenMission,
+  isMissionDone,
+  isMissionUnlocked,
+  masterHold,
+  missionStars,
+  missionsDoneCount,
+  tierForHelp,
+} from '../missions'
+import { getDoc, resetAll, type HoldProgress } from '../progress'
+
+// Same in-memory localStorage mock used by store/__tests__/progress.test.ts.
+class MemoryStorage implements Storage {
+  private map = new Map<string, string>()
+  get length() {
+    return this.map.size
+  }
+  clear(): void {
+    this.map.clear()
+  }
+  getItem(key: string): string | null {
+    return this.map.has(key) ? this.map.get(key)! : null
+  }
+  key(index: number): string | null {
+    return Array.from(this.map.keys())[index] ?? null
+  }
+  removeItem(key: string): void {
+    this.map.delete(key)
+  }
+  setItem(key: string, value: string): void {
+    this.map.set(key, value)
+  }
+}
+
+beforeEach(() => {
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: new MemoryStorage(),
+    configurable: true,
+    writable: true,
+  })
+  resetAll()
+})
+
+function kidHold(id: string): HoldProgress | undefined {
+  return getDoc().profiles.kid.holds[id]
+}
+
+describe('tierForHelp', () => {
+  it('maps help level to token tier', () => {
+    expect(tierForHelp('none')).toBe('gold')
+    expect(tierForHelp('scan')).toBe('silver')
+    expect(tierForHelp('walkthrough')).toBe('bronze')
+  })
+})
+
+describe('completeMission', () => {
+  it('first completion awards a token of the earned tier, xpForTier, and records tries/help/tier', () => {
+    const tier = completeMission('kid', 'daisy', 'D1', 'none', 1)
+    expect(tier).toBe('gold')
+
+    const doc = getDoc()
+    expect(doc.profiles.kid.tokens).toEqual({ gold: 1, silver: 0, bronze: 0 })
+    expect(doc.profiles.kid.xp).toBe(30) // xpForTier('gold')
+
+    const mission = kidHold('daisy')?.missions?.D1
+    expect(mission?.tier).toBe('gold')
+    expect(mission?.help).toBe('none')
+    expect(mission?.tries).toBe(1)
+    expect(mission?.completedAt).toBeGreaterThan(0)
+  })
+
+  it('help=scan -> silver, help=walkthrough -> bronze on first completion', () => {
+    expect(completeMission('kid', 'daisy', 'D2', 'scan', 2)).toBe('silver')
+    expect(getDoc().profiles.kid.tokens.silver).toBe(1)
+
+    expect(completeMission('kid', 'daisy', 'D3', 'walkthrough', 5)).toBe('bronze')
+    expect(getDoc().profiles.kid.tokens.bronze).toBe(1)
+  })
+
+  it('a replay gives no new token, +5 XP, keeps the original completedAt, and only upgrades the tier if better', () => {
+    completeMission('kid', 'daisy', 'D1', 'walkthrough', 4) // bronze first
+    const firstCompletedAt = kidHold('daisy')?.missions?.D1?.completedAt
+    const xpAfterFirst = getDoc().profiles.kid.xp
+
+    // Replay with a better tier (gold): upgrades, no new token, +5 xp.
+    const tier = completeMission('kid', 'daisy', 'D1', 'none', 1)
+    expect(tier).toBe('gold')
+
+    const doc = getDoc()
+    expect(doc.profiles.kid.tokens).toEqual({ gold: 0, silver: 0, bronze: 1 }) // still just the one bronze token
+    expect(doc.profiles.kid.xp).toBe(xpAfterFirst + 5)
+    const mission = doc.profiles.kid.holds.daisy.missions?.D1
+    expect(mission?.tier).toBe('gold')
+    expect(mission?.completedAt).toBe(firstCompletedAt)
+  })
+
+  it('a replay with a worse tier does not downgrade the recorded tier', () => {
+    completeMission('kid', 'daisy', 'D1', 'none', 1) // gold first
+    completeMission('kid', 'daisy', 'D1', 'walkthrough', 5) // worse attempt
+    expect(kidHold('daisy')?.missions?.D1?.tier).toBe('gold')
+  })
+})
+
+describe('bumpMissionTries', () => {
+  it('increments a running tries counter before the mission is completed', () => {
+    expect(bumpMissionTries('kid', 'daisy', 'D1')).toBe(1)
+    expect(bumpMissionTries('kid', 'daisy', 'D1')).toBe(2)
+    expect(kidHold('daisy')?.missions?.D1?.tries).toBe(2)
+    expect(kidHold('daisy')?.missions?.D1?.completedAt).toBeUndefined()
+  })
+})
+
+describe('addMissionMinutes', () => {
+  it('accumulates minutes on a mission, ignoring non-positive amounts', () => {
+    addMissionMinutes('kid', 'daisy', 'D1', 2)
+    addMissionMinutes('kid', 'daisy', 'D1', 1.5)
+    addMissionMinutes('kid', 'daisy', 'D1', 0)
+    addMissionMinutes('kid', 'daisy', 'D1', -1)
+    expect(kidHold('daisy')?.missions?.D1?.minutes).toBeCloseTo(3.5)
+  })
+})
+
+describe('isMissionDone / missionsDoneCount / firstOpenMission / isMissionUnlocked', () => {
+  const ids = ['D1', 'D2', 'D3', 'D4']
+
+  it('a hold with masteredAt counts every mission done, even with no mission records', () => {
+    const hold: HoldProgress = { stages: {}, missions: {}, masteredAt: 123 }
+    for (const id of ids) expect(isMissionDone(hold, id)).toBe(true)
+    expect(missionsDoneCount(hold, ids)).toBe(4)
+    expect(firstOpenMission(hold, ids)).toBeUndefined()
+  })
+
+  it('sequential unlock: only the first mission (and any after a completed run) is open', () => {
+    expect(isMissionUnlocked(undefined, ids, 'D1')).toBe(true)
+    expect(isMissionUnlocked(undefined, ids, 'D2')).toBe(false)
+
+    completeMission('kid', 'daisy', 'D1', 'none', 1)
+    let hold = kidHold('daisy')
+    expect(isMissionUnlocked(hold, ids, 'D2')).toBe(true)
+    expect(isMissionUnlocked(hold, ids, 'D3')).toBe(false)
+    expect(firstOpenMission(hold, ids)).toBe('D2')
+    expect(missionsDoneCount(hold, ids)).toBe(1)
+
+    completeMission('kid', 'daisy', 'D2', 'none', 1)
+    completeMission('kid', 'daisy', 'D3', 'none', 1)
+    completeMission('kid', 'daisy', 'D4', 'none', 1)
+    hold = kidHold('daisy')
+    expect(missionsDoneCount(hold, ids)).toBe(4)
+    expect(firstOpenMission(hold, ids)).toBeUndefined()
+  })
+})
+
+describe('missionStars', () => {
+  const ids = ['D1', 'D2']
+
+  it('is 0 until every mission is done', () => {
+    expect(missionStars(undefined, ids)).toBe(0)
+    completeMission('kid', 'daisy', 'D1', 'none', 1)
+    expect(missionStars(kidHold('daisy'), ids)).toBe(0)
+  })
+
+  it('once all done, is the worst tier earned across the missions', () => {
+    completeMission('kid', 'daisy', 'D1', 'none', 1) // gold
+    completeMission('kid', 'daisy', 'D2', 'walkthrough', 3) // bronze
+    expect(missionStars(kidHold('daisy'), ids)).toBe(1) // starsForTier('bronze')
+  })
+
+  it('a legacy hold mastered with no per-mission tier data reads as a clean gold', () => {
+    const hold: HoldProgress = { stages: {}, missions: {}, masteredAt: 1 }
+    expect(missionStars(hold, ids)).toBe(3)
+  })
+})
+
+describe('masterHold', () => {
+  it('is idempotent: the first call masters and gives a gold token, later calls do nothing', () => {
+    expect(masterHold('kid', 'daisy')).toBe(true)
+    expect(kidHold('daisy')?.masteredAt).toBeGreaterThan(0)
+    expect(getDoc().profiles.kid.tokens.gold).toBe(1)
+
+    const goldBefore = getDoc().profiles.kid.tokens.gold
+    const masteredAtBefore = kidHold('daisy')?.masteredAt
+    expect(masterHold('kid', 'daisy')).toBe(false)
+    expect(getDoc().profiles.kid.tokens.gold).toBe(goldBefore)
+    expect(kidHold('daisy')?.masteredAt).toBe(masteredAtBefore)
+  })
+})

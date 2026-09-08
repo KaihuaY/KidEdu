@@ -58,8 +58,21 @@ export interface StageProgress {
   completedAt?: number
 }
 
+/** How much help a mission attempt needed, from least to most - sets its token tier. */
+export type HelpKind = 'none' | 'scan' | 'walkthrough'
+
+export interface MissionProgress {
+  completedAt?: number
+  tier?: 'gold' | 'silver' | 'bronze'
+  tries: number
+  help: HelpKind
+  minutes: number
+}
+
 export interface HoldProgress {
+  /** @deprecated Watch/Try/Spot/Climb stage progress - kept for old saves; new progress lives in `missions`. */
   stages: Record<string, StageProgress>
+  missions?: Record<string, MissionProgress>
   masteredAt?: number
 }
 
@@ -308,9 +321,20 @@ function migrateSplitHolds(holds: Record<string, HoldProgress>): Record<string, 
     next.daisy = next.cross
   }
   if (next.corners?.masteredAt && !next.cornerFind) {
-    next.cornerFind = { stages: {}, masteredAt: next.corners.masteredAt }
+    next.cornerFind = { stages: {}, missions: {}, masteredAt: next.corners.masteredAt }
   }
   return next
+}
+
+/** Backfills `missions: {}` on a hold saved before the mission curriculum existed. */
+function normalizeHold(hold: HoldProgress): HoldProgress {
+  return { ...hold, missions: hold.missions ?? {} }
+}
+
+function normalizeHolds(holds: Record<string, HoldProgress>): Record<string, HoldProgress> {
+  const out: Record<string, HoldProgress> = {}
+  for (const [id, hold] of Object.entries(holds)) out[id] = normalizeHold(hold)
+  return out
 }
 
 /**
@@ -323,7 +347,7 @@ function normalizeProfile(fallback: ProfileProgress, parsed: Partial<ProfileProg
   return {
     ...fallback,
     ...parsed,
-    holds: migrateSplitHolds({ ...fallback.holds, ...parsed?.holds }),
+    holds: normalizeHolds(migrateSplitHolds({ ...fallback.holds, ...parsed?.holds })),
     tokens: { ...fallback.tokens, ...parsed?.tokens },
     streak: { ...fallback.streak, ...parsed?.streak },
   }

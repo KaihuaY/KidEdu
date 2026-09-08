@@ -513,3 +513,107 @@ describe('setGoalMinutes', () => {
     expect(getDoc().settings.sessionMinutes).toBe(20) // unchanged by the piano goal
   })
 })
+
+describe('missions backfill (via importJson)', () => {
+  it('backfills an empty missions record on a legacy hold that predates the mission curriculum', () => {
+    const legacyJson = JSON.stringify({
+      schemaVersion: 1,
+      settings: { updatedAt: 1 },
+      profiles: {
+        updatedAt: 1,
+        kid: {
+          holds: {
+            daisy: {
+              stages: { learn: { bestTries: 1, stars: 3, attempts: 1, minutes: 2, completedAt: 10 } },
+              masteredAt: 20,
+            },
+          },
+        },
+      },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+    })
+
+    importJson(legacyJson)
+    const hold = getDoc().profiles.kid.holds.daisy
+
+    expect(hold.missions).toEqual({})
+    // stages and masteredAt are untouched by the backfill.
+    expect(hold.masteredAt).toBe(20)
+    expect(hold.stages.learn?.completedAt).toBe(10)
+  })
+
+  it('backfills missions on the synthesised cornerFind hold too', () => {
+    const legacyJson = JSON.stringify({
+      schemaVersion: 1,
+      settings: { updatedAt: 1 },
+      profiles: {
+        updatedAt: 1,
+        kid: { holds: { corners: { stages: {}, masteredAt: 42 } } },
+      },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+    })
+
+    importJson(legacyJson)
+    const doc = getDoc()
+
+    expect(doc.profiles.kid.holds.cornerFind?.masteredAt).toBe(42)
+    expect(doc.profiles.kid.holds.cornerFind?.missions).toEqual({})
+    // The split-hold migration for "cross" -> "daisy" also goes through the
+    // same backfill.
+    expect(doc.profiles.kid.holds.corners.missions).toEqual({})
+  })
+
+  it('leaves an already-present missions record alone', () => {
+    const legacyJson = JSON.stringify({
+      schemaVersion: 1,
+      settings: { updatedAt: 1 },
+      profiles: {
+        updatedAt: 1,
+        kid: {
+          holds: {
+            daisy: {
+              stages: {},
+              missions: { D1: { tries: 2, help: 'scan', minutes: 3, completedAt: 5, tier: 'silver' } },
+            },
+          },
+        },
+      },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+    })
+
+    importJson(legacyJson)
+    expect(getDoc().profiles.kid.holds.daisy.missions).toEqual({
+      D1: { tries: 2, help: 'scan', minutes: 3, completedAt: 5, tier: 'silver' },
+    })
+  })
+
+  it('export/import round-trips a hold with mission progress, keeping missions intact', () => {
+    update('profiles', (profiles) => ({
+      ...profiles,
+      kid: {
+        ...profiles.kid,
+        holds: {
+          ...profiles.kid.holds,
+          daisy: {
+            stages: {},
+            missions: { D1: { tries: 1, help: 'none', minutes: 4, completedAt: 100, tier: 'gold' } },
+          },
+        },
+      },
+    }))
+
+    const before = getDoc()
+    const json = exportJson()
+    resetAll()
+    expect(getDoc().profiles.kid.holds.daisy).toBeUndefined()
+
+    importJson(json)
+    expect(getDoc().profiles.kid.holds.daisy).toEqual(before.profiles.kid.holds.daisy)
+    expect(getDoc().profiles.kid.holds.daisy.missions).toEqual({
+      D1: { tries: 1, help: 'none', minutes: 4, completedAt: 100, tier: 'gold' },
+    })
+  })
+})

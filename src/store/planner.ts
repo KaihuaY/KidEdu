@@ -1,13 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ProfileProgress } from './progress'
+import { isMissionDone } from './missions'
 
 // ---------------------------------------------------------------------------
-// Pacing estimates
+// Legacy Watch/Try/Spot/Climb pacing.
+//
+// @deprecated this whole section is superseded by the mission-based pacing
+// below. It's kept only so old cached builds and the not-yet-migrated
+// Wall.tsx / Lesson.tsx / content/lessons.ts keep compiling and behaving
+// exactly as they did before the mission curriculum landed. Remove it once
+// those call sites move onto HoldMissionsSpec (see this builder's report for
+// the exact call sites to update).
 // ---------------------------------------------------------------------------
 
+/** @deprecated remove at integration */
 export type StageId = 'learn' | 'watch' | 'try' | 'spot' | 'climb'
 
-/** Default minutes-per-stage, used until we have real per-kid data. */
+/** @deprecated remove at integration - default minutes-per-stage, used until we have real per-kid data. */
 export const STAGE_MINUTES: Record<StageId, number> = {
   learn: 4,
   watch: 2,
@@ -23,6 +32,7 @@ function isStageId(id: string): id is StageId {
 }
 
 /**
+ * @deprecated remove at integration
  * Per-stage-type minute estimates for one profile: for each stage type, use
  * that profile's own average actual minutes once at least 2 completed
  * stages of that type exist, otherwise fall back to STAGE_MINUTES.
@@ -54,16 +64,14 @@ export function personalPace(profile: ProfileProgress): Record<StageId, number> 
   return result
 }
 
+/** @deprecated remove at integration - a hold described by its legacy Watch/Try/Spot/Climb stage ids. */
 export interface HoldStagesSpec {
   id: string
   stages: string[]
 }
 
-/** Total estimated minutes left to finish the given stages across the given holds. */
-export function estimateMinutesRemaining(
-  profile: ProfileProgress,
-  holds: HoldStagesSpec[],
-): number {
+/** @deprecated remove at integration - the pre-mission minutes-remaining estimate. Use estimateMinutesRemaining(profile, HoldMissionsSpec[]) instead. */
+export function estimateMinutesRemainingLegacy(profile: ProfileProgress, holds: HoldStagesSpec[]): number {
   const pace = personalPace(profile)
   let total = 0
   for (const hold of holds) {
@@ -77,15 +85,86 @@ export function estimateMinutesRemaining(
   return total
 }
 
+function daysFromMinutes(minutesRemaining: number, sessionMinutes: number): number {
+  if (sessionMinutes <= 0) return Infinity
+  return Math.ceil(minutesRemaining / sessionMinutes)
+}
+
+// ---------------------------------------------------------------------------
+// Mission-based pacing (the current curriculum)
+// ---------------------------------------------------------------------------
+
+export interface HoldMissionsSpec {
+  id: string
+  missions: { id: string; estimatedMinutes: number }[]
+}
+
+/**
+ * How much faster or slower than the estimates this kid tends to go, as a
+ * multiplier: mean(actual minutes / estimated minutes) over every completed
+ * mission that recorded real minutes. Needs at least 3 such samples to be
+ * trusted (otherwise a single lucky/unlucky mission would swing every
+ * estimate), and is clamped to 0.5x-2x so it can never send an estimate off
+ * a cliff. Falls back to a neutral 1 (trust the raw estimates) below that.
+ */
+export function paceFactor(profile: ProfileProgress, holds: HoldMissionsSpec[]): number {
+  const samples: number[] = []
+  for (const hold of holds) {
+    const holdProgress = profile.holds[hold.id]
+    for (const mission of hold.missions) {
+      if (mission.estimatedMinutes <= 0) continue
+      const missionProgress = holdProgress?.missions?.[mission.id]
+      if (!missionProgress?.completedAt || missionProgress.minutes <= 0) continue
+      samples.push(missionProgress.minutes / mission.estimatedMinutes)
+    }
+  }
+  if (samples.length < 3) return 1
+  const mean = samples.reduce((sum, v) => sum + v, 0) / samples.length
+  return Math.max(0.5, Math.min(2, mean))
+}
+
+function estimateMinutesRemainingMissions(profile: ProfileProgress, holds: HoldMissionsSpec[]): number {
+  let total = 0
+  for (const hold of holds) {
+    const holdProgress = profile.holds[hold.id]
+    if (holdProgress?.masteredAt) continue
+    for (const mission of hold.missions) {
+      if (isMissionDone(holdProgress, mission.id)) continue
+      total += mission.estimatedMinutes
+    }
+  }
+  return Math.round(total * paceFactor(profile, holds))
+}
+
+/** Total estimated minutes left to finish the given missions across the given holds. */
+export function estimateMinutesRemaining(profile: ProfileProgress, holds: HoldMissionsSpec[]): number
+/** @deprecated remove at integration - pass HoldMissionsSpec[] instead; kept so Wall.tsx keeps compiling until it's migrated. */
+export function estimateMinutesRemaining(profile: ProfileProgress, holds: HoldStagesSpec[]): number
+export function estimateMinutesRemaining(
+  profile: ProfileProgress,
+  holds: HoldMissionsSpec[] | HoldStagesSpec[],
+): number {
+  if (holds.length === 0) return 0
+  if ('missions' in holds[0]) return estimateMinutesRemainingMissions(profile, holds as HoldMissionsSpec[])
+  return estimateMinutesRemainingLegacy(profile, holds as HoldStagesSpec[])
+}
+
 /** Estimated number of practice sessions (at `sessionMinutes` each) left to finish. */
+export function estimateDaysToSummit(profile: ProfileProgress, holds: HoldMissionsSpec[], sessionMinutes: number): number
+/** @deprecated remove at integration - pass HoldMissionsSpec[] instead; kept so Wall.tsx keeps compiling until it's migrated. */
+export function estimateDaysToSummit(profile: ProfileProgress, holds: HoldStagesSpec[], sessionMinutes: number): number
 export function estimateDaysToSummit(
   profile: ProfileProgress,
-  holds: HoldStagesSpec[],
+  holds: HoldMissionsSpec[] | HoldStagesSpec[],
   sessionMinutes: number,
 ): number {
-  if (sessionMinutes <= 0) return Infinity
-  const minutesRemaining = estimateMinutesRemaining(profile, holds)
-  return Math.ceil(minutesRemaining / sessionMinutes)
+  const minutesRemaining =
+    holds.length === 0
+      ? 0
+      : 'missions' in holds[0]
+        ? estimateMinutesRemainingMissions(profile, holds as HoldMissionsSpec[])
+        : estimateMinutesRemainingLegacy(profile, holds as HoldStagesSpec[])
+  return daysFromMinutes(minutesRemaining, sessionMinutes)
 }
 
 // ---------------------------------------------------------------------------
