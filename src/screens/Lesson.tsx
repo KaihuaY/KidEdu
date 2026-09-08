@@ -11,6 +11,7 @@ import {
   caseDisplay,
   lessonById,
   nextHoldId,
+  type Checkpoint,
   type LearnCard,
   type Lesson as LessonContent,
 } from '../content/lessons'
@@ -190,6 +191,141 @@ function LearnChecklist({ cardKey, items }: { cardKey: string; items: string[] }
       {items.map((item, i) => (
         <ChecklistItem key={`${cardKey}-${i}`} label={item} />
       ))}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Checkpoints - "before you start this hold, your cube should look like X"
+// ---------------------------------------------------------------------------
+
+const CHECKPOINT_ACK_PREFIX = 'cubeclimb.checkpoint.'
+
+function hasAckedCheckpoint(holdId: string): boolean {
+  try {
+    if (typeof sessionStorage === 'undefined') return false
+    return sessionStorage.getItem(CHECKPOINT_ACK_PREFIX + holdId) === '1'
+  } catch {
+    return false
+  }
+}
+
+function ackCheckpoint(holdId: string): void {
+  try {
+    if (typeof sessionStorage === 'undefined') return
+    sessionStorage.setItem(CHECKPOINT_ACK_PREFIX + holdId, '1')
+  } catch {
+    // ignore - the Ready card will just ask again next stage, which is fine
+  }
+}
+
+function CheckpointPicture({ checkpoint, tempoScale }: { checkpoint: Checkpoint; tempoScale: number }) {
+  if (!checkpoint.display) return null
+  return (
+    <div className="cc-card" style={{ height: 260, padding: '0.5rem' }}>
+      <TwistyCube
+        setupAlg={checkpoint.display.setupAlg}
+        alg={checkpoint.display.alg}
+        stickering={checkpoint.stickering as TwistyCubeProps['stickering']}
+        backView={checkpoint.backView ? 'top-right' : 'none'}
+        tempoScale={tempoScale}
+        controls="none"
+      />
+    </div>
+  )
+}
+
+/** The Ready? gate shown before a hold with a checkpoint, once per session. */
+function CheckpointGate({
+  lesson,
+  tempoScale,
+  onReady,
+}: {
+  lesson: LessonContent
+  tempoScale: number
+  onReady: () => void
+}) {
+  const [showFallback, setShowFallback] = useState(false)
+  const checkpoint = lesson.checkpoint!
+  const fallback = checkpoint.fallbackHoldId ? lessonById(checkpoint.fallbackHoldId) : undefined
+
+  return (
+    <div className="cc-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <h2 style={{ margin: 0, fontSize: '1.15rem' }}>Ready for {lesson.title}?</h2>
+        <SayIt text={checkpoint.say} />
+      </div>
+      <CheckpointPicture checkpoint={checkpoint} tempoScale={tempoScale} />
+      <p style={{ margin: 0, fontWeight: 700 }}>Your cube should look like this: {checkpoint.look}</p>
+      <p style={{ margin: 0, fontWeight: 700, color: 'var(--cc-ink-soft)' }}>Hold it like this: {checkpoint.hold}</p>
+
+      {!showFallback ? (
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="cc-btn cc-btn-primary"
+            style={{ flex: 1, minWidth: 160 }}
+            onClick={() => {
+              ackCheckpoint(lesson.id)
+              onReady()
+            }}
+          >
+            ✅ Yes, let&apos;s climb
+          </button>
+          <button
+            type="button"
+            className="cc-btn cc-btn-surface"
+            style={{ flex: 1, minWidth: 160 }}
+            onClick={() => setShowFallback(true)}
+          >
+            🤔 Not yet
+          </button>
+        </div>
+      ) : (
+        <div className="cc-card" style={{ padding: '1rem', background: 'var(--cc-bg)', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+          <p style={{ margin: 0, fontWeight: 700 }}>No worries! Let&apos;s fix that first.</p>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            {fallback && (
+              <button
+                type="button"
+                className="cc-btn cc-btn-primary"
+                onClick={() => navigate(`/lesson/${fallback.id}`)}
+              >
+                Go back to {fallback.title}
+              </button>
+            )}
+            <a href="#/help" className="cc-btn cc-btn-surface" style={{ textDecoration: 'none' }}>
+              🧩 Help my cube
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Reused at the end of Climb once mastered: a preview of the next wall's starting checkpoint. */
+function WhatsNextCard({ nextLesson, tempoScale }: { nextLesson: LessonContent; tempoScale: number }) {
+  const checkpoint = nextLesson.checkpoint
+  return (
+    <div className="cc-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+      <h2 style={{ margin: 0, fontSize: '1.05rem' }}>
+        Next: {nextLesson.title} ▶
+      </h2>
+      {checkpoint && (
+        <>
+          <CheckpointPicture checkpoint={checkpoint} tempoScale={tempoScale} />
+          <p style={{ margin: 0, fontWeight: 700 }}>Your cube will look like this: {checkpoint.look}</p>
+          <p style={{ margin: 0, fontWeight: 700, color: 'var(--cc-ink-soft)' }}>Hold it like this: {checkpoint.hold}</p>
+        </>
+      )}
+      <button
+        type="button"
+        className="cc-btn cc-btn-primary"
+        onClick={() => navigate(`/lesson/${nextLesson.id}`)}
+      >
+        Next: {nextLesson.title} ▶
+      </button>
     </div>
   )
 }
@@ -465,7 +601,13 @@ function ClimbPanel({
 }) {
   const [run, setRun] = useState(1)
   const [totalTries, setTotalTries] = useState(0)
-  const runner = useSequenceRunner(lesson.stages.climb.sequence, ({ tries }) => {
+  // Holds that teach more than one trick (e.g. Middle Traverse) cycle through
+  // `sequences` one per run instead of repeating the same `sequence` every
+  // time - falls back to `sequence` for every single-trick hold.
+  const sequences = lesson.stages.climb.sequences
+  const currentSequence =
+    sequences && sequences.length > 0 ? sequences[(run - 1) % sequences.length] : lesson.stages.climb.sequence
+  const runner = useSequenceRunner(currentSequence, ({ tries }) => {
     const newTotal = totalTries + tries
     if (run >= lesson.stages.climb.runs) {
       onComplete(newTotal)
@@ -588,6 +730,19 @@ export function Lesson() {
     const firstIncomplete = STAGE_ORDER.find((s) => !stageIsDone(hold, s))
     return firstIncomplete ?? 'climb'
   })
+  const [checkpointAcked, setCheckpointAcked] = useState(() => hasAckedCheckpoint(lesson?.id ?? ''))
+
+  // Navigating straight from one hold to the next (e.g. the "Next hold ▶"
+  // button in the celebration dialog, or the What's next card) keeps this
+  // component mounted, so both the stage-tab pointer and the checkpoint gate
+  // need to re-sync to the newly arrived-at hold rather than carrying over
+  // stale state from the previous one.
+  useEffect(() => {
+    const firstIncomplete = STAGE_ORDER.find((s) => !stageIsDone(hold, s))
+    setCurrentStage(firstIncomplete ?? 'climb')
+    setCheckpointAcked(hasAckedCheckpoint(lesson?.id ?? ''))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lesson?.id])
 
   useStageMinutesTracker('kid', lesson?.id ?? '', currentStage)
 
@@ -648,6 +803,8 @@ export function Lesson() {
   }
 
   const nextHold = nextHoldId(lesson.id)
+  const nextLesson = nextHold ? lessonById(nextHold) : undefined
+  const showCheckpointGate = Boolean(lesson.checkpoint) && !hold?.masteredAt && !checkpointAcked
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1rem 1rem 2rem' }}>
@@ -665,6 +822,16 @@ export function Lesson() {
 
       <p style={{ margin: 0 }}>{lesson.story}</p>
 
+      {showCheckpointGate && (
+        <CheckpointGate
+          lesson={lesson}
+          tempoScale={tempoScale}
+          onReady={() => setCheckpointAcked(true)}
+        />
+      )}
+
+      {!showCheckpointGate && (
+      <>
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
         {STAGE_ORDER.map((stage, i) => {
           const locked = i >= unlockedCount
@@ -749,6 +916,12 @@ export function Lesson() {
           showLetters={showLetters}
           onComplete={(totalTries) => handleStageComplete('climb', totalTries)}
         />
+      )}
+
+      {currentStage === 'climb' && hold?.masteredAt && nextLesson && (
+        <WhatsNextCard nextLesson={nextLesson} tempoScale={tempoScale} />
+      )}
+      </>
       )}
 
       {celebration && (

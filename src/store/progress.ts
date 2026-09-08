@@ -295,6 +295,25 @@ function hasLocalStorage(): boolean {
 }
 
 /**
+ * The Rubik's cube curriculum used to have a single combined "cross" hold
+ * (grow the daisy AND tuck it into a white cross) and no "cornerFind" hold
+ * (finding a white corner's home was folded into "corners"). It was later
+ * split into 'daisy' + 'cross' and 'cornerFind' + 'corners' respectively, so
+ * old saves need their progress carried over onto the new hold ids or a
+ * climber who already finished those walls would see them locked again.
+ */
+function migrateSplitHolds(holds: Record<string, HoldProgress>): Record<string, HoldProgress> {
+  const next = { ...holds }
+  if (next.cross && !next.daisy) {
+    next.daisy = next.cross
+  }
+  if (next.corners?.masteredAt && !next.cornerFind) {
+    next.cornerFind = { stages: {}, masteredAt: next.corners.masteredAt }
+  }
+  return next
+}
+
+/**
  * Fills in a profile's nested fields (tokens/streak in particular) from a
  * default profile, so a doc saved before one of those fields existed - or a
  * profile object that only partially round-tripped through a merge/import -
@@ -304,6 +323,7 @@ function normalizeProfile(fallback: ProfileProgress, parsed: Partial<ProfileProg
   return {
     ...fallback,
     ...parsed,
+    holds: migrateSplitHolds({ ...fallback.holds, ...parsed?.holds }),
     tokens: { ...fallback.tokens, ...parsed?.tokens },
     streak: { ...fallback.streak, ...parsed?.streak },
   }

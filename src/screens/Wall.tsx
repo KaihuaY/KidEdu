@@ -264,6 +264,21 @@ export function Wall() {
                 }}
               >
                 <span style={{ fontSize: '1rem', fontWeight: 800 }}>{lesson.title}</span>
+                {lesson.checkpoint && (
+                  <span
+                    style={{
+                      fontSize: '0.75rem',
+                      color: 'var(--cc-ink-soft)',
+                      fontWeight: 600,
+                      width: '100%',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Starts from: {lesson.checkpoint.look}
+                  </span>
+                )}
                 {state === 'mastered' ? (
                   <span aria-label={`${stars} stars`} style={{ fontSize: '0.85rem' }}>
                     {'⭐'.repeat(stars) || '—'}

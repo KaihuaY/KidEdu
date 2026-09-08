@@ -8,20 +8,35 @@ import {
   LEARN_STICKERINGS,
   LESSON_LIST,
   LESSONS,
+  checkpointState,
+  holdForPhase,
   learnCardEndState,
   learnCardState,
   spotOptionState,
   type HoldId,
   type LearnCard,
+  type PhaseId,
 } from '../lessons'
 
 const NAMED_ALG_IDS = new Set(NAMED_ALGS.map((a) => a.id))
+const PHASE_IDS: PhaseId[] = [
+  'daisy',
+  'cross',
+  'corners',
+  'middle',
+  'yellowCross',
+  'yellowEdges',
+  'cornerPosition',
+  'cornerOrient',
+]
 
 describe('lesson structure', () => {
-  it('has exactly the 8 documented holds, numbered 0-7 in wall order', () => {
+  it('has exactly the 10 documented holds, numbered 0-9 in wall order', () => {
     expect(HOLD_ORDER).toEqual([
       'basecamp',
+      'daisy',
       'cross',
+      'cornerFind',
       'corners',
       'middle',
       'yellowCross',
@@ -29,14 +44,14 @@ describe('lesson structure', () => {
       'cornerPosition',
       'cornerOrient',
     ])
-    expect(LESSON_LIST).toHaveLength(8)
+    expect(LESSON_LIST).toHaveLength(10)
     LESSON_LIST.forEach((lesson, i) => {
       expect(lesson.id).toBe(HOLD_ORDER[i])
       expect(lesson.number).toBe(i)
     })
   })
 
-  it('every hold has all 4 stages with non-empty copy', () => {
+  it('every hold has all stages with non-empty copy', () => {
     for (const lesson of LESSON_LIST) {
       expect(lesson.title.length).toBeGreaterThan(0)
       expect(lesson.goal.length).toBeGreaterThan(0)
@@ -82,6 +97,9 @@ describe('lesson structure', () => {
         expect(() => applyAlg(SOLVED, seq)).not.toThrow()
       }
       expect(() => applyAlg(SOLVED, lesson.stages.climb.sequence)).not.toThrow()
+      for (const seq of lesson.stages.climb.sequences ?? []) {
+        expect(() => applyAlg(SOLVED, seq)).not.toThrow()
+      }
       for (const option of lesson.stages.spot.options) {
         expect(() => applyAlg(SOLVED, option.alg)).not.toThrow()
         expect(() => spotOptionState(option)).not.toThrow()
@@ -104,6 +122,80 @@ describe('lesson structure', () => {
     // assuming a particular internal representation.
     expect(basecamp.stages.watch.demos).toHaveLength(moveSet.length)
     expect(basecamp.stages.try.sequences?.slice().sort()).toEqual([...moveSet].sort())
+  })
+})
+
+describe('holdForPhase', () => {
+  it('returns a hold whose phaseIds include the phase, for every solver phase', () => {
+    for (const phase of PHASE_IDS) {
+      const hold = holdForPhase(phase)
+      expect(hold, phase).toBeDefined()
+      expect(hold!.phaseIds).toContain(phase)
+    }
+  })
+
+  it('maps daisy/cross/corners phases to the right holds (not the knowledge-only Corner Lookout)', () => {
+    expect(holdForPhase('daisy')?.id).toBe('daisy')
+    expect(holdForPhase('cross')?.id).toBe('cross')
+    expect(holdForPhase('corners')?.id).toBe('corners')
+  })
+
+  it('Corner Lookout carries no solver phase of its own', () => {
+    expect(LESSONS.cornerFind.phaseIds).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Checkpoints - "before you start this hold, your cube should look like X"
+// ---------------------------------------------------------------------------
+
+describe('checkpoints', () => {
+  const HOLDS_WITH_CHECKPOINT: HoldId[] = [
+    'cross',
+    'cornerFind',
+    'corners',
+    'middle',
+    'yellowCross',
+    'yellowEdges',
+    'cornerPosition',
+    'cornerOrient',
+  ]
+
+  it('every hold except Base Camp and The Daisy Ledge has a checkpoint; those two do not', () => {
+    for (const id of HOLDS_WITH_CHECKPOINT) {
+      expect(LESSONS[id].checkpoint, id).toBeDefined()
+    }
+    expect(LESSONS.basecamp.checkpoint).toBeUndefined()
+    expect(LESSONS.daisy.checkpoint).toBeUndefined()
+  })
+
+  it('every checkpoint has non-empty look/hold/say text and (when present) a fallback earlier in wall order', () => {
+    for (const lesson of LESSON_LIST) {
+      const cp = lesson.checkpoint
+      if (!cp) continue
+      expect(cp.look.length, lesson.id).toBeGreaterThan(0)
+      expect(cp.hold.length, lesson.id).toBeGreaterThan(0)
+      expect(cp.say.length, lesson.id).toBeGreaterThan(0)
+      if (cp.fallbackHoldId) {
+        const fallbackIndex = HOLD_ORDER.indexOf(cp.fallbackHoldId)
+        const ownIndex = HOLD_ORDER.indexOf(lesson.id)
+        expect(fallbackIndex, lesson.id).toBeGreaterThanOrEqual(0)
+        expect(fallbackIndex, lesson.id).toBeLessThan(ownIndex)
+      }
+    }
+  })
+
+  it('every checkpoint display alg and setupAlg applies without throwing, and stickering is a real preset', () => {
+    const allowed = new Set<string>(LEARN_STICKERINGS)
+    for (const lesson of LESSON_LIST) {
+      const cp = lesson.checkpoint
+      if (!cp?.display) continue
+      expect(() => applyAlg(SOLVED, cp.display!.setupAlg)).not.toThrow()
+      expect(() => applyAlg(SOLVED, cp.display!.alg)).not.toThrow()
+      expect(() => checkpointState(cp)).not.toThrow()
+      expect(cp.display.setupAlg.startsWith('z2'), lesson.id).toBe(true)
+      if (cp.stickering) expect(allowed.has(cp.stickering), `${lesson.id}: ${cp.stickering}`).toBe(true)
+    }
   })
 })
 
@@ -185,7 +277,7 @@ describe('Edge Ledge spot quiz predicate', () => {
 // Every Learn card that shows "a case" is checked here against the engine, in
 // Nora's frame (yellow up, green front => engine letters U=yellow, R=orange,
 // F=green, D=white, L=red, B=blue). If one of these fails, the picture on
-// screen is lying to a six year old, so it is worth being fussy.
+// screen is lying to a seven year old, so it is worth being fussy.
 // ---------------------------------------------------------------------------
 
 function learnCards(id: HoldId): LearnCard[] {
@@ -201,6 +293,9 @@ function card(id: HoldId, titleStartsWith: string): LearnCard {
 
 const U_EDGE_SLOTS = [0, 1, 2, 3] // UR, UF, UL, UB
 const U_CORNER_SLOTS = [0, 1, 2, 3] // URF, UFL, ULB, UBR
+// EDGE_NAMES order: UR, UF, UL, UB, DR, DF, DL, DB, FR, FL, BL, BR
+const D_EDGE_SLOT: Record<'R' | 'F' | 'L' | 'B', number> = { R: 4, F: 5, L: 6, B: 7 }
+const D_CORNER_SLOTS = [4, 5, 6, 7] // DFR, DLF, DBL, DRB
 
 /** Letters of the piece sitting in an edge slot, orientation-reference facelet first. */
 function edgePiece(state: string, slot: number): string[] {
@@ -230,6 +325,34 @@ function edgesMatchingTheirCentre(state: string): boolean[] {
 /** A corner is "home" when its 3 colours are the 3 colours of its slot - twist ignored. */
 function cornersHome(state: string): boolean[] {
   return U_CORNER_SLOTS.map((slot) => sameSet(cornerPiece(state, slot), CORNER_NAMES[slot].split('')))
+}
+/** Is the bottom-layer edge on this face a correctly solved, matching cross petal? */
+function crossEdgeOk(state: string, face: 'R' | 'F' | 'L' | 'B'): boolean {
+  const facelets = EDGE_FACELETS[D_EDGE_SLOT[face]]
+  const whiteDown = state[facelets[0]] === 'D'
+  const matches = state[facelets[1]] === state[facePositions(face)[4]]
+  return whiteDown && matches
+}
+/** Every cross edge solved and matching, i.e. exactly what the "T shapes all around" card claims. */
+function fullCrossOk(state: string): boolean {
+  return (['R', 'F', 'L', 'B'] as const).every((face) => crossEdgeOk(state, face))
+}
+/** Bottom layer (cross + all 4 white corners) fully solved, nothing said about layers above it. */
+function bottomLayerIntact(state: string): boolean {
+  if (state.slice(27, 36) !== SOLVED.slice(27, 36)) return false
+  if (!fullCrossOk(state)) return false
+  return D_CORNER_SLOTS.every((slot) => sameSet(cornerPiece(state, slot), CORNER_NAMES[slot].split('')) && cornerPiece(state, slot)[0] === 'D')
+}
+/** Bottom two layers (cross, corners, and middle edges) fully solved - an F2L-done picture. */
+function bottomTwoLayersIntact(state: string): boolean {
+  if (state.slice(27, 36) !== SOLVED.slice(27, 36)) return false
+  for (const face of ['R', 'F', 'L', 'B'] as const) {
+    const idx = facePositions(face)
+    for (const i of [3, 4, 5, 6, 7, 8]) {
+      if (state[idx[i]] !== SOLVED[idx[i]]) return false
+    }
+  }
+  return true
 }
 
 describe('Learn stage structure', () => {
@@ -303,16 +426,16 @@ describe('Base Camp Learn cards', () => {
   })
 })
 
-describe('Daisy Ledge Learn cases', () => {
+describe('The Daisy Ledge Learn cases', () => {
   it('starts from a real daisy: four white petals around the yellow centre', () => {
-    const c = card('cross', 'Grow a daisy')
+    const c = card('daisy', 'Grow a daisy')
     const state = learnCardState(c)
     expect(petalCount(state)).toBe(4)
     expect(state[4]).toBe('U') // yellow centre in the middle of the flower
   })
 
   it('case (a): a white edge on the bottom, white facing DOWN, in the wrong slot', () => {
-    const c = card('cross', 'A white edge on the bottom')
+    const c = card('daisy', 'A white edge on the bottom')
     const state = learnCardState(c)
     const DF = 5 // the edge slot under the front face
     expect(state[EDGE_FACELETS[DF][0]]).toBe('D') // white points down
@@ -323,7 +446,7 @@ describe('Daisy Ledge Learn cases', () => {
   })
 
   it('case (b): a white edge stranded in the middle row, lifted by one side turn', () => {
-    const c = card('cross', 'A white edge in the middle row')
+    const c = card('daisy', 'A white edge in the middle row')
     const state = learnCardState(c)
     const FR = 8
     expect(edgePiece(state, FR)).toContain('D')
@@ -334,7 +457,7 @@ describe('Daisy Ledge Learn cases', () => {
   })
 
   it('case (c): a white edge on top with white pointing at Nora, not up', () => {
-    const c = card('cross', 'White is pointing sideways')
+    const c = card('daisy', 'White is pointing sideways')
     const state = learnCardState(c)
     const UF = 1
     expect(edgePiece(state, UF)).toContain('D')
@@ -344,18 +467,89 @@ describe('Daisy Ledge Learn cases', () => {
     expect(petalCount(learnCardEndState(c))).toBe(3)
   })
 
-  it('the tuck card starts on a lined-up petal and ends with that edge in the cross', () => {
-    const c = card('cross', 'Tuck the petals down')
-    const state = learnCardState(c)
+  it('the "count your petals" card shows a complete, four-petal daisy', () => {
+    const c = card('daisy', 'Count your petals')
+    expect(petalCount(learnCardState(c))).toBe(4)
+  })
+})
+
+describe('The White Cross Bridge Learn cases', () => {
+  it('checkpoint: a complete daisy sends her back here if missing', () => {
+    expect(LESSONS.cross.checkpoint?.fallbackHoldId).toBe('daisy')
+    expect(petalCount(checkpointState(LESSONS.cross.checkpoint!))).toBe(4)
+  })
+
+  it('"Pick one petal" starts from a complete daisy', () => {
+    const c = card('cross', 'Pick one petal')
+    expect(petalCount(learnCardState(c))).toBe(4)
+  })
+
+  it('"Line it up" starts misaligned and ends with the front petal matching the front centre', () => {
+    const c = card('cross', 'Line it up')
+    const before = learnCardState(c)
     const UF = 1
-    const DF = 5
-    expect(petalCount(state)).toBe(4)
-    expect(state[EDGE_FACELETS[UF][0]]).toBe('D') // white up
-    expect(state[EDGE_FACELETS[UF][1]]).toBe(state[facePositions('F')[4]]) // green over green
+    expect(before[EDGE_FACELETS[UF][0]]).toBe('D')
+    expect(before[EDGE_FACELETS[UF][1]]).not.toBe(before[facePositions('F')[4]])
     const after = learnCardEndState(c)
-    expect(after[EDGE_FACELETS[DF][0]]).toBe('D') // white down
-    expect(after[EDGE_FACELETS[DF][1]]).toBe('F') // and matching its centre
+    expect(after[EDGE_FACELETS[UF][1]]).toBe(after[facePositions('F')[4]])
+  })
+
+  it('"Turn that side twice" tucks the aligned front petal down into the cross, matching', () => {
+    const c = card('cross', 'Turn that side twice')
+    const before = learnCardState(c)
+    const UF = 1
+    expect(before[EDGE_FACELETS[UF][0]]).toBe('D')
+    expect(before[EDGE_FACELETS[UF][1]]).toBe(before[facePositions('F')[4]])
+    const after = learnCardEndState(c)
+    expect(crossEdgeOk(after, 'F')).toBe(true)
     expect(petalCount(after)).toBe(3)
+  })
+
+  it('"Do the other three" shows exactly two petals tucked and two still up', () => {
+    const c = card('cross', 'Do the other three')
+    const state = learnCardState(c)
+    expect(petalCount(state)).toBe(2)
+    expect(crossEdgeOk(state, 'F')).toBe(true)
+    expect(crossEdgeOk(state, 'R')).toBe(true)
+  })
+
+  it('"Check: T shapes" shows a fully solved, matching white cross', () => {
+    const c = card('cross', 'Check: T shapes')
+    expect(fullCrossOk(learnCardState(c))).toBe(true)
+  })
+
+  it('"Now FLIP" starts from the same solved cross', () => {
+    const c = card('cross', 'Now FLIP')
+    expect(fullCrossOk(learnCardState(c))).toBe(true)
+  })
+})
+
+describe('Corner Lookout Learn cases', () => {
+  it('checkpoint: a solved white cross with matching T shapes sends her back to the Bridge if missing', () => {
+    expect(LESSONS.cornerFind.checkpoint?.fallbackHoldId).toBe('cross')
+    expect(fullCrossOk(checkpointState(LESSONS.cornerFind.checkpoint!))).toBe(true)
+  })
+
+  it('carries no named tricks - this hold is pure looking, not a new alg', () => {
+    expect(LESSONS.cornerFind.namedAlgIds).toEqual([])
+  })
+
+  it('"Where is home?" and "Hold home at the front-right" both show a corner parked one Elevator from home', () => {
+    const ELEVATOR = namedAlg('elevator')?.alg ?? "R U R' U'"
+    for (const title of ['Where is home?', 'Hold home at the front-right']) {
+      const c = card('cornerFind', title)
+      const state = learnCardState(c)
+      expect(isSolved(applyAlg(state, ELEVATOR)), title).toBe(true)
+    }
+  })
+
+  it('"Park it above home" starts misparked and ends parked (one Elevator away from solved)', () => {
+    const ELEVATOR = namedAlg('elevator')?.alg ?? "R U R' U'"
+    const c = card('cornerFind', 'Park it above home')
+    const before = learnCardState(c)
+    expect(isSolved(applyAlg(before, ELEVATOR))).toBe(false)
+    const after = learnCardEndState(c)
+    expect(isSolved(applyAlg(after, ELEVATOR))).toBe(true)
   })
 })
 
@@ -364,8 +558,13 @@ describe('Corner Crack Learn cases', () => {
   const DFR = 4
   const ELEVATOR = namedAlg('elevator')?.alg ?? "R U R' U'"
 
-  it('case (a): the white corner sits in the top layer directly above its own slot', () => {
-    const c = card('corners', 'White corner on top')
+  it('checkpoint: cross solved, corners scrambled, sends her back to Corner Lookout if missing', () => {
+    expect(LESSONS.corners.checkpoint?.fallbackHoldId).toBe('cornerFind')
+    expect(fullCrossOk(checkpointState(LESSONS.corners.checkpoint!))).toBe(true)
+  })
+
+  it('case (a): "Ready to ride" - the white corner sits in the top layer directly above its own slot', () => {
+    const c = card('corners', 'Ready to ride')
     const state = learnCardState(c)
     expect(sameSet(cornerPiece(state, URF), ['D', 'F', 'R'])).toBe(true)
     expect(state[CORNER_FACELETS[URF][0]]).not.toBe('D') // white is not pointing up yet
@@ -391,9 +590,23 @@ describe('Corner Crack Learn cases', () => {
   })
 })
 
-describe('Middle Traverse Learn cases', () => {
+describe('Middle Traverse', () => {
   const UF = 1
   const FR = 8
+
+  it('checkpoint: whole bottom layer solved, top messy, sends her back to Corner Crack if missing', () => {
+    expect(LESSONS.middle.checkpoint?.fallbackHoldId).toBe('corners')
+    const state = checkpointState(LESSONS.middle.checkpoint!)
+    expect(bottomLayerIntact(state)).toBe(true)
+    expect(isSolved(state)).toBe(false)
+  })
+
+  it('Try and Climb both offer Send it Right AND Send it Left', () => {
+    const goRight = namedAlg('goRight')?.alg
+    const goLeft = namedAlg('goLeft')?.alg
+    expect(LESSONS.middle.stages.try.sequences).toEqual([goRight, goLeft])
+    expect(LESSONS.middle.stages.climb.sequences).toEqual([goRight, goLeft])
+  })
 
   it('the line-up card ends on a no-yellow edge whose front colour matches the front centre', () => {
     const c = card('middle', 'Line it up first')
@@ -431,7 +644,14 @@ describe('Middle Traverse Learn cases', () => {
   })
 })
 
-describe('Yellow Cross Ridge Learn cases', () => {
+describe('Yellow Cross Ridge', () => {
+  it('checkpoint: bottom two layers solved, top messy, sends her back to Middle Traverse if missing', () => {
+    expect(LESSONS.yellowCross.checkpoint?.fallbackHoldId).toBe('middle')
+    const state = checkpointState(LESSONS.yellowCross.checkpoint!)
+    expect(bottomTwoLayersIntact(state)).toBe(true)
+    expect(isSolved(state)).toBe(false)
+  })
+
   it('the dot card shows no yellow edges at all', () => {
     const c = card('yellowCross', 'Dot, L, or line?')
     expect(yellowTopEdges(learnCardState(c)).filter(Boolean)).toHaveLength(0)
@@ -471,7 +691,12 @@ describe('Yellow Cross Ridge Learn cases', () => {
   })
 })
 
-describe('Edge Ledge Learn cases', () => {
+describe('Edge Ledge', () => {
+  it('checkpoint: a full yellow cross sends her back to Yellow Cross Ridge if missing', () => {
+    expect(LESSONS.yellowEdges.checkpoint?.fallbackHoldId).toBe('yellowCross')
+    expect(yellowTopEdges(checkpointState(LESSONS.yellowEdges.checkpoint!)).every(Boolean)).toBe(true)
+  })
+
   it('the adjacent card shows two matching edges at the BACK and the RIGHT', () => {
     const c = card('yellowEdges', 'Two matching, side by side')
     const state = learnCardState(c)
@@ -497,7 +722,14 @@ describe('Edge Ledge Learn cases', () => {
   })
 })
 
-describe('Corner Shuffle Learn cases', () => {
+describe('Corner Shuffle', () => {
+  it('checkpoint: yellow cross with matching edges sends her back to Edge Ledge if missing', () => {
+    expect(LESSONS.cornerPosition.checkpoint?.fallbackHoldId).toBe('yellowEdges')
+    const state = checkpointState(LESSONS.cornerPosition.checkpoint!)
+    expect(yellowTopEdges(state).every(Boolean)).toBe(true)
+    expect(edgesMatchingTheirCentre(state).every(Boolean)).toBe(true)
+  })
+
   it('the "one corner home" card has exactly one home corner, and one Shuffle finishes it', () => {
     const c = card('cornerPosition', 'One corner home')
     const state = learnCardState(c)
@@ -515,11 +747,18 @@ describe('Corner Shuffle Learn cases', () => {
   })
 })
 
-describe('THE SUMMIT Learn cases', () => {
+describe('THE SUMMIT', () => {
   const TWIST = namedAlg('cornerTwist')?.alg ?? "R' D' R D"
   const URF_TOP = CORNER_FACELETS[0][0]
   const ride = (state: string, n: number) =>
     applyAlg(state, Array.from({ length: n }, () => TWIST).join(' '))
+
+  it('checkpoint: every corner home, some twisted, sends her back to Corner Shuffle if missing', () => {
+    expect(LESSONS.cornerOrient.checkpoint?.fallbackHoldId).toBe('cornerPosition')
+    const state = checkpointState(LESSONS.cornerOrient.checkpoint!)
+    expect(cornersHome(state).every(Boolean)).toBe(true)
+    expect(U_CORNER_SLOTS.some((slot) => state[CORNER_FACELETS[slot][0]] !== 'U')).toBe(true)
+  })
 
   it('opens with every corner in its slot but not every corner yellow-up', () => {
     const c = card('cornerOrient', 'Every corner is home')

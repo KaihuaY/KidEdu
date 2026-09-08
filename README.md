@@ -95,6 +95,57 @@ or anything else on your account. If you ever want to revoke access, delete
 the token from GitHub's settings page and tap "Disconnect" in Practice's
 Settings.
 
+## Cube
+
+The Rubik's cube curriculum (`src/content/lessons.ts`) is a climbing wall of
+10 holds, unlocked one at a time from the bottom up. Each hold is a 5-stage
+lesson - **Learn → Watch → Try → Spot it → Climb** - and every hold past the
+first two also opens with a **Ready?** checkpoint card ("your cube should
+look like this, held like this") so there's always an explicit hand-off from
+the wall below, with a one-tap way back down if her cube doesn't match yet.
+
+| # | Hold | What it teaches |
+|---|------|------------------|
+| 0 | Base Camp | Every basic move, both directions - no solving yet |
+| 1 | The Daisy Ledge | Grow a daisy: four white edges standing around the yellow centre |
+| 2 | The White Cross Bridge | Tuck the daisy down into a white cross, then flip white to the bottom |
+| 3 | Corner Lookout | Find a white corner's home and park it above home, front-right |
+| 4 | Corner Crack | The Elevator rides each white corner down into place |
+| 5 | Middle Traverse | Send it Right / Send it Left place the middle-layer edges |
+| 6 | Yellow Cross Ridge | Dot → L → line → a full yellow cross on top |
+| 7 | Edge Ledge | The Fish lines up the yellow edges with their centres |
+| 8 | Corner Shuffle | Corner Swap walks the yellow corners into their own spots |
+| 9 | THE SUMMIT | The Bottom Elevator twists every corner yellow-up - fully solved! |
+
+Holds 1-2 and 3-4 used to each be a single combined hold (`cross` covered
+daisy-growing *and* cross-tucking; `corners` covered corner-hunting *and*
+the Elevator); they were split so each hold teaches one idea at a time. Old
+saved progress migrates automatically (`src/store/progress.ts`).
+
+### Scanning a real cube with the camera
+
+**Help my cube** (Cube → Help) can read a scrambled cube through the camera
+instead of tapping all 54 stickers:
+
+1. Tap **📷 Scan my cube**, then **Open camera** (allow the camera when asked).
+2. The card at the top shows how to hold the cube for each of the six faces,
+   starting with yellow on top and green facing the camera. Fill the square
+   with the face, keep the centre sticker in the middle cell, and tap
+   **Capture**. Check the nine colours it read, then **Looks right** or
+   **Retake**.
+3. After the sixth face the colours land on the net. Anything the camera was
+   unsure about is left blank - tap those stickers to fix them by hand, then
+   **Solve it!**
+4. While following the steps, **Scan again to check** re-reads the cube and
+   restarts the walkthrough from what it sees. That is how the app keeps up
+   with her real cube: scan, do the steps, scan again.
+
+Tips: use normal indoor light and avoid a window or lamp glaring off the
+stickers; hold the cube still while capturing; if one colour keeps coming out
+wrong (white/yellow and red/orange are the hard pairs), just tap it on the
+net. Colours are classified against the six centre stickers the camera saw
+(`src/engine/cubeScan.ts`), so it adapts to the cube and the lighting.
+
 ## Piano
 
 Piano practice lives at the 🎹 Piano tab. It's built for acoustic piano at

@@ -387,6 +387,121 @@ describe('piano schema and migration', () => {
   })
 })
 
+describe('normalizeDoc migrates the split cube holds (via importJson)', () => {
+  it('copies a legacy combined "cross" hold (daisy+cross) onto the new "daisy" id, keeping "cross" itself', () => {
+    const legacyJson = JSON.stringify({
+      schemaVersion: 1,
+      settings: { updatedAt: 1 },
+      profiles: {
+        updatedAt: 1,
+        kid: {
+          holds: {
+            cross: {
+              stages: { learn: { bestTries: 1, stars: 3, attempts: 1, minutes: 2, completedAt: 10 } },
+              masteredAt: 20,
+            },
+          },
+        },
+      },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+    })
+
+    importJson(legacyJson)
+    const doc = getDoc()
+
+    expect(doc.profiles.kid.holds.daisy).toEqual(doc.profiles.kid.holds.cross)
+    expect(doc.profiles.kid.holds.daisy.masteredAt).toBe(20)
+  })
+
+  it('does not overwrite an already-present "daisy" hold', () => {
+    const legacyJson = JSON.stringify({
+      schemaVersion: 1,
+      settings: { updatedAt: 1 },
+      profiles: {
+        updatedAt: 1,
+        kid: {
+          holds: {
+            cross: { stages: {}, masteredAt: 20 },
+            daisy: { stages: {}, masteredAt: 5 },
+          },
+        },
+      },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+    })
+
+    importJson(legacyJson)
+    expect(getDoc().profiles.kid.holds.daisy.masteredAt).toBe(5)
+  })
+
+  it('marks the new "cornerFind" hold mastered when "corners" is already mastered', () => {
+    const legacyJson = JSON.stringify({
+      schemaVersion: 1,
+      settings: { updatedAt: 1 },
+      profiles: {
+        updatedAt: 1,
+        kid: { holds: { corners: { stages: {}, masteredAt: 42 } } },
+      },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+    })
+
+    importJson(legacyJson)
+    const doc = getDoc()
+
+    expect(doc.profiles.kid.holds.cornerFind?.masteredAt).toBe(42)
+  })
+
+  it('leaves cornerFind alone when corners is not yet mastered', () => {
+    const legacyJson = JSON.stringify({
+      schemaVersion: 1,
+      settings: { updatedAt: 1 },
+      profiles: {
+        updatedAt: 1,
+        kid: { holds: { corners: { stages: { learn: { bestTries: 1, stars: 1, attempts: 1, minutes: 1, completedAt: 1 } } } } },
+      },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+    })
+
+    importJson(legacyJson)
+    expect(getDoc().profiles.kid.holds.cornerFind).toBeUndefined()
+  })
+
+  it('does not overwrite an already-present "cornerFind" hold', () => {
+    const legacyJson = JSON.stringify({
+      schemaVersion: 1,
+      settings: { updatedAt: 1 },
+      profiles: {
+        updatedAt: 1,
+        kid: {
+          holds: {
+            corners: { stages: {}, masteredAt: 42 },
+            cornerFind: { stages: {}, masteredAt: 7 },
+          },
+        },
+      },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+    })
+
+    importJson(legacyJson)
+    expect(getDoc().profiles.kid.holds.cornerFind.masteredAt).toBe(7)
+  })
+
+  it('a completely fresh profile with no holds at all migrates without throwing', () => {
+    expect(() => importJson(JSON.stringify({
+      schemaVersion: 1,
+      settings: { updatedAt: 1 },
+      profiles: { updatedAt: 1 },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+    }))).not.toThrow()
+    expect(getDoc().profiles.kid.holds).toEqual({})
+  })
+})
+
 describe('setGoalMinutes', () => {
   it('sets the goal for the given activity and mirrors sessionMinutes only for cube', () => {
     setGoalMinutes('cube', 20)

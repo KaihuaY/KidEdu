@@ -1,5 +1,5 @@
 /**
- * CubeClimb curriculum: 8 holds on a climbing wall, bottom to top. Pure data
+ * CubeClimb curriculum: 10 holds on a climbing wall, bottom to top. Pure data
  * (typed), no React. Screens (Wall.tsx, Lesson.tsx) render this content and
  * track progress against it via src/store/progress.ts.
  *
@@ -23,6 +23,13 @@
  *     X = invertAlg(M)
  * `spotOptionState()` mirrors this exactly, so tests can check what a
  * learner actually sees.
+ *
+ * --- The z2 display convention ---------------------------------------------
+ * Every `setupAlg` built by `learnDisplay`/`caseDisplay` carries a leading
+ * "z2 " - that's a TwistyCube rendering correction (see TwistyCube.tsx), not
+ * a move Nora performs. `learnCardState()`/`checkpointState()` strip it
+ * before computing the facelet state, so all the alg constants below are
+ * written as if starting from a plain "yellow up, green front" SOLVED cube.
  */
 
 import { SOLVED, applyAlg, invertAlg } from '../engine/cube'
@@ -35,7 +42,9 @@ import { STAGE_MINUTES } from '../store/planner'
 
 export type HoldId =
   | 'basecamp'
+  | 'daisy'
   | 'cross'
+  | 'cornerFind'
   | 'corners'
   | 'middle'
   | 'yellowCross'
@@ -47,7 +56,10 @@ export type HoldId =
  * Solver phase ids (src/engine/solver, PhaseId type). Kept as a local copy of
  * the string union rather than importing it, so this file doesn't take a
  * hard dependency on the solver module - just on the plain strings, which
- * are part of the agreed spec either way.
+ * are part of the agreed spec either way. Note this list has 8 entries while
+ * HOLD_ORDER has 10: 'cornerFind' is a pure-knowledge hold (finding a white
+ * corner's home) that doesn't advance the solver's state machine, so it
+ * carries no phase of its own - see `holdForPhase`.
  */
 export type PhaseId =
   | 'daisy'
@@ -61,7 +73,9 @@ export type PhaseId =
 
 export const HOLD_ORDER: HoldId[] = [
   'basecamp',
+  'daisy',
   'cross',
+  'cornerFind',
   'corners',
   'middle',
   'yellowCross',
@@ -94,7 +108,7 @@ export interface WatchStage {
  * `display` is a raw TwistyCube setupAlg/alg pair (see the file header for the
  * z2 convention). Build it with `learnDisplay(movesFromSolved, alg)` so the
  * paused frame is always `applyAlg(SOLVED, movesFromSolved)` and pressing
- * play animates `alg` from there.
+ * play animates `alg` forward from there.
  */
 export interface LearnCard {
   title: string
@@ -120,7 +134,7 @@ export interface TryStage {
   prompt: string
   /** The primary move sequence Nora must tap in order. */
   sequence: string
-  /** Holds with more than one mini-task (currently just Base Camp) list them all here, in order. */
+  /** Holds with more than one mini-task list them all here, in order. */
   sequences?: string[]
   say: string
   estimatedMinutes: number
@@ -142,7 +156,36 @@ export interface SpotStage {
 export interface ClimbStage {
   runs: number
   sequence: string
+  /**
+   * Holds that teach more than one trick (e.g. Middle Traverse's Send it
+   * Right / Send it Left) cycle through these, one per run, instead of
+   * repeating `sequence` every time. Falls back to `sequence` when absent or
+   * empty, so every existing single-trick hold keeps working unchanged.
+   */
+  sequences?: string[]
   estimatedMinutes: number
+}
+
+/**
+ * "Before you start this hold, your cube should look like this." Shown as a
+ * Ready? card before Learn (once per session) and reused as a "what's next"
+ * preview at the end of Climb. Every hold except Base Camp and The Daisy
+ * Ledge has one - those two are the only two holds Nora can start from ANY
+ * scrambled cube, so there's nothing to check yet.
+ */
+export interface Checkpoint {
+  /** "Your cube should look like this:" 1-2 short sentences. */
+  look: string
+  /** "Hold it like this:" 1 sentence. */
+  hold: string
+  say: string
+  /** A still picture - build with `learnDisplay(movesFromSolved, '')`. */
+  display?: { setupAlg: string; alg: string }
+  /** A cubing.js experimentalStickering preset - must be in LEARN_STICKERINGS. */
+  stickering?: string
+  backView?: boolean
+  /** Hold id to send her back to if the cube does NOT look like this. */
+  fallbackHoldId?: HoldId
 }
 
 export interface Lesson {
@@ -154,6 +197,7 @@ export interface Lesson {
   phaseIds: PhaseId[]
   namedAlgIds: string[]
   realCubeHint: string
+  checkpoint?: Checkpoint
   stages: {
     learn: LearnStage
     watch: WatchStage
@@ -203,6 +247,12 @@ export function learnCardEndState(card: LearnCard): string {
   return applyAlg(learnCardState(card), card.display?.alg ?? '')
 }
 
+/** The facelet state a checkpoint's picture shows (same z2-stripping rule as learnCardState). */
+export function checkpointState(checkpoint: Checkpoint): string {
+  if (!checkpoint.display) return SOLVED
+  return applyAlg(SOLVED, checkpoint.display.setupAlg.replace(/^z2\s*/, ''))
+}
+
 /**
  * cubing.js `experimentalStickering` presets, read out of
  * node_modules/cubing/dist/lib/cubing/chunks/chunk-WBMKMQAL.js (the
@@ -228,7 +278,7 @@ function demoSay(move: string): string {
 // Hand-derived cube states, found by breadth-first search over the state
 // graph (not kept in the repo - just the resulting short algs below). Each
 // is last-layer-only (D face and the bottom two rows of R/F/L/B untouched)
-// starting from SOLVED.
+// starting from SOLVED, unless noted otherwise.
 // ---------------------------------------------------------------------------
 
 // Yellow Cross Ridge: recognisable yellow patterns on U (see the file header
@@ -272,6 +322,8 @@ const CROSS_CASE_BOTTOM = `${DAISY_MOVES} U F2`
 const CROSS_CASE_MIDDLE = `${DAISY_MOVES} R'`
 /** Two petals up, and a third white edge on top with its white sticker facing front. */
 const CROSS_CASE_FLIPPED = "R2 B2 L' F"
+/** Daisy with the front and right petals already tucked down - two petals left to go. */
+const CROSS_CASE_HALFWAY = `${DAISY_MOVES} F2 R2`
 
 /** The white corner is home but twisted - one Elevator pops it back onto the top. */
 const CORNER_CASE_STUCK = repeatAlg(ELEVATOR, 2)
@@ -289,15 +341,36 @@ const EDGES_ADJACENT_FIX = `${FISH} U`
 /** Edge Ledge: two matching edges opposite each other - one Fish turns it into the adjacent case. */
 const EDGES_OPPOSITE_FIX = `${FISH} U' ${FISH} U2`
 
-/** Corner Shuffle with NO corner home yet: the pure corner double-swap (E-perm). */
+/**
+ * Corner Shuffle with NO corner home yet: the pure corner double-swap
+ * (E-perm). Handy well beyond its own hold too: it's built entirely from
+ * R/U/D/x moves that cycle back on themselves, so - verified in
+ * __tests__/lessons.test.ts - it leaves the white cross on D completely
+ * untouched. That makes it the go-to "cross solved, corners scrambled"
+ * picture for Corner Lookout and Corner Crack's checkpoints.
+ */
 const CORNERS_NONE_HOME = "x' R U' R' D R U R' D' R U R' D R U' R' D' x"
+
+/**
+ * Middle Traverse's checkpoint picture: "bottom layer solved, top two layers
+ * messy". Built from Send it Right / Send it Left themselves - the very
+ * moves this hold teaches for inserting a middle edge without disturbing an
+ * already-solved cross+corners - applied forward from solved. (Wide turns
+ * like `u` were tried first, but this engine's `u` is built from a whole-cube
+ * `y` under the hood, which also spins the side centres - not what a real
+ * Uw turn looks like on Nora's cube, so it was dropped in favour of this.)
+ * Verified in __tests__/lessons.test.ts: the D face and every D-layer piece
+ * (edges matching their centres, corners in their slots) stay exactly
+ * solved, while the cube as a whole is not.
+ */
+const BOTTOM_LAYER_DONE_TOP_MESSY = `${GO_RIGHT} U2 ${GO_LEFT} U ${GO_RIGHT}`
 
 /** The Summit walkthrough: one corner needs 2 rides, the next needs 4, then one last top turn. */
 const SUMMIT_FIX = `${repeatAlg(BOTTOM_ELEVATOR, 2)} U ${repeatAlg(BOTTOM_ELEVATOR, 4)} U'`
 const SUMMIT_SETUP = invertAlg(SUMMIT_FIX)
 
 // ---------------------------------------------------------------------------
-// The 8 holds
+// The 10 holds
 // ---------------------------------------------------------------------------
 
 const BASECAMP_MOVES = ['R', "R'", 'L', "L'", 'U', "U'", 'F', "F'", 'D', "D'"]
@@ -425,15 +498,15 @@ const basecamp: Lesson = {
   },
 }
 
-const cross: Lesson = {
-  id: 'cross',
+const daisy: Lesson = {
+  id: 'daisy',
   number: 1,
   title: 'The Daisy Ledge',
-  goal: 'Grow a white cross on the bottom. Each white edge sits next to its matching colour. 🌼',
+  goal: 'Grow a daisy: four white edges standing up around the yellow centre. 🌼',
   story:
-    "Time to grow a daisy! 🌼 Flip white edges up next to the yellow centre. Look, petals! " +
-    'Once your daisy is perfect, tuck each petal straight down. Ta-da, a white cross!',
-  phaseIds: ['daisy', 'cross'],
+    "Time to grow a daisy! 🌼 Every white edge piece wants to stand up next to the yellow centre, like a petal. " +
+    'Hunt for one, bring it up, and check its colours. Four petals means your daisy is done!',
+  phaseIds: ['daisy'],
   namedAlgIds: [],
   realCubeHint:
     'On your real cube: hold it yellow on top, green facing you. Find a white edge piece. Spin it up next to the yellow centre to make a petal. Match all four petals to grow your daisy.',
@@ -466,18 +539,128 @@ const cross: Lesson = {
           display: learnDisplay(CROSS_CASE_FLIPPED, "F' L'"),
         },
         {
-          title: 'Tuck the petals down',
-          text: "Daisy done! Look at a petal's OTHER colour. Turn the top until that colour sits above its matching centre. Now turn that side TWICE. The petal drops down into your white cross.",
-          say: 'Match a petal to the centre below it, then turn that side twice. The petal drops down into the white cross.',
+          title: 'Count your petals',
+          text: 'Look at the top of your cube. Can you count FOUR white petals standing around the yellow centre? Fewer than four? Go find another white edge.',
+          say: 'Count your petals. Four white petals around the yellow centre means your daisy is done.',
+          display: learnDisplay(DAISY_MOVES, ''),
+          stickering: 'Daisy',
+          checklist: [
+            'On your cube: count the white petals around the yellow centre',
+            'Four petals? Your daisy is done!',
+            'Fewer than four? Find another white edge and make a petal',
+          ],
+        },
+        helpCard('your daisy'),
+      ],
+      estimatedMinutes: STAGE_MINUTES.learn,
+    },
+    watch: {
+      demos: [
+        {
+          title: 'Make a petal from the bottom',
+          ...forwardDisplay('F2'),
+          say: 'A white edge stuck on the bottom pops up into a petal with a double turn of that side.',
+        },
+        {
+          title: 'Lift a petal from the middle row',
+          ...forwardDisplay('R'),
+          say: 'A white edge stuck in the middle row lifts straight up with one turn of that side.',
+        },
+      ],
+      estimatedMinutes: STAGE_MINUTES.watch,
+    },
+    try: {
+      prompt: 'Practice making a petal! Turn the front side twice.',
+      sequence: 'F2',
+      say: 'Turn the front side twice to make a petal.',
+      estimatedMinutes: STAGE_MINUTES.try,
+    },
+    spot: {
+      question: 'Which cube has NO petals left to grow - a complete daisy, four petals?',
+      options: [
+        { label: 'Cube A (complete daisy)', alg: forwardAlg(DAISY_MOVES), correct: true },
+        { label: 'Cube B (one petal)', alg: forwardAlg('F2'), correct: false },
+        { label: 'Cube C (solved, no petals yet)', alg: '', correct: false },
+      ],
+      estimatedMinutes: STAGE_MINUTES.spot,
+    },
+    climb: {
+      runs: 3,
+      sequence: DAISY_MOVES,
+      estimatedMinutes: STAGE_MINUTES.climb,
+    },
+  },
+}
+
+const cross: Lesson = {
+  id: 'cross',
+  number: 2,
+  title: 'The White Cross Bridge',
+  goal: 'Tuck every petal down into a white cross - matching every centre around it. 🌉',
+  story:
+    "Your daisy is ready to cross the bridge! Pick a petal, line it up with its own colour, and tuck it straight down. " +
+    'Do all four and you get a white cross. Then flip the whole cube over so white faces the floor.',
+  phaseIds: ['cross'],
+  namedAlgIds: [],
+  realCubeHint:
+    "On your real cube: grow your daisy first. Turn the top until a petal's side colour matches the centre under it, then turn that side twice to tuck it down. Do all four, then turn the WHOLE cube over so white faces down and yellow faces up.",
+  checkpoint: {
+    look: 'Four white petals stand around the yellow centre on top',
+    hold: 'Yellow on top, green facing you',
+    say: 'Check your cube. Do you see four white petals standing up around the yellow centre? Keep yellow on top and green facing you.',
+    display: learnDisplay(DAISY_MOVES, ''),
+    stickering: 'Daisy',
+    fallbackHoldId: 'daisy',
+  },
+  stages: {
+    learn: {
+      cards: [
+        {
+          title: 'Pick one petal',
+          text: 'Choose any white petal standing on top. Look at its OTHER colour - the one on the side, not white.',
+          say: 'Choose any petal and look at its other colour, the one on the side.',
+          display: learnDisplay(DAISY_MOVES, ''),
+          stickering: 'Daisy',
+        },
+        {
+          title: 'Line it up',
+          text: "Turn the TOP until that petal's side colour matches the centre below it.",
+          say: "Turn the top until the petal's side colour matches the centre below it.",
+          display: learnDisplay(`${DAISY_MOVES} U`, "U'"),
+        },
+        {
+          title: 'Turn that side twice - it drops down',
+          text: 'Now turn THAT SIDE, not the top, twice. The petal drops straight down into the cross.',
+          say: 'Turn that side twice. The petal drops straight down into the cross.',
           display: learnDisplay(DAISY_MOVES, 'F2'),
+        },
+        {
+          title: 'Do the other three the same way',
+          text: 'One down, three to go! Line up the next petal, tuck it down, and keep going until all four petals are in.',
+          say: 'Line up the next petal and tuck it down. Keep going until all four are in.',
+          display: learnDisplay(CROSS_CASE_HALFWAY, ''),
+          backView: true,
+        },
+        {
+          title: 'Check: T shapes all around',
+          text: 'Flip the cube to peek underneath. Every side shows a little upside-down T: a white edge above a matching centre. That is your white cross!',
+          say: 'Peek underneath. Every side shows a little upside-down T - white edge above a matching centre.',
+          display: learnDisplay(CORNERS_NONE_HOME, ''),
+          stickering: 'Cross',
           backView: true,
           checklist: [
-            'On your cube: find all four white edges',
-            'Make four petals standing around the yellow centre',
+            'On your cube: find all four white edges and make a daisy',
             "Turn the top so a petal's side colour matches the centre under it",
             'Turn that side twice to tuck the petal down',
             'Do that for all four petals - now you have a white cross!',
           ],
+        },
+        {
+          title: 'Now FLIP: white to the bottom',
+          text: 'Your cross is ready. Turn the WHOLE cube over, not just one side, so white looks at the floor and yellow looks at the sky. Watch it flip!',
+          say: 'Turn the whole cube over so white faces down and yellow faces up.',
+          display: learnDisplay(CORNERS_NONE_HOME, 'x2'),
+          backView: true,
         },
         helpCard('your daisy or your cross'),
       ],
@@ -486,55 +669,63 @@ const cross: Lesson = {
     watch: {
       demos: [
         {
-          title: 'Make a petal',
-          ...forwardDisplay('F2'),
-          say: 'If a white edge is stuck on the bottom, turn that side twice to bring it up as a petal.',
-        },
-        {
-          title: 'Tuck the petal down',
+          title: 'Tuck a petal down',
           ...forwardDisplay('U R2'),
           say: 'Line the petal up above its matching colour, then turn that side twice to tuck it into the cross.',
+        },
+        {
+          title: 'Check the cross from below',
+          setupAlg: learnDisplay(CORNERS_NONE_HOME, '').setupAlg,
+          alg: '',
+          say: 'Peek underneath - four white edges make a plus sign, matching every centre around them.',
         },
       ],
       estimatedMinutes: STAGE_MINUTES.watch,
     },
     try: {
-      prompt: 'Practice turning a petal into place. You can do it!',
-      sequence: 'F2',
-      say: 'Turn the front side twice to make a petal.',
+      prompt: 'Line up a petal, then tuck it down. Try Top then Front-twice.',
+      sequence: 'U F2',
+      say: 'Turn the top to line up the petal, then turn the front twice to tuck it down.',
       estimatedMinutes: STAGE_MINUTES.try,
     },
     spot: {
-      question: 'Which cube is the one that is all the way solved?',
+      question: 'Which cube has NO petals left on top - a fully tucked white cross?',
       options: [
-        { label: 'Cube A', alg: '', correct: true },
-        { label: 'Cube B', alg: forwardAlg('R'), correct: false },
-        { label: 'Cube C', alg: forwardAlg('U'), correct: false },
+        { label: 'Cube A (still a daisy)', alg: forwardAlg(DAISY_MOVES), correct: false },
+        { label: 'Cube B (halfway tucked)', alg: forwardAlg(CROSS_CASE_HALFWAY), correct: false },
+        { label: 'Cube C (fully tucked)', alg: forwardAlg(''), correct: true },
       ],
       estimatedMinutes: STAGE_MINUTES.spot,
     },
     climb: {
       runs: 3,
-      sequence: 'F2',
+      sequence: `${DAISY_MOVES} F2 R2 B2 L2`,
       estimatedMinutes: STAGE_MINUTES.climb,
     },
   },
 }
 
-const cornersNamed = namedAlg('elevator')
-
-const corners: Lesson = {
-  id: 'corners',
-  number: 2,
-  title: 'Corner Crack',
-  goal: 'All four white corners tucked into the bottom, matching the colours around them. 📦',
+const cornerFind: Lesson = {
+  id: 'cornerFind',
+  number: 3,
+  title: 'Corner Lookout',
+  goal: 'Spot a white corner, find its home, and park it above home at the front-right. 🔭',
   story:
-    "Now for the fun part, corners! When a white corner is stuck up top, " +
-    "The Elevator trick 🛗 rides it down home. Click, click, click! Do it again and again until it pops into place.",
-  phaseIds: ['corners'],
-  namedAlgIds: ['elevator'],
+    "Before the next big trick, let's go on a corner hunt! Every white corner has a home: the little gap " +
+    'between its two other colours. Find it, turn the TOP to park the corner right above it, and hold that home at the front-right.',
+  phaseIds: [],
+  namedAlgIds: [],
   realCubeHint:
-    "On your real cube: find a white corner on the top layer. Put its home spot right below it. Do the Elevator (R U R' U') again and again until the white sticker faces down.",
+    "On your real cube: find any white corner. It has three colours. Its home is the gap between its other two colours. Turn the TOP until it sits right above that gap, then hold that gap at the front-right.",
+  checkpoint: {
+    look: 'A white cross on the BOTTOM, and each cross edge matches the centre beside it (little upside-down T shapes on every side)',
+    hold: 'White on the BOTTOM now, yellow on top',
+    say: 'Check your cube. Flip it over and peek underneath - do you see a white cross with T shapes matching all around? Keep white on the bottom and yellow on top.',
+    display: learnDisplay(CORNERS_NONE_HOME, ''),
+    stickering: 'Cross',
+    backView: true,
+    fallbackHoldId: 'cross',
+  },
   stages: {
     learn: {
       cards: [
@@ -546,9 +737,104 @@ const corners: Lesson = {
           backView: true,
         },
         {
-          title: 'White corner on top: find its home',
-          text: 'This white corner is up on top. Turn the top until it sits right ABOVE its home, the little gap between its two other colours. Hold that gap at the front-right. Now do The Elevator!',
-          say: 'Turn the top until the white corner sits above its home. Hold that home at the front right and do the Elevator.',
+          title: 'Where is home?',
+          text: "A white corner's home is the gap between its OTHER two colours - the spot where those two centres meet. Find the gap first, then match the corner to it.",
+          say: "A white corner's home is the gap between its other two colours, where those two centres meet.",
+          display: caseDisplay(ELEVATOR),
+        },
+        {
+          title: 'Park it above home',
+          text: 'Turn the TOP layer, only the top, until the white corner sits directly above its home gap. Do not move anything else yet!',
+          say: 'Turn only the top layer until the white corner sits directly above its home gap.',
+          display: learnDisplay(`${invertAlg(ELEVATOR)} U`, "U'"),
+        },
+        {
+          title: 'Hold home at the front-right',
+          text: 'Once it is parked above home, hold that gap at the FRONT-RIGHT of the cube. That is exactly where the next wall expects it.',
+          say: 'Hold the home gap at the front-right of the cube.',
+          display: caseDisplay(ELEVATOR),
+        },
+        {
+          title: 'White sticker pointing right, front, or up - all fine!',
+          text: 'Do not worry which way the white sticker points yet - right, front, or straight up all work. The next wall\'s trick fixes any of them.',
+          say: 'It does not matter which way the white sticker points yet. The next trick fixes it either way.',
+          display: caseDisplay(repeatAlg(ELEVATOR, 3)),
+          checklist: [
+            'On your cube: find a white corner anywhere on the top layer',
+            'Look at its two other colours',
+            'Find the gap between those colours - that is home',
+            'Turn the TOP until the corner sits right above that gap',
+            'Hold that gap at the front-right - you are ready for the next wall!',
+          ],
+        },
+        helpCard('finding your white corners'),
+      ],
+      estimatedMinutes: STAGE_MINUTES.learn,
+    },
+    watch: {
+      demos: [
+        {
+          title: 'Turning the top to park a corner',
+          ...forwardDisplay('U'),
+          say: 'Turning the top only moves the top layer. The corner rides along until it sits above its home.',
+        },
+      ],
+      estimatedMinutes: STAGE_MINUTES.watch,
+    },
+    try: {
+      prompt: 'Turn the top to park the corner above its home. Try all three: one click, back, and twice!',
+      sequence: 'U',
+      sequences: ['U', "U'", 'U2'],
+      say: 'Turn the top layer - one click, or back, or twice - until the corner sits right above its home.',
+      estimatedMinutes: STAGE_MINUTES.try,
+    },
+    spot: {
+      question: "Which cube has a white corner parked right above its own home, ready for the next trick?",
+      options: [
+        { label: 'Cube A (parked and ready)', alg: ELEVATOR, correct: true },
+        { label: 'Cube B (already solved)', alg: '', correct: false },
+        { label: 'Cube C (not parked yet)', alg: invertAlg(CORNERS_NONE_HOME), correct: false },
+      ],
+      estimatedMinutes: STAGE_MINUTES.spot,
+    },
+    climb: {
+      runs: 3,
+      sequence: "U U' U2",
+      estimatedMinutes: STAGE_MINUTES.climb,
+    },
+  },
+}
+
+const cornersNamed = namedAlg('elevator')
+
+const corners: Lesson = {
+  id: 'corners',
+  number: 4,
+  title: 'Corner Crack',
+  goal: 'All four white corners tucked into the bottom, matching the colours around them. 📦',
+  story:
+    "You already know how to find a white corner's home and park it above home at the front-right. Now for the fun part: " +
+    'The Elevator trick 🛗 rides it down home. Click, click, click! Do it again and again until it pops into place.',
+  phaseIds: ['corners'],
+  namedAlgIds: ['elevator'],
+  realCubeHint:
+    "On your real cube: find a white corner on the top layer. Put its home spot right below it. Do the Elevator (R U R' U') again and again until the white sticker faces down.",
+  checkpoint: {
+    look: 'A white cross on the BOTTOM with matching T shapes, and a white corner parked above its home at the front-right',
+    hold: 'White on the BOTTOM, yellow on TOP, green facing you',
+    say: 'Check your cube. White cross on the bottom? Good - now find a white corner, park it above home, and hold that home at the front-right.',
+    display: learnDisplay(CORNERS_NONE_HOME, ''),
+    stickering: 'Cross',
+    backView: true,
+    fallbackHoldId: 'cornerFind',
+  },
+  stages: {
+    learn: {
+      cards: [
+        {
+          title: 'Ready to ride',
+          text: 'You already found a white corner and parked it above home, held at the front-right. Now do The Elevator!',
+          say: 'Hold the home gap at the front-right and do the Elevator.',
           display: caseDisplay(ELEVATOR),
         },
         {
@@ -563,9 +849,7 @@ const corners: Lesson = {
           say: 'If a white corner is in the bottom but twisted, do one Elevator to pop it up, then bring it down properly.',
           display: learnDisplay(CORNER_CASE_STUCK, ELEVATOR),
           checklist: [
-            'On your cube: find a white corner on the top layer',
-            'Turn the top until it sits above its home gap',
-            'Hold that gap at the front-right',
+            'On your cube: park a white corner above its home, front-right',
             'Do The Elevator until the white sticker points DOWN',
             'Do all four white corners the same way',
           ],
@@ -612,7 +896,7 @@ const goLeft = namedAlg('goLeft')
 
 const middle: Lesson = {
   id: 'middle',
-  number: 3,
+  number: 5,
   title: 'Middle Traverse',
   goal: 'Tuck every middle edge next to its matching colour. No yellow anywhere but the top!',
   story:
@@ -622,6 +906,14 @@ const middle: Lesson = {
   namedAlgIds: ['goRight', 'goLeft'],
   realCubeHint:
     'On your real cube: find a top edge with no yellow sticker. Look at its front colour and decide, does it slide home to the right or the left?',
+  checkpoint: {
+    look: 'The whole bottom layer is solved: white on the bottom and a full band of one colour on every side',
+    hold: 'White on the bottom, yellow on top, green facing you',
+    say: 'Check your cube. Is the whole bottom layer solved - white cross, white corners, and a matching band of colour all around? The top can still look messy.',
+    display: learnDisplay(BOTTOM_LAYER_DONE_TOP_MESSY, ''),
+    stickering: 'F2L',
+    fallbackHoldId: 'corners',
+  },
   stages: {
     learn: {
       cards: [
@@ -701,6 +993,7 @@ const middle: Lesson = {
     climb: {
       runs: 3,
       sequence: goRight?.alg ?? "U R U' R' U' F' U F",
+      sequences: [goRight?.alg ?? "U R U' R' U' F' U F", goLeft?.alg ?? "U' L' U L U F U' F'"],
       estimatedMinutes: STAGE_MINUTES.climb,
     },
   },
@@ -710,16 +1003,24 @@ const yellowCrossNamed = namedAlg('yellowCross')
 
 const yellowCross: Lesson = {
   id: 'yellowCross',
-  number: 4,
+  number: 6,
   title: 'Yellow Cross Ridge',
   goal: 'A yellow cross on top! Four yellow edges pointing out from the yellow centre. ☀️',
   story:
-    'Flip the cube so yellow faces up. Look at the top. Is it a dot, an L, or a line? ' +
+    'Look at the top. Is it a dot, an L, or a line? ' +
     'The Yellow Cross trick turns any of those into a full cross. Dot, then L, then line, then cross! Ta-da!',
   phaseIds: ['yellowCross'],
   namedAlgIds: ['yellowCross'],
   realCubeHint:
     "On your real cube: hold the L shape in the top-left, or the line going straight across. Then do F R U R' U' F'. See a dot? Just do it again.",
+  checkpoint: {
+    look: 'Two layers solved, only the top is messy',
+    hold: 'Yellow on top, green facing you',
+    say: 'Check your cube. Are the bottom two layers completely solved, a solid colour band all the way around? Only the top should look messy.',
+    display: learnDisplay(YELLOW_CROSS_DOT_ALG, ''),
+    stickering: 'F2L',
+    fallbackHoldId: 'middle',
+  },
   stages: {
     learn: {
       cards: [
@@ -803,7 +1104,7 @@ const fish = namedAlg('fish')
 
 const yellowEdges: Lesson = {
   id: 'yellowEdges',
-  number: 5,
+  number: 7,
   title: 'Edge Ledge',
   goal: 'Match every yellow-top edge to the colour beside it. (Corners can still look silly, that is next!)',
   story:
@@ -813,6 +1114,14 @@ const yellowEdges: Lesson = {
   namedAlgIds: ['fish'],
   realCubeHint:
     "On your real cube: keep the yellow cross on top. Turn the top layer until two edges match the colour beside them. Side by side? Put them at the back and right, then do the Fish (R U R' U R U2 R').",
+  checkpoint: {
+    look: 'A yellow cross on top',
+    hold: 'Yellow on top, green facing you',
+    say: 'Check your cube. Do you see a full yellow cross on top? The edges do not need to match yet - just the cross shape.',
+    display: learnDisplay(invertAlg(EDGES_ADJACENT_FIX), ''),
+    stickering: 'ELL',
+    fallbackHoldId: 'yellowCross',
+  },
   stages: {
     learn: {
       cards: [
@@ -885,7 +1194,7 @@ const cornerCycle = namedAlg('cornerCycle')
 
 const cornerPosition: Lesson = {
   id: 'cornerPosition',
-  number: 6,
+  number: 8,
   title: 'Corner Shuffle',
   goal: "Every corner in its own spot around the top. (Twisted colours are fine for now, that's next!)",
   story:
@@ -896,6 +1205,14 @@ const cornerPosition: Lesson = {
   namedAlgIds: ['cornerCycle'],
   realCubeHint:
     'On your real cube: find a corner that is already in the right spot (even if twisted) and hold it at the front-right. Do Corner Shuffle to walk the other three home. Repeat once or twice.',
+  checkpoint: {
+    look: 'Yellow cross on top and every cross edge matches the centre under it',
+    hold: 'Yellow on top, green facing you',
+    say: 'Check your cube. Yellow cross on top, and every edge matches the colour beside it? You are ready for corners.',
+    display: learnDisplay(invertAlg(CORNER_SWAP), ''),
+    stickering: 'CPLL',
+    fallbackHoldId: 'yellowEdges',
+  },
   stages: {
     learn: {
       cards: [
@@ -968,7 +1285,7 @@ const cornerTwist = namedAlg('cornerTwist')
 
 const cornerOrient: Lesson = {
   id: 'cornerOrient',
-  number: 7,
+  number: 9,
   title: 'THE SUMMIT',
   goal: 'A fully solved cube! Every corner twisted just right, every colour matched. You made it to the top! 🏔️',
   story:
@@ -979,6 +1296,14 @@ const cornerOrient: Lesson = {
   namedAlgIds: ['cornerTwist'],
   realCubeHint:
     "On your real cube: put a corner that needs twisting at the front-right-top. Do the Bottom Elevator (R' D' R D) 2 or 4 times until it shows yellow on top. Turn ONLY the top layer to bring the next corner to the front-right and repeat, don't turn anything else. When every corner shows yellow on top, you solved the whole cube!",
+  checkpoint: {
+    look: 'Every corner sits in its own spot (its three colours match the centres around it), some may be twisted',
+    hold: 'Yellow on top, green facing you',
+    say: 'Check your cube. Is every corner in the right spot, even if some show the wrong colour on top? You are on the summit doorstep.',
+    display: learnDisplay(SUMMIT_SETUP, ''),
+    stickering: 'OCLL',
+    fallbackHoldId: 'cornerPosition',
+  },
   stages: {
     learn: {
       cards: [
@@ -1069,7 +1394,9 @@ const cornerOrient: Lesson = {
 
 export const LESSONS: Record<HoldId, Lesson> = {
   basecamp,
+  daisy,
   cross,
+  cornerFind,
   corners,
   middle,
   yellowCross,
@@ -1089,7 +1416,13 @@ export function nextHoldId(id: HoldId): HoldId | undefined {
   return i >= 0 && i + 1 < HOLD_ORDER.length ? HOLD_ORDER[i + 1] : undefined
 }
 
-/** Which hold teaches a given solver phase (Wall/HelpMyCube use this to link a phase back to its hold). */
+/**
+ * Which hold teaches a given solver phase (Wall/HelpMyCube use this to link
+ * a phase back to its hold). Returns the FIRST hold in wall order whose
+ * phaseIds includes it - 'cornerFind' deliberately carries no phaseIds (see
+ * the PhaseId doc comment), so a 'corners' phase always resolves to the
+ * 'corners' hold, never the knowledge-only lookout hold before it.
+ */
 export function holdForPhase(phase: PhaseId): Lesson | undefined {
   return LESSON_LIST.find((l) => l.phaseIds.includes(phase))
 }
