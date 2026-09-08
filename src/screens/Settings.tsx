@@ -4,6 +4,8 @@ import {
   update,
   exportJson,
   importJson,
+  listBackups,
+  restoreBackup,
   resetAll,
   setGoalMinutes,
   type PianoPiece,
@@ -13,8 +15,15 @@ import { clearToken, getToken, setToken, start as startSync, stop as stopSync, u
 import { PinGate } from '../components/PinGate'
 import { navigate } from '../router'
 import { formatBytes, getRecordingStore } from '../store/recordings'
-import { retryFailedUploads, testDriveConnection, useUploadSummary, type DriveConfig } from '../store/driveUpload'
+import {
+  lastProgressBackupDay,
+  retryFailedUploads,
+  testDriveConnection,
+  useUploadSummary,
+  type DriveConfig,
+} from '../store/driveUpload'
 import { markAudioPruned } from '../store/piano'
+import { APP_BUILD } from '../buildInfo'
 
 // Re-exported so BlindBox.tsx's `import { PinGate } from './Settings'` keeps working.
 export { PinGate } from '../components/PinGate'
@@ -255,9 +264,36 @@ export function Settings() {
   const [confirmingDeleteRecordings, setConfirmingDeleteRecordings] = useState(false)
   const [driveTestMessage, setDriveTestMessage] = useState<string | null>(null)
   const [testingDrive, setTestingDrive] = useState(false)
+  const [storageStatus, setStorageStatus] = useState<{ persisted: boolean; usage: number | null; quota: number | null } | null>(
+    null,
+  )
+  const [backups, setBackups] = useState(() => listBackups())
+  const [confirmingRestoreIndex, setConfirmingRestoreIndex] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
   const uploadSummary = useUploadSummary()
+
+  function refreshBackups() {
+    setBackups(listBackups())
+  }
+
+  async function refreshStorageStatus() {
+    try {
+      const storage = typeof navigator === 'undefined' ? undefined : navigator.storage
+      if (!storage) return
+      const persisted = typeof storage.persisted === 'function' ? await storage.persisted() : false
+      let usage: number | null = null
+      let quota: number | null = null
+      if (typeof storage.estimate === 'function') {
+        const est = await storage.estimate()
+        usage = est.usage ?? null
+        quota = est.quota ?? null
+      }
+      setStorageStatus({ persisted, usage, quota })
+    } catch {
+      // Leave storageStatus null - the "couldn't check" state below handles it.
+    }
+  }
 
   function refreshRecordingStats() {
     const store = getRecordingStore()
@@ -268,6 +304,7 @@ export function Settings() {
 
   useEffect(() => {
     refreshRecordingStats()
+    void refreshStorageStatus()
     // Runs once on mount - the recordings store lives outside React state,
     // so this is the "load once, refresh after actions that change it"
     // pattern rather than something that reacts to a dependency.
@@ -325,9 +362,16 @@ export function Settings() {
     try {
       const text = await file.text()
       importJson(text)
+      refreshBackups() // importJson doesn't itself take an automatic backup, but restoreBackup below does - keep the list fresh either way
     } catch (err) {
       setImportError(err instanceof Error ? err.message : 'That file did not look like a practice backup.')
     }
+  }
+
+  function handleRestoreBackup(index: number) {
+    restoreBackup(index)
+    setConfirmingRestoreIndex(null)
+    refreshBackups()
   }
 
   async function handleStickerFile(file: File) {
@@ -450,6 +494,16 @@ export function Settings() {
           Recordings on this device: {recordingStats?.count ?? '…'} ·{' '}
           {recordingStats ? formatBytes(recordingStats.bytes) : '…'}
         </p>
+        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+          {storageStatus === null
+            ? 'Storage: checking…'
+            : storageStatus.persisted
+              ? 'Storage: protected ✅'
+              : 'Storage: not protected — Add to Home Screen keeps recordings safe'}
+          {storageStatus?.quota != null && storageStatus.usage != null && (
+            <> · {formatBytes(storageStatus.usage)} of {formatBytes(storageStatus.quota)} used</>
+          )}
+        </p>
         {!confirmingDeleteRecordings ? (
           <button
             type="button"
@@ -483,6 +537,9 @@ export function Settings() {
         <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Google Drive upload</h2>
         <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
           ☁️ {uploadSummary.done} saved · {uploadSummary.pending} waiting · {uploadSummary.failed} failed
+        </p>
+        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+          Last progress backup to Drive: {lastProgressBackupDay() ?? 'never'}
         </p>
         <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontWeight: 700 }}>
           Script URL
@@ -751,6 +808,59 @@ export function Settings() {
           />
         </div>
         {importError && <p style={{ margin: 0, color: 'var(--cc-danger)' }}>{importError}</p>}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <strong>Automatic backups</strong>
+          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+            The app quietly saves a copy here whenever it notices something changed under the hood - a safety net,
+            not something you need to manage day to day.
+          </p>
+          {backups.length === 0 ? (
+            <p style={{ margin: 0, color: 'var(--cc-ink-soft)' }}>No automatic backups yet.</p>
+          ) : (
+            backups.map((b, index) => (
+              <div
+                key={`${b.savedAt}-${index}`}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}
+              >
+                <span style={{ flex: 1, fontSize: '0.85rem' }}>
+                  {new Date(b.savedAt).toLocaleString()} · build {b.buildId} · {formatBytes(b.bytes)}
+                </span>
+                {confirmingRestoreIndex === index ? (
+                  <>
+                    <button
+                      type="button"
+                      className="cc-btn"
+                      style={{ minHeight: 36, padding: '0.3rem 0.75rem', background: 'var(--cc-danger)', color: '#fff' }}
+                      onClick={() => handleRestoreBackup(index)}
+                    >
+                      Really restore?
+                    </button>
+                    <button
+                      type="button"
+                      className="cc-btn cc-btn-surface"
+                      style={{ minHeight: 36, padding: '0.3rem 0.75rem' }}
+                      onClick={() => setConfirmingRestoreIndex(null)}
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="cc-btn cc-btn-surface"
+                    style={{ minHeight: 36, padding: '0.3rem 0.75rem' }}
+                    onClick={() => setConfirmingRestoreIndex(index)}
+                  >
+                    Restore
+                  </button>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--cc-ink-soft)' }}>Version: {APP_BUILD}</p>
       </section>
 
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', border: '2px solid var(--cc-danger)' }}>

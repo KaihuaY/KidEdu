@@ -13,6 +13,15 @@ export interface MicSession {
   readonly mimeType: string
   /** ~10 Hz RMS level 0..1 with a monotonic timestamp in ms. Returns an unsubscribe. */
   onLevel(cb: (rms: number, t: number) => void): () => void
+  /**
+   * Optional: fires with each raw recorded chunk as it becomes available
+   * (MediaRecorder's ~1s `ondataavailable` slices), numbered from 0.
+   * recordingSession.ts uses this to persist an in-progress take to
+   * IndexedDB so it survives a crash or reload (see recoverUnfinishedTakes
+   * in recordingSession.ts). Backends that can't produce incremental chunks
+   * may omit this entirely. Returns an unsubscribe.
+   */
+  onChunk?(cb: (blob: Blob, seq: number) => void): () => void
   stop(): Promise<RecordingResult>
 }
 

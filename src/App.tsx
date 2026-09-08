@@ -4,6 +4,7 @@ import { isInArea, useRoute } from './router'
 import { useProgress } from './store/progress'
 import { useSyncStatus, type SyncStatus } from './store/gistSync'
 import { RecordingBanner } from './components/RecordingBanner'
+import { UpdateBanner } from './components/UpdateBanner'
 import { Home } from './screens/Home'
 import { Wall } from './screens/Wall'
 import { Lesson } from './screens/Lesson'
@@ -107,6 +108,7 @@ function App() {
 
       <div style={{ flexShrink: 0 }}>
         <RecordingBanner path={path} />
+        <UpdateBanner path={path} />
       </div>
 
       <nav

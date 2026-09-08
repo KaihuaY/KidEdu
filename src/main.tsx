@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.tsx'
 import { setToken, start as startGistSync } from './store/gistSync'
 import { startUploadWorker } from './store/driveUpload'
+import { recoverUnfinishedTakes } from './audio/recordingSession'
 
 // One-tap household setup link: https://<app>/#/setup?token=<gist-only token>
 // Stores the sync token (and unlocks the secret-word gate) on this device,
@@ -29,6 +30,10 @@ applySetupLink()
 startGistSync()
 // Uploads finished piano takes to the parent's Google Drive when configured.
 startUploadWorker()
+// Turns any partial recording left over from a crash/reload mid-take (see
+// audio/recordingSession.ts) into a real, playable take before Piano home
+// ever renders.
+void recoverUnfinishedTakes()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

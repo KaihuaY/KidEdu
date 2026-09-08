@@ -37,9 +37,11 @@ class BrowserMicSession implements MicSession {
   private readonly chunks: BlobPart[] = []
   private readonly buffer: Float32Array<ArrayBuffer>
   private readonly listeners = new Set<(rms: number, t: number) => void>()
+  private readonly chunkListeners = new Set<(blob: Blob, seq: number) => void>()
   private readonly createdAt: number
   private levelTimer: ReturnType<typeof setInterval> | null
   private stopped = false
+  private chunkSeq = 0
 
   constructor(ctx: AudioContext, stream: MediaStream, analyser: AnalyserNode, recorder: MediaRecorder, mimeType: string) {
     this.ctx = ctx
@@ -51,7 +53,11 @@ class BrowserMicSession implements MicSession {
     this.createdAt = performance.now()
 
     this.recorder.ondataavailable = (e: BlobEvent) => {
-      if (e.data && e.data.size > 0) this.chunks.push(e.data)
+      if (e.data && e.data.size > 0) {
+        this.chunks.push(e.data)
+        const seq = this.chunkSeq++
+        for (const listener of this.chunkListeners) listener(e.data, seq)
+      }
     }
 
     this.levelTimer = setInterval(() => this.sample(), LEVEL_INTERVAL_MS)
@@ -69,6 +75,11 @@ class BrowserMicSession implements MicSession {
   onLevel(cb: (rms: number, t: number) => void): () => void {
     this.listeners.add(cb)
     return () => this.listeners.delete(cb)
+  }
+
+  onChunk(cb: (blob: Blob, seq: number) => void): () => void {
+    this.chunkListeners.add(cb)
+    return () => this.chunkListeners.delete(cb)
   }
 
   async stop(): Promise<RecordingResult> {

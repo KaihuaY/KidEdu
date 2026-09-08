@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { checkSecret } from '../content/access'
+import { requestPersistentStorage } from '../store/recordings'
 
 const STORAGE_KEY = 'cubeclimb.unlocked'
 
@@ -40,6 +41,9 @@ export function Gate({ children }: { children: ReactNode }) {
     if (ok) {
       writeUnlocked()
       setUnlocked(true)
+      // Best-effort: some browsers only grant persistent storage inside a
+      // user gesture, and this tap is the earliest one in the app's life.
+      void requestPersistentStorage()
       return
     }
     setWrong(true)

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { APP_BUILD } from '../buildInfo'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -405,6 +406,12 @@ function normalizeDoc(parsed: Partial<ProgressDoc>): ProgressDoc {
     : { cube: parsed.settings?.sessionMinutes ?? fallback.settings.goalMinutes.cube, piano: fallback.settings.goalMinutes.piano }
   return {
     ...fallback,
+    // Spreading `parsed` here (before the known-section overrides below)
+    // means any top-level key this build doesn't recognize - a section a
+    // *newer* build added that this cached build has never heard of -
+    // passes straight through untouched, instead of being silently dropped.
+    // See mergeDocs()'s mergeUnknownSections() for the sync-side half of
+    // this guarantee.
     ...parsed,
     settings: {
       ...fallback.settings,
@@ -455,6 +462,73 @@ function neverEditedDoc(): ProgressDoc {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Automatic migration backups
+//
+// A safety net for a doc mutated by normalizeDoc() (a legacy shape got
+// migrated) or first loaded under a new app build: before that transformed
+// state becomes the only copy on disk, the raw pre-migration JSON is stashed
+// here so a parent can roll back from Settings -> Backup if a migration ever
+// turns out to have gone wrong. Never written on an ordinary, unchanged load
+// (see loadInitialDoc's shape/build comparison) - restarting the same build
+// against an already-normalized doc many times over does not pile up copies.
+// ---------------------------------------------------------------------------
+
+const BACKUPS_KEY = 'cubeclimb.progress.backups'
+const BUILD_ID_KEY = 'cubeclimb.buildId'
+const MAX_BACKUPS = 3
+
+interface StoredBackup {
+  savedAt: number
+  buildId: string
+  json: string
+}
+
+function readBackups(): StoredBackup[] {
+  if (!hasLocalStorage()) return []
+  try {
+    const raw = localStorage.getItem(BACKUPS_KEY)
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed) ? (parsed as StoredBackup[]) : []
+  } catch {
+    return []
+  }
+}
+
+function writeBackups(backups: StoredBackup[]): void {
+  if (!hasLocalStorage()) return
+  try {
+    localStorage.setItem(BACKUPS_KEY, JSON.stringify(backups.slice(-MAX_BACKUPS)))
+  } catch {
+    // Storage full/disabled - the backup just won't be available; not fatal.
+  }
+}
+
+function pushBackup(json: string, buildId: string): void {
+  writeBackups([...readBackups(), { savedAt: Date.now(), buildId, json }])
+}
+
+/** Automatic-backup list for Settings -> Backup, newest first. */
+export function listBackups(): { savedAt: number; buildId: string; bytes: number }[] {
+  return readBackups()
+    .map((b) => ({ savedAt: b.savedAt, buildId: b.buildId, bytes: b.json.length }))
+    .reverse()
+}
+
+/**
+ * Restores backup `index` (as returned by listBackups() - 0 is newest)
+ * through the normal importJson() path. Stashes the *current* doc as one
+ * more backup first, so restoring is itself reversible from the same list.
+ */
+export function restoreBackup(index: number): void {
+  const newestFirst = readBackups().slice().reverse()
+  const entry = newestFirst[index]
+  if (!entry) throw new Error('No backup at that position')
+  pushBackup(exportJson(), APP_BUILD)
+  importJson(entry.json)
+}
+
 function loadInitialDoc(): ProgressDoc {
   if (!hasLocalStorage()) return neverEditedDoc()
   try {
@@ -462,7 +536,18 @@ function loadInitialDoc(): ProgressDoc {
     if (!raw) return neverEditedDoc()
     const parsed = JSON.parse(raw) as Partial<ProgressDoc>
     if (!parsed || parsed.schemaVersion !== 1) return neverEditedDoc()
-    return normalizeDoc(parsed)
+    const normalized = normalizeDoc(parsed)
+
+    const shapeChanged = JSON.stringify(normalized) !== raw
+    const buildChanged = localStorage.getItem(BUILD_ID_KEY) !== APP_BUILD
+    if (shapeChanged || buildChanged) pushBackup(raw, APP_BUILD)
+    try {
+      localStorage.setItem(BUILD_ID_KEY, APP_BUILD)
+    } catch {
+      // Non-fatal - just means the build-change check re-fires next launch too.
+    }
+
+    return normalized
   } catch {
     return neverEditedDoc()
   }
@@ -525,6 +610,50 @@ function newer<T extends { updatedAt: number }>(local: T, remote: T | undefined)
   return remote.updatedAt > local.updatedAt ? remote : local
 }
 
+const KNOWN_SECTION_KEYS = new Set(['schemaVersion', 'settings', 'profiles', 'rewards', 'solveLog', 'piano'])
+
+function sectionUpdatedAt(value: unknown): number | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const updatedAt = (value as { updatedAt?: unknown }).updatedAt
+  return typeof updatedAt === 'number' ? updatedAt : undefined
+}
+
+/**
+ * Carries over any top-level key neither this build's `mergeDocs` nor
+ * `normalizeDoc` recognizes - a section a *newer* build added to
+ * `ProgressDoc` that this cached build has never heard of - so merging two
+ * docs on an old build can never silently delete it. Present on only one
+ * side: that side's copy wins outright. Present on both: newer wins by
+ * comparing each copy's own `updatedAt` when both have one (matching every
+ * known section's rule below), otherwise the remote copy wins, consistent
+ * with `newer()`'s remote-can-introduce-new-data stance.
+ */
+function mergeUnknownSections(local: ProgressDoc, remote: ProgressDoc): Record<string, unknown> {
+  const localRecord = local as unknown as Record<string, unknown>
+  const remoteRecord = remote as unknown as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const key of new Set([...Object.keys(localRecord), ...Object.keys(remoteRecord)])) {
+    if (KNOWN_SECTION_KEYS.has(key)) continue
+    const hasLocal = Object.prototype.hasOwnProperty.call(localRecord, key)
+    const hasRemote = Object.prototype.hasOwnProperty.call(remoteRecord, key)
+    if (hasLocal && !hasRemote) {
+      out[key] = localRecord[key]
+    } else if (hasRemote && !hasLocal) {
+      out[key] = remoteRecord[key]
+    } else {
+      const localUpdatedAt = sectionUpdatedAt(localRecord[key])
+      const remoteUpdatedAt = sectionUpdatedAt(remoteRecord[key])
+      out[key] =
+        localUpdatedAt !== undefined && remoteUpdatedAt !== undefined
+          ? remoteUpdatedAt > localUpdatedAt
+            ? remoteRecord[key]
+            : localRecord[key]
+          : remoteRecord[key]
+    }
+  }
+  return out
+}
+
 /**
  * Merges two docs section-by-section: whichever side has the newer
  * `updatedAt` for a given section wins outright (sections are not merged
@@ -533,10 +662,12 @@ function newer<T extends { updatedAt: number }>(local: T, remote: T | undefined)
  * section concurrently means the loser's edits to that section are dropped,
  * but nothing from other sections is ever lost. Every section goes through
  * `newer()` so a remote doc uploaded by an old build that doesn't know about
- * a given section (e.g. `piano`) never crashes the merge.
+ * a given section (e.g. `piano`) never crashes the merge. Any top-level key
+ * outside the known sections is preserved too - see mergeUnknownSections().
  */
 export function mergeDocs(local: ProgressDoc, remote: ProgressDoc): ProgressDoc {
   return {
+    ...mergeUnknownSections(local, remote),
     schemaVersion: 1,
     settings: newer(local.settings, remote.settings),
     profiles: newer(local.profiles, remote.profiles),

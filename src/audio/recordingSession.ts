@@ -11,7 +11,7 @@ import { MicStartError, type AudioBackend, type MicError, type MicSession, type 
 import { acquireWakeLock, type WakeLockHandle } from './wakeLock'
 import { getDeviceId, awardGoalIfReached, saveTake } from '../store/piano'
 import { getDoc, type PianoTake } from '../store/progress'
-import { getRecordingStore } from '../store/recordings'
+import { getRecordingStore, requestPersistentStorage } from '../store/recordings'
 import { isDriveConfigured, processUploadQueue } from '../store/driveUpload'
 import { localDay } from '../store/sessions'
 import { fireConfetti } from '../components/Confetti'
@@ -36,6 +36,45 @@ export type SessionState =
 
 const FAKE_MIC_FLAG_KEY = 'cubeclimb.fakeMic'
 const MIN_KEPT_DURATION_SEC = 3
+const INFLIGHT_KEY = 'cubeclimb.piano.inflight'
+const CHECKPOINT_INTERVAL_MS = 1000
+
+/** Written to sessionStorage roughly once a second while recording, so a reload can estimate active-minutes for a take recovered from leftover partial chunks (see recoverUnfinishedTakes). */
+interface InflightCheckpoint {
+  id: string
+  activeMs: number
+  startedAt: number
+  pieceId: string | null
+}
+
+function readInflightCheckpoint(): InflightCheckpoint | null {
+  try {
+    if (typeof sessionStorage === 'undefined') return null
+    const raw = sessionStorage.getItem(INFLIGHT_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as InflightCheckpoint
+  } catch {
+    return null
+  }
+}
+
+function writeInflightCheckpoint(cp: InflightCheckpoint): void {
+  try {
+    if (typeof sessionStorage === 'undefined') return
+    sessionStorage.setItem(INFLIGHT_KEY, JSON.stringify(cp))
+  } catch {
+    // Storage disabled/full - the recovered take (if any) just falls back to activeSec 0.
+  }
+}
+
+function clearInflightCheckpoint(): void {
+  try {
+    if (typeof sessionStorage === 'undefined') return
+    sessionStorage.removeItem(INFLIGHT_KEY)
+  } catch {
+    // Nothing to clean up if storage is unavailable.
+  }
+}
 
 function randomId(): string {
   try {
@@ -118,9 +157,11 @@ export function isRecordingActive(s: SessionState): boolean {
 let currentSession: MicSession | null = null
 let currentMeter: ActivityMeter | null = null
 let unsubscribeLevel: (() => void) | null = null
+let unsubscribeChunk: (() => void) | null = null
 let currentWakeLock: WakeLockHandle | null = null
 let currentPieceId: string | null = null
 let currentStartedAt = 0
+let currentTakeId: string | null = null
 let hiddenListenersAttached = false
 
 function onVisibilityChange(): void {
@@ -151,9 +192,27 @@ function resetTrackingState(): void {
   currentSession = null
   currentMeter = null
   unsubscribeLevel = null
+  unsubscribeChunk = null
   if (currentWakeLock) {
     currentWakeLock.release()
     currentWakeLock = null
+  }
+}
+
+/** Fire-and-forget: a lost chunk just means a slightly smaller recovered take later, never worth blocking or surfacing an error over. */
+async function persistPartialChunk(
+  id: string,
+  blob: Blob,
+  seq: number,
+  mimeType: string,
+  startedAt: number,
+  pieceId: string | null,
+): Promise<void> {
+  try {
+    const bytes = await blob.arrayBuffer()
+    await getRecordingStore().putPartial({ id, seq, bytes, mimeType, startedAt, pieceId, deviceId: getDeviceId() })
+  } catch {
+    // Best-effort only - see comment above.
   }
 }
 
@@ -161,7 +220,14 @@ function resetTrackingState(): void {
 export async function startTake(pieceId: string | null): Promise<void> {
   if (isRecordingActive(state)) return
 
+  // Best-effort and fire-and-forget: browsers that condition the grant on a
+  // user gesture still see one here (startTake must be called synchronously
+  // from a tap handler - see the doc comment below).
+  void requestPersistentStorage()
+
   currentPieceId = pieceId
+  const takeId = randomId()
+  currentTakeId = takeId
   setState({ status: 'starting', pieceId })
 
   try {
@@ -185,6 +251,13 @@ export async function startTake(pieceId: string | null): Promise<void> {
       hearing: false,
     })
 
+    if (session.onChunk) {
+      unsubscribeChunk = session.onChunk((blob, seq) => {
+        void persistPartialChunk(takeId, blob, seq, session.mimeType, currentStartedAt, pieceId)
+      })
+    }
+
+    let lastCheckpointAt = 0
     unsubscribeLevel = session.onLevel((rms, t) => {
       const frame = meter.push(rms, t)
       if (state.status !== 'recording') return
@@ -199,11 +272,17 @@ export async function startTake(pieceId: string | null): Promise<void> {
         wakeLock: wakeLockOn,
         hearing: frame.active,
       })
+      const nowMs = Date.now()
+      if (nowMs - lastCheckpointAt >= CHECKPOINT_INTERVAL_MS) {
+        lastCheckpointAt = nowMs
+        writeInflightCheckpoint({ id: takeId, activeMs: frame.activeMs, startedAt: currentStartedAt, pieceId })
+      }
     })
 
     attachHiddenListeners()
   } catch (err) {
     const kind = err instanceof MicStartError ? err.kind : 'unknown'
+    currentTakeId = null
     resetTrackingState()
     setState({ status: 'error', error: kind })
   }
@@ -217,11 +296,16 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
   const startedAt = currentStartedAt
   const session = currentSession
   const meter = currentMeter
+  const takeId = currentTakeId
 
   detachHiddenListeners()
   if (unsubscribeLevel) {
     unsubscribeLevel()
     unsubscribeLevel = null
+  }
+  if (unsubscribeChunk) {
+    unsubscribeChunk()
+    unsubscribeChunk = null
   }
 
   setState({ status: 'saving' })
@@ -244,7 +328,7 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
   const settings = getDoc().settings
 
   const take: PianoTake = {
-    id: randomId(),
+    id: takeId ?? randomId(),
     day,
     pieceId,
     startedAt,
@@ -275,6 +359,21 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
     if (take.upload) void processUploadQueue()
   }
 
+  // The take is finalized one way or another now (saved, or deliberately
+  // discarded) - the partial chunks and inflight checkpoint that existed
+  // only to survive a crash/reload mid-recording are no longer needed.
+  // Awaited (unlike the fire-and-forget writes above) so a reload right
+  // after Stop can never race a leftover partial into recoverUnfinishedTakes.
+  if (takeId) {
+    try {
+      await getRecordingStore().deletePartial(takeId)
+    } catch {
+      // Not fatal - a stray partial just gets swept up (harmlessly) by the next recoverUnfinishedTakes() call.
+    }
+  }
+  clearInflightCheckpoint()
+  currentTakeId = null
+
   setState({ status: 'done', take, goalJustReached, discarded })
 }
 
@@ -282,4 +381,105 @@ export function dismiss(): void {
   if (state.status === 'done' || state.status === 'error' || state.status === 'idle') {
     setState({ status: 'idle' })
   }
+}
+
+// --- Recovering a take that never made it through a clean stopTake() -------
+//
+// If the app crashes, the tab is force-closed, or an update reloads mid
+// recording (shouldn't happen with registerType 'prompt', but this is the
+// safety net), stopTake()'s cleanup never runs and its partial chunks are
+// left behind in IndexedDB. Call this once on startup (see main.tsx) to
+// assemble any of those into a real take.
+
+let recoveredTakeCount = 0
+const recoveredTakeListeners = new Set<() => void>()
+
+function setRecoveredTakeCount(n: number): void {
+  recoveredTakeCount = n
+  for (const l of recoveredTakeListeners) l()
+}
+
+function subscribeRecoveredTakeCount(cb: () => void): () => void {
+  recoveredTakeListeners.add(cb)
+  return () => recoveredTakeListeners.delete(cb)
+}
+
+function getRecoveredTakeCountSnapshot(): number {
+  return recoveredTakeCount
+}
+
+/** Count of unfinished takes recovered by the most recent recoverUnfinishedTakes() call - for a small "we saved an unfinished recording" notice (e.g. on Piano home). */
+export function useRecoveredTakeNotice(): number {
+  return useSyncExternalStore(subscribeRecoveredTakeCount, getRecoveredTakeCountSnapshot, getRecoveredTakeCountSnapshot)
+}
+
+/**
+ * Assembles every leftover partial recording into a real take, saves it
+ * locally (queued for Drive upload if configured), and clears the partial
+ * chunks either way. Safe to call every app start - a normal
+ * startTake -> stopTake cycle never leaves partials behind, so there is
+ * usually nothing to do. Returns how many takes were recovered.
+ */
+export async function recoverUnfinishedTakes(): Promise<number> {
+  const store = getRecordingStore()
+  let ids: string[]
+  try {
+    ids = await store.listPartialIds()
+  } catch {
+    return 0
+  }
+  if (ids.length === 0) return 0
+
+  const existingIds = new Set(getDoc().piano.takes.map((t) => t.id))
+  const checkpoint = readInflightCheckpoint()
+  let recovered = 0
+
+  for (const id of ids) {
+    if (existingIds.has(id)) {
+      await store.deletePartial(id).catch(() => {})
+      continue
+    }
+
+    let assembled: Awaited<ReturnType<typeof store.assemblePartial>> = null
+    try {
+      assembled = await store.assemblePartial(id)
+    } catch {
+      assembled = null
+    }
+    if (!assembled) {
+      await store.deletePartial(id).catch(() => {})
+      continue
+    }
+
+    const { blob, mimeType, startedAt, pieceId, chunks } = assembled
+    const activeMs = checkpoint && checkpoint.id === id ? checkpoint.activeMs : 0
+    const settings = getDoc().settings
+    const take: PianoTake = {
+      id,
+      day: localDay(new Date(startedAt)),
+      pieceId,
+      startedAt,
+      durationSec: chunks, // ~1 chunk per second - see AssembledPartial's doc comment
+      activeSec: Math.round(activeMs / 1000),
+      mimeType,
+      sizeBytes: blob.size,
+      hasAudio: true,
+      deviceId: getDeviceId(),
+      upload: isDriveConfigured(settings) ? { status: 'pending', attempts: 0, updatedAt: Date.now() } : undefined,
+    }
+
+    try {
+      await getRecordingStore().put(take.id, blob)
+      saveTake(take)
+      if (take.upload) void processUploadQueue()
+      recovered += 1
+    } catch {
+      // Couldn't save the blob locally - nothing more useful to do with this partial.
+    }
+    await store.deletePartial(id).catch(() => {})
+  }
+
+  clearInflightCheckpoint()
+  if (recovered > 0) setRecoveredTakeCount(recovered)
+  return recovered
 }

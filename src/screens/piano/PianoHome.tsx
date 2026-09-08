@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useRecoveredTakeNotice } from '../../audio/recordingSession'
 import { navigate } from '../../router'
 import { useProgress, type PianoPiece, type PianoTake } from '../../store/progress'
 import { pruneRecordings, setSelfRating, usePiano } from '../../store/piano'
@@ -152,6 +153,7 @@ export function PianoHome() {
   const todayTakes = useMemo(() => piano.takes.filter((t) => t.day === today).slice().reverse(), [piano.takes, today])
   const todayParentStars = piano.days[today]?.parentStars
   const supported = getAudioBackend().isSupported()
+  const recoveredCount = useRecoveredTakeNotice()
 
   function pickPiece(id: string | null) {
     setSelectedPieceId(id)
@@ -171,6 +173,12 @@ export function PianoHome() {
         <h1 style={{ margin: 0, fontSize: '1.3rem' }}>Piano time, {kidName}! 🎹</h1>
         <SayIt text={`Piano time, ${kidName}!`} />
       </div>
+
+      {recoveredCount > 0 && (
+        <div className="cc-card" style={{ padding: '0.85rem 1rem', fontWeight: 700, background: '#fff8e6' }}>
+          💾 We saved {recoveredCount === 1 ? 'an unfinished recording' : `${recoveredCount} unfinished recordings`} from earlier. It is in today&apos;s list.
+        </div>
+      )}
 
       <div className="cc-card" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
         <RingTimer size={120} progress={goalProgress(activeSec, goalMin)} label={formatClock(activeSec)} sublabel={`of ${goalMin} min`} />

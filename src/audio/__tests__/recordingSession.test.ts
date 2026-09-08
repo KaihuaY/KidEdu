@@ -13,8 +13,17 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { FakeAudioBackend, type FakeScript } from '../fakeBackend'
-import { dismiss, getSessionState, isRecordingActive, setAudioBackend, startTake, stopTake } from '../recordingSession'
+import {
+  dismiss,
+  getSessionState,
+  isRecordingActive,
+  recoverUnfinishedTakes,
+  setAudioBackend,
+  startTake,
+  stopTake,
+} from '../recordingSession'
 import { getDoc, resetAll } from '../../store/progress'
+import { getRecordingStore } from '../../store/recordings'
 
 class MemoryStorage implements Storage {
   private map = new Map<string, string>()
@@ -147,4 +156,66 @@ describe('recordingSession', () => {
 
     await stopTake('user')
   }, 8000)
+})
+
+describe('partial chunk persistence during recording', () => {
+  it('writes chunks to the partials store while recording and clears them on a normal stop', async () => {
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    await startTake('piece-1')
+
+    await wait(450) // a few 100ms chunk ticks from the fake backend's onChunk
+
+    const midFlightIds = await getRecordingStore().listPartialIds()
+    expect(midFlightIds.length).toBe(1)
+
+    await stopTake('user')
+
+    expect(getSessionState().status).toBe('done')
+    expect(await getRecordingStore().listPartialIds()).toEqual([])
+  }, 8000)
+})
+
+describe('recoverUnfinishedTakes', () => {
+  it('turns leftover partial chunks - as if the app died mid-recording - into a real take, exactly once', async () => {
+    // Seeded directly at the store level (rather than via startTake, which
+    // this recordingSession singleton would then also need cleaning up from
+    // an abandoned "recording" state) - this is exactly the shape stopTake()
+    // never got the chance to assemble and delete after a crash.
+    const store = getRecordingStore()
+    const enc = new TextEncoder()
+    const takeId = 'crash-take-1'
+    await store.putPartial({
+      id: takeId,
+      seq: 0,
+      bytes: enc.encode('chunk-0').buffer as ArrayBuffer,
+      mimeType: 'audio/webm',
+      startedAt: Date.now() - 5000,
+      pieceId: 'piece-9',
+      deviceId: 'device-1',
+    })
+    await store.putPartial({
+      id: takeId,
+      seq: 1,
+      bytes: enc.encode('chunk-1').buffer as ArrayBuffer,
+      mimeType: 'audio/webm',
+      startedAt: Date.now() - 5000,
+      pieceId: 'piece-9',
+      deviceId: 'device-1',
+    })
+
+    const beforeCount = getDoc().piano.takes.length
+    const recovered = await recoverUnfinishedTakes()
+    expect(recovered).toBe(1)
+
+    const takes = getDoc().piano.takes
+    expect(takes.length).toBe(beforeCount + 1)
+    const recoveredTake = takes.find((t) => t.id === takeId)
+    expect(recoveredTake).toBeDefined()
+    expect(recoveredTake?.pieceId).toBe('piece-9')
+    expect(recoveredTake?.hasAudio).toBe(true)
+    expect(recoveredTake?.durationSec).toBe(2) // 2 chunks, ~1s each
+
+    expect(await store.listPartialIds()).toEqual([])
+    expect(await recoverUnfinishedTakes()).toBe(0) // nothing left to recover a second time
+  })
 })

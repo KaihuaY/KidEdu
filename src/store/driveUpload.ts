@@ -11,8 +11,9 @@
 
 import { useSyncExternalStore } from 'react'
 import { extensionFor } from '../audio/mime'
-import { getDoc, subscribe, update, type PianoTake, type Settings } from './progress'
+import { getDoc, subscribe, update, exportJson, type PianoTake, type Settings } from './progress'
 import { getRecordingStore, type RecordingStore } from './recordings'
+import { localDay } from './sessions'
 
 export interface DriveConfig {
   scriptUrl: string
@@ -135,6 +136,12 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
     binary += String.fromCharCode(...chunk)
   }
   return btoa(binary)
+}
+
+/** Same UTF-8-safe chunked encoding as arrayBufferToBase64, for a JS string (kidName etc. may not be ASCII). */
+function stringToBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text)
+  return arrayBufferToBase64(bytes.buffer as ArrayBuffer)
 }
 
 interface UploadResponse {
@@ -377,16 +384,98 @@ export async function uploadNow(takeId?: string, deps: UploadDeps = {}): Promise
   await processUploadQueue(deps)
 }
 
+// ---------------------------------------------------------------------------
+// Daily progress backup to Drive
+//
+// A second, independent backup of the whole progress doc (settings,
+// profiles, rewards, streaks, piano metadata - everything exportJson()
+// carries), uploaded to the same Drive folder as piano takes once per local
+// day. If the gist sync token is ever lost, revoked, or just never set up on
+// a second device, a Drive folder the parent already has open still holds a
+// same-day copy.
+// ---------------------------------------------------------------------------
+
+const PROGRESS_BACKUP_DAY_KEY = 'cubeclimb.drive.progressBackupDay'
+
+/** The local day (YYYY-MM-DD) the progress doc was last successfully backed up to Drive, or null if never. */
+export function lastProgressBackupDay(): string | null {
+  if (!hasLocalStorage()) return null
+  try {
+    return localStorage.getItem(PROGRESS_BACKUP_DAY_KEY)
+  } catch {
+    return null
+  }
+}
+
+function setLastProgressBackupDay(day: string): void {
+  if (!hasLocalStorage()) return
+  try {
+    localStorage.setItem(PROGRESS_BACKUP_DAY_KEY, day)
+  } catch {
+    // Storage full/disabled - the next tick just retries the same day, which is harmless.
+  }
+}
+
+/**
+ * Uploads the current progress export to Drive if it hasn't been done yet
+ * today (by local day). A no-op when Drive isn't configured, offline, or
+ * already backed up today. Only marks the day done once the script confirms
+ * success, so a failed attempt is retried on the very next tick rather than
+ * silently skipped for the rest of the day.
+ */
+export async function backupProgressToDrive(deps: UploadDeps = {}): Promise<void> {
+  const settings = getDoc().settings
+  if (!isDriveConfigured(settings)) return
+  const online = deps.online ?? defaultOnline
+  if (!online()) return
+
+  const now = deps.now ?? Date.now
+  const today = localDay(new Date(now()))
+  if (lastProgressBackupDay() === today) return
+
+  const doFetch = deps.fetch ?? fetch
+  const cfg = settings.driveUpload
+  const fileName = `practice-progress-${today}.json`
+  const description = `${settings.kidName} · daily progress backup`
+
+  try {
+    const res = await doFetch(cfg.scriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      redirect: 'follow',
+      body: JSON.stringify({
+        secret: cfg.secret,
+        folderName: cfg.folderName,
+        fileName,
+        mimeType: 'application/json',
+        description,
+        dataBase64: stringToBase64(exportJson()),
+      }),
+    })
+    let parsed: UploadResponse | null = null
+    try {
+      parsed = (await res.json()) as UploadResponse
+    } catch {
+      parsed = null
+    }
+    if (parsed?.ok) setLastProgressBackupDay(today)
+  } catch {
+    // A network hiccup just means the next tick (or a fresh day) retries; nothing to roll back.
+  }
+}
+
 /**
  * Installs a 30s timer plus an `online` listener that call
- * processUploadQueue(). Returns a disposer. Guards every browser global so
- * this is a safe no-op when imported in node (tests, SSR).
+ * processUploadQueue() and backupProgressToDrive(). Returns a disposer.
+ * Guards every browser global so this is a safe no-op when imported in node
+ * (tests, SSR).
  */
 export function startUploadWorker(): () => void {
   if (typeof window === 'undefined') return () => {}
 
   const tick = () => {
     void processUploadQueue()
+    void backupProgressToDrive()
   }
   const interval = window.setInterval(tick, 30_000)
   window.addEventListener('online', tick)

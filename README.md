@@ -1,11 +1,11 @@
 # Practice (KidEdu)
 
-A daily-practice PWA built for Nora: a Rubik's cube teaching hub and (coming
-soon) a piano practice hub, sharing one prize economy of gold/silver/bronze
-tokens spent on parent-fulfilled blind boxes. Cube lessons are organized like
-a climbing wall: watch a move, try it, get spotted, then climb it solo.
-Progress, prize tokens, and stickers sync between devices through a private
-GitHub Gist.
+A daily-practice PWA built for Nora: a Rubik's cube climbing wall of tiny
+missions (with a camera that can read her real cube) and a piano practice
+recorder with grown-up ratings, sharing one prize economy of
+gold/silver/bronze tokens spent on parent-fulfilled blind boxes. Progress,
+prize tokens, and stickers sync between devices through a private GitHub
+Gist; piano recordings back up to the parent's Google Drive.
 
 ## Development
 

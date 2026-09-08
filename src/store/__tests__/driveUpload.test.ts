@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  backupProgressToDrive,
   buildFileName,
   enqueueUpload,
   isDriveConfigured,
+  lastProgressBackupDay,
   processUploadQueue,
   retryFailedUploads,
   testDriveConnection,
@@ -83,6 +85,15 @@ function fakeStore(blobs: Record<string, Blob> = {}): RecordingStore {
     async clear() {
       map.clear()
     },
+    // driveUpload.ts never touches partials - stubbed only to satisfy RecordingStore.
+    async putPartial() {},
+    async listPartialIds() {
+      return []
+    },
+    async assemblePartial() {
+      return null
+    },
+    async deletePartial() {},
   }
 }
 
@@ -471,6 +482,66 @@ describe('testDriveConnection', () => {
     const result = await testDriveConnection({ scriptUrl: '', secret: '', folderName: '' }, { fetch: fetchFn })
     expect(result.ok).toBe(false)
     expect(fetchFn).not.toHaveBeenCalled()
+  })
+})
+
+describe('backupProgressToDrive', () => {
+  it('uploads once per local day, skips a second call the same day, and uploads again on a new day', async () => {
+    const fetchFn = okFetch({ ok: true, fileId: 'p1', url: 'https://drive/progress' })
+
+    await backupProgressToDrive({ fetch: fetchFn, online: () => true, now: () => new Date(2026, 8, 7, 10, 0).getTime() })
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    const [url, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(CFG.scriptUrl)
+    const payload = JSON.parse(init.body as string)
+    expect(payload.secret).toBe(SECRET)
+    expect(payload.fileName).toBe('practice-progress-2026-09-07.json')
+    expect(payload.mimeType).toBe('application/json')
+    expect(payload.dataBase64).toEqual(expect.any(String))
+    expect(lastProgressBackupDay()).toBe('2026-09-07')
+
+    // Later the same local day - skipped.
+    await backupProgressToDrive({ fetch: fetchFn, online: () => true, now: () => new Date(2026, 8, 7, 20, 0).getTime() })
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+
+    // A new local day - uploads again.
+    await backupProgressToDrive({ fetch: fetchFn, online: () => true, now: () => new Date(2026, 8, 8, 9, 0).getTime() })
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    const [, init2] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[1] as [string, RequestInit]
+    expect(JSON.parse(init2.body as string).fileName).toBe('practice-progress-2026-09-08.json')
+    expect(lastProgressBackupDay()).toBe('2026-09-08')
+  })
+
+  it('does nothing when Drive is not configured', async () => {
+    update('settings', (s) => ({ ...s, driveUpload: undefined }))
+    const fetchFn = okFetch({ ok: true })
+    await backupProgressToDrive({ fetch: fetchFn, online: () => true })
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
+  it('does nothing while offline', async () => {
+    const fetchFn = okFetch({ ok: true })
+    await backupProgressToDrive({ fetch: fetchFn, online: () => false })
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
+  it('does not mark the day done when the script reports failure, so the next call retries', async () => {
+    const failFetch = okFetch({ ok: false, error: 'bad secret' })
+    await backupProgressToDrive({ fetch: failFetch, online: () => true, now: () => new Date(2026, 8, 7).getTime() })
+    expect(lastProgressBackupDay()).toBeNull()
+
+    const okFetchFn = okFetch({ ok: true, fileId: 'p1' })
+    await backupProgressToDrive({ fetch: okFetchFn, online: () => true, now: () => new Date(2026, 8, 7).getTime() })
+    expect(okFetchFn).toHaveBeenCalledTimes(1)
+    expect(lastProgressBackupDay()).toBe('2026-09-07')
+  })
+
+  it('a network throw leaves the day unmarked, same as a reported failure', async () => {
+    const throwingFetch = vi.fn(async () => {
+      throw new Error('network down')
+    }) as unknown as typeof fetch
+    await backupProgressToDrive({ fetch: throwingFetch, online: () => true })
+    expect(lastProgressBackupDay()).toBeNull()
   })
 })
 

@@ -17,6 +17,31 @@ export interface RecordingMeta {
   mimeType: string
 }
 
+/**
+ * One ~1s chunk of an in-progress take, written as it's recorded (see
+ * recordingSession.ts) so a crash or reload never loses more than the last
+ * second or so of audio. `id` is the take id it belongs to (assigned before
+ * recording starts, so it matches the take's own id once saved).
+ */
+export interface PartialChunk {
+  id: string
+  seq: number
+  bytes: ArrayBuffer
+  mimeType: string
+  startedAt: number
+  pieceId: string | null
+  deviceId: string
+}
+
+export interface AssembledPartial {
+  blob: Blob
+  mimeType: string
+  startedAt: number
+  pieceId: string | null
+  /** Number of chunks assembled - roughly the recording's duration in seconds (see recordingSession.ts's ~1s chunk cadence). */
+  chunks: number
+}
+
 export interface RecordingStore {
   put(id: string, blob: Blob, savedAt?: number): Promise<RecordingMeta>
   get(id: string): Promise<Blob | null>
@@ -26,12 +51,21 @@ export interface RecordingStore {
   /** Removes every recording saved strictly before cutoffMs. Returns the removed ids. */
   pruneOlderThan(cutoffMs: number): Promise<string[]>
   clear(): Promise<void>
+  /** Writes (or overwrites, if the same id+seq is written twice) one chunk of an in-progress take. */
+  putPartial(rec: PartialChunk): Promise<void>
+  /** Every take id with at least one partial chunk still stored. */
+  listPartialIds(): Promise<string[]>
+  /** Concatenates every chunk for `id` (ordered by seq) into one blob, or null if there are none. */
+  assemblePartial(id: string): Promise<AssembledPartial | null>
+  /** Removes every partial chunk for `id`. Safe to call when there are none. */
+  deletePartial(id: string): Promise<void>
 }
 
 export const RECORDINGS_DB = 'cubeclimb.recordings'
 
 const STORE_NAME = 'takes'
-const DB_VERSION = 1
+const PARTIALS_STORE = 'partials'
+const DB_VERSION = 2
 
 interface StoredRecord {
   id: string
@@ -68,11 +102,19 @@ class IndexedDbRecordingStore implements RecordingStore {
     if (!this.dbPromise) {
       this.dbPromise = new Promise((resolve, reject) => {
         const request = this.factory.open(RECORDINGS_DB, DB_VERSION)
+        // Only ever creates whatever store is missing - a v1 database
+        // upgrading to v2 keeps its existing `takes` untouched and just
+        // gains `partials`; this callback also runs (harmlessly, both
+        // conditions already true) on a fresh v1 -> v2 database.
         request.onupgradeneeded = () => {
           const db = request.result
           if (!db.objectStoreNames.contains(STORE_NAME)) {
             const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' })
             store.createIndex('savedAt', 'savedAt')
+          }
+          if (!db.objectStoreNames.contains(PARTIALS_STORE)) {
+            const store = db.createObjectStore(PARTIALS_STORE, { keyPath: ['id', 'seq'] })
+            store.createIndex('id', 'id')
           }
         }
         request.onsuccess = () => resolve(request.result)
@@ -143,6 +185,45 @@ class IndexedDbRecordingStore implements RecordingStore {
     tx.objectStore(STORE_NAME).clear()
     await promisifyTx(tx)
   }
+
+  async putPartial(rec: PartialChunk): Promise<void> {
+    const db = await this.openDb()
+    const tx = db.transaction(PARTIALS_STORE, 'readwrite')
+    tx.objectStore(PARTIALS_STORE).put(rec)
+    await promisifyTx(tx)
+  }
+
+  async listPartialIds(): Promise<string[]> {
+    const db = await this.openDb()
+    const tx = db.transaction(PARTIALS_STORE, 'readonly')
+    const all = await promisifyRequest<PartialChunk[]>(tx.objectStore(PARTIALS_STORE).getAll())
+    return Array.from(new Set(all.map((r) => r.id)))
+  }
+
+  async assemblePartial(id: string): Promise<AssembledPartial | null> {
+    const db = await this.openDb()
+    const tx = db.transaction(PARTIALS_STORE, 'readonly')
+    const records = await promisifyRequest<PartialChunk[]>(tx.objectStore(PARTIALS_STORE).index('id').getAll(id))
+    if (records.length === 0) return null
+    records.sort((a, b) => a.seq - b.seq)
+    const mimeType = records[0].mimeType
+    const blob = new Blob(
+      records.map((r) => r.bytes),
+      { type: mimeType },
+    )
+    return { blob, mimeType, startedAt: records[0].startedAt, pieceId: records[0].pieceId, chunks: records.length }
+  }
+
+  async deletePartial(id: string): Promise<void> {
+    const db = await this.openDb()
+    const readTx = db.transaction(PARTIALS_STORE, 'readonly')
+    const keys = await promisifyRequest<IDBValidKey[]>(readTx.objectStore(PARTIALS_STORE).index('id').getAllKeys(id))
+    if (keys.length === 0) return
+    const writeTx = db.transaction(PARTIALS_STORE, 'readwrite')
+    const store = writeTx.objectStore(PARTIALS_STORE)
+    for (const key of keys) store.delete(key)
+    await promisifyTx(writeTx)
+  }
 }
 
 /** A store that quietly does nothing, for platforms without IndexedDB. */
@@ -165,6 +246,14 @@ function createNoopRecordingStore(): RecordingStore {
       return []
     },
     async clear(): Promise<void> {},
+    async putPartial(_rec: PartialChunk): Promise<void> {},
+    async listPartialIds(): Promise<string[]> {
+      return []
+    },
+    async assemblePartial(_id: string): Promise<AssembledPartial | null> {
+      return null
+    },
+    async deletePartial(_id: string): Promise<void> {},
   }
 }
 
@@ -257,6 +346,20 @@ function wrapWithIdTracking(store: RecordingStore): RecordingStore {
       await store.clear()
       await refreshLocalAudioIds(store)
     },
+    // Partials never affect the "does this take have local audio" tracking
+    // above (a partial isn't a take yet) - passed straight through.
+    putPartial(rec) {
+      return store.putPartial(rec)
+    },
+    listPartialIds() {
+      return store.listPartialIds()
+    },
+    assemblePartial(id) {
+      return store.assemblePartial(id)
+    },
+    deletePartial(id) {
+      return store.deletePartial(id)
+    },
   }
 }
 
@@ -274,4 +377,25 @@ export function getRecordingStore(): RecordingStore {
 export function useLocalAudioIds(): ReadonlySet<string> {
   getRecordingStore() // ensure the default store (and its id tracking) exists
   return useSyncExternalStore(subscribeLocalAudioIds, getLocalAudioIdsSnapshot, getLocalAudioIdsSnapshot)
+}
+
+/**
+ * Asks the browser to protect this origin's storage from the "clear the
+ * oldest site data under pressure" eviction some browsers do after ~7 days
+ * of not being visited. Best-effort: some browsers grant it silently for an
+ * installed/bookmarked PWA, some ask the user, some (notably desktop Safari)
+ * don't implement it at all - `false` just means "couldn't confirm it's
+ * protected," never an error. Safe to call from anywhere, including node
+ * (tests, SSR) and outside a user gesture (though a gesture helps on
+ * browsers that condition the grant on one).
+ */
+export async function requestPersistentStorage(): Promise<boolean> {
+  try {
+    if (typeof navigator === 'undefined') return false
+    const persist = navigator.storage?.persist
+    if (typeof persist !== 'function') return false
+    return await persist.call(navigator.storage)
+  } catch {
+    return false
+  }
 }

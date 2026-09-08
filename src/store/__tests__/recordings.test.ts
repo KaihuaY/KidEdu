@@ -1,6 +1,6 @@
 import { IDBFactory } from 'fake-indexeddb'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { openRecordingStore, type RecordingStore } from '../recordings'
+import { RECORDINGS_DB, openRecordingStore, type RecordingStore } from '../recordings'
 
 function makeBlob(bytes: number, type = 'audio/webm'): Blob {
   return new Blob([new Uint8Array(bytes)], { type })
@@ -76,5 +76,139 @@ describe('recordings store', () => {
 
     expect(await store.list()).toEqual([])
     expect(await store.usageBytes()).toBe(0)
+  })
+})
+
+function bytesOf(text: string): ArrayBuffer {
+  return new TextEncoder().encode(text).buffer as ArrayBuffer
+}
+
+describe('partial chunks (in-progress take recovery)', () => {
+  it('round-trips put/list/assemble/delete', async () => {
+    await store.putPartial({
+      id: 'take-x',
+      seq: 0,
+      bytes: bytesOf('AAAA'),
+      mimeType: 'audio/webm',
+      startedAt: 1000,
+      pieceId: 'piece-1',
+      deviceId: 'dev-1',
+    })
+    await store.putPartial({
+      id: 'take-x',
+      seq: 1,
+      bytes: bytesOf('BBBB'),
+      mimeType: 'audio/webm',
+      startedAt: 1000,
+      pieceId: 'piece-1',
+      deviceId: 'dev-1',
+    })
+
+    expect(await store.listPartialIds()).toEqual(['take-x'])
+
+    const assembled = await store.assemblePartial('take-x')
+    expect(assembled).not.toBeNull()
+    expect(assembled!.chunks).toBe(2)
+    expect(assembled!.mimeType).toBe('audio/webm')
+    expect(assembled!.startedAt).toBe(1000)
+    expect(assembled!.pieceId).toBe('piece-1')
+    expect(await assembled!.blob.text()).toBe('AAAABBBB') // concatenated in seq order
+
+    await store.deletePartial('take-x')
+    expect(await store.listPartialIds()).toEqual([])
+    expect(await store.assemblePartial('take-x')).toBeNull()
+  })
+
+  it('assembles out-of-order writes back into seq order', async () => {
+    await store.putPartial({ id: 't', seq: 2, bytes: bytesOf('C'), mimeType: 'audio/webm', startedAt: 1, pieceId: null, deviceId: 'd' })
+    await store.putPartial({ id: 't', seq: 0, bytes: bytesOf('A'), mimeType: 'audio/webm', startedAt: 1, pieceId: null, deviceId: 'd' })
+    await store.putPartial({ id: 't', seq: 1, bytes: bytesOf('B'), mimeType: 'audio/webm', startedAt: 1, pieceId: null, deviceId: 'd' })
+
+    const assembled = await store.assemblePartial('t')
+    expect(await assembled!.blob.text()).toBe('ABC')
+  })
+
+  it('overwrites a chunk written twice at the same seq instead of duplicating it', async () => {
+    await store.putPartial({ id: 't', seq: 0, bytes: bytesOf('first'), mimeType: 'audio/webm', startedAt: 1, pieceId: null, deviceId: 'd' })
+    await store.putPartial({ id: 't', seq: 0, bytes: bytesOf('second'), mimeType: 'audio/webm', startedAt: 1, pieceId: null, deviceId: 'd' })
+
+    const assembled = await store.assemblePartial('t')
+    expect(assembled!.chunks).toBe(1)
+    expect(await assembled!.blob.text()).toBe('second')
+  })
+
+  it('assemblePartial resolves null (not a rejection) for an id with no chunks', async () => {
+    await expect(store.assemblePartial('missing')).resolves.toBeNull()
+  })
+
+  it('deletePartial on an id with no chunks is a harmless no-op', async () => {
+    await expect(store.deletePartial('missing')).resolves.toBeUndefined()
+  })
+
+  it('keeps chunks for different take ids independent', async () => {
+    await store.putPartial({ id: 'a', seq: 0, bytes: bytesOf('A'), mimeType: 'audio/webm', startedAt: 1, pieceId: null, deviceId: 'd' })
+    await store.putPartial({ id: 'b', seq: 0, bytes: bytesOf('B'), mimeType: 'audio/webm', startedAt: 1, pieceId: null, deviceId: 'd' })
+
+    expect((await store.listPartialIds()).sort()).toEqual(['a', 'b'])
+
+    await store.deletePartial('a')
+    expect(await store.listPartialIds()).toEqual(['b'])
+    expect(await store.assemblePartial('a')).toBeNull()
+    expect(await assembleText(store, 'b')).toBe('B')
+  })
+})
+
+async function assembleText(s: RecordingStore, id: string): Promise<string | null> {
+  const assembled = await s.assemblePartial(id)
+  return assembled ? assembled.blob.text() : null
+}
+
+describe('DB upgrade from v1 to v2', () => {
+  it('keeps existing takes when a v1 database (no partials store) is reopened at v2', async () => {
+    const factory = new IDBFactory()
+
+    // Recreate the pre-partials (v1) schema by hand, exactly as the old
+    // IndexedDbRecordingStore.openDb() used to create it.
+    await new Promise<void>((resolve, reject) => {
+      const req = factory.open(RECORDINGS_DB, 1)
+      req.onupgradeneeded = () => {
+        const db = req.result
+        const takesStore = db.createObjectStore('takes', { keyPath: 'id' })
+        takesStore.createIndex('savedAt', 'savedAt')
+      }
+      req.onsuccess = () => {
+        const db = req.result
+        const tx = db.transaction('takes', 'readwrite')
+        tx.objectStore('takes').put({
+          id: 'old-take',
+          savedAt: 123,
+          sizeBytes: 4,
+          mimeType: 'audio/webm',
+          bytes: bytesOf('OLD!'),
+        })
+        tx.oncomplete = () => {
+          db.close()
+          resolve()
+        }
+        tx.onerror = () => reject(tx.error)
+      }
+      req.onerror = () => reject(req.error)
+    })
+
+    // Reopening through the library now upgrades that same physical
+    // database to v2 (creating `partials`) without touching `takes`.
+    const upgraded = openRecordingStore(factory)
+    const blob = await upgraded.get('old-take')
+    expect(blob).not.toBeNull()
+    expect(blob!.type).toBe('audio/webm')
+    expect(await blob!.text()).toBe('OLD!')
+
+    const list = await upgraded.list()
+    expect(list.map((m) => m.id)).toEqual(['old-take'])
+
+    // The new store works too, on the same upgraded database.
+    expect(await upgraded.listPartialIds()).toEqual([])
+    await upgraded.putPartial({ id: 'new-take', seq: 0, bytes: bytesOf('NEW'), mimeType: 'audio/webm', startedAt: 1, pieceId: null, deviceId: 'd' })
+    expect(await upgraded.listPartialIds()).toEqual(['new-take'])
   })
 })

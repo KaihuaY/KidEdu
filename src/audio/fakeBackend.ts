@@ -36,7 +36,9 @@ class FakeMicSession implements MicSession {
   private readonly script: FakeScript
   private readonly startedAt: number
   private readonly listeners = new Set<(rms: number, t: number) => void>()
+  private readonly chunkListeners = new Set<(blob: Blob, seq: number) => void>()
   private timer: ReturnType<typeof setInterval> | null
+  private chunkSeq = 0
 
   constructor(script: FakeScript, mimeType: string, tickMs: number) {
     this.script = script
@@ -49,11 +51,24 @@ class FakeMicSession implements MicSession {
     const t = now()
     const rms = rmsForElapsed(this.script, t - this.startedAt)
     for (const listener of this.listeners) listener(rms, t)
+    // A tiny fake chunk per tick, same shape as the real backend's
+    // ondataavailable slices - lets tests exercise the partial-recording
+    // pipeline (recordingSession.ts) without a real MediaRecorder.
+    if (this.chunkListeners.size > 0) {
+      const seq = this.chunkSeq++
+      const blob = new Blob([new Uint8Array(16)], { type: this.mimeType })
+      for (const listener of this.chunkListeners) listener(blob, seq)
+    }
   }
 
   onLevel(cb: (rms: number, t: number) => void): () => void {
     this.listeners.add(cb)
     return () => this.listeners.delete(cb)
+  }
+
+  onChunk(cb: (blob: Blob, seq: number) => void): () => void {
+    this.chunkListeners.add(cb)
+    return () => this.chunkListeners.delete(cb)
   }
 
   async stop(): Promise<RecordingResult> {

@@ -617,3 +617,170 @@ describe('missions backfill (via importJson)', () => {
     })
   })
 })
+
+describe('unknown top-level sections (forward compatibility)', () => {
+  it('normalizeDoc (via importJson) preserves a section this build does not recognize', () => {
+    const json = JSON.stringify({
+      schemaVersion: 1,
+      settings: { updatedAt: 1 },
+      profiles: { updatedAt: 1 },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+      futureSection: { updatedAt: 5, stuff: 'from a newer build' },
+    })
+
+    importJson(json)
+
+    const doc = getDoc() as unknown as Record<string, unknown>
+    expect(doc.futureSection).toEqual({ updatedAt: 5, stuff: 'from a newer build' })
+  })
+
+  it('mergeDocs keeps an unknown section present on only one side', () => {
+    const local = defaultDoc() as unknown as Record<string, unknown>
+    local.futureSection = { updatedAt: 1, value: 'local-only' }
+    const remote = defaultDoc()
+
+    const merged = mergeDocs(local as unknown as ProgressDoc, remote) as unknown as Record<string, unknown>
+    expect(merged.futureSection).toEqual({ updatedAt: 1, value: 'local-only' })
+  })
+
+  it('mergeDocs picks the newer copy of an unknown section present on both sides, in either direction', () => {
+    const local = defaultDoc() as unknown as Record<string, unknown>
+    local.futureSection = { updatedAt: 100, value: 'local' }
+
+    const remoteNewer = defaultDoc() as unknown as Record<string, unknown>
+    remoteNewer.futureSection = { updatedAt: 200, value: 'remote' }
+    const mergedRemoteWins = mergeDocs(local as unknown as ProgressDoc, remoteNewer as unknown as ProgressDoc) as unknown as Record<
+      string,
+      unknown
+    >
+    expect((mergedRemoteWins.futureSection as { value: string }).value).toBe('remote')
+
+    const remoteOlder = defaultDoc() as unknown as Record<string, unknown>
+    remoteOlder.futureSection = { updatedAt: 50, value: 'remote-old' }
+    const mergedLocalWins = mergeDocs(local as unknown as ProgressDoc, remoteOlder as unknown as ProgressDoc) as unknown as Record<
+      string,
+      unknown
+    >
+    expect((mergedLocalWins.futureSection as { value: string }).value).toBe('local')
+  })
+
+  it('mergeDocs prefers the remote copy of an unknown section when neither side carries its own updatedAt', () => {
+    const local = defaultDoc() as unknown as Record<string, unknown>
+    local.futureFlag = 'local-value'
+    const remote = defaultDoc() as unknown as Record<string, unknown>
+    remote.futureFlag = 'remote-value'
+
+    const merged = mergeDocs(local as unknown as ProgressDoc, remote as unknown as ProgressDoc) as unknown as Record<string, unknown>
+    expect(merged.futureFlag).toBe('remote-value')
+  })
+})
+
+describe('automatic migration backups (loadInitialDoc, via a fresh module instance)', () => {
+  it('writes a backup and records the build id when the stored doc needs shape migration', async () => {
+    vi.resetModules()
+    const storage = new MemoryStorage()
+    const legacyRaw = JSON.stringify({
+      schemaVersion: 1,
+      settings: { updatedAt: 1 },
+      profiles: { updatedAt: 1 },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+    })
+    storage.setItem('cubeclimb.progress', legacyRaw)
+    Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true, writable: true })
+
+    const fresh = await import('../progress')
+    const backups = fresh.listBackups()
+    expect(backups.length).toBe(1)
+    expect(backups[0].buildId).toBe('test-build')
+    expect(storage.getItem('cubeclimb.buildId')).toBe('test-build')
+  })
+
+  it('does not write a backup again once the doc has round-tripped through persist() under the same build', async () => {
+    vi.resetModules()
+    const storage = new MemoryStorage()
+    const legacyRaw = JSON.stringify({
+      schemaVersion: 1,
+      settings: { updatedAt: 1 },
+      profiles: { updatedAt: 1 },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+    })
+    storage.setItem('cubeclimb.progress', legacyRaw)
+    Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true, writable: true })
+
+    const fresh1 = await import('../progress')
+    expect(fresh1.listBackups().length).toBe(1) // migrated on first load
+    fresh1.update('settings', (s) => s) // persists the now-normalized doc verbatim
+
+    vi.resetModules()
+    const fresh2 = await import('../progress')
+    expect(fresh2.listBackups().length).toBe(1) // unchanged - no new backup on the already-normalized reload
+  })
+
+  it('writes a backup when the build id changed even though the shape is already normalized', async () => {
+    vi.resetModules()
+    const storage = new MemoryStorage()
+    Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true, writable: true })
+
+    const fresh1 = await import('../progress')
+    fresh1.update('settings', (s) => s) // normalize + persist under 'test-build'
+    storage.setItem('cubeclimb.buildId', 'an-older-build')
+
+    vi.resetModules()
+    const fresh2 = await import('../progress')
+    expect(fresh2.listBackups().length).toBe(1)
+    expect(storage.getItem('cubeclimb.buildId')).toBe('test-build')
+  })
+
+  it('keeps only the last 3 automatic backups', async () => {
+    vi.resetModules()
+    const storage = new MemoryStorage()
+    Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true, writable: true })
+    let fresh = await import('../progress')
+
+    for (let i = 0; i < 4; i++) {
+      fresh.update('settings', (s) => ({ ...s, kidName: `Name ${i}` })) // persists the now-normalized doc
+      storage.removeItem('cubeclimb.buildId') // force a backup on the next reload
+      vi.resetModules()
+      fresh = await import('../progress')
+    }
+
+    expect(fresh.listBackups().length).toBe(3)
+  })
+})
+
+describe('restoreBackup', () => {
+  it('round-trips the backup content and pushes a reversal backup so restoring is itself reversible', async () => {
+    vi.resetModules()
+    const storage = new MemoryStorage()
+    const legacyRaw = JSON.stringify({
+      schemaVersion: 1,
+      settings: { updatedAt: 1, kidName: 'Old Name' },
+      profiles: { updatedAt: 1 },
+      rewards: { updatedAt: 1 },
+      solveLog: { updatedAt: 1 },
+    })
+    storage.setItem('cubeclimb.progress', legacyRaw)
+    Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true, writable: true })
+
+    const fresh = await import('../progress')
+    expect(fresh.listBackups().length).toBe(1) // the migration backup taken on load, still holding "Old Name"
+
+    fresh.update('settings', (s) => ({ ...s, kidName: 'New Name' }))
+    expect(fresh.getDoc().settings.kidName).toBe('New Name')
+
+    fresh.restoreBackup(0) // 0 = newest = the migration backup
+    expect(fresh.getDoc().settings.kidName).toBe('Old Name')
+    expect(fresh.listBackups().length).toBe(2) // the pre-restore ("New Name") state was stashed too
+  })
+
+  it('throws for an out-of-range index rather than silently doing nothing', async () => {
+    vi.resetModules()
+    const storage = new MemoryStorage()
+    Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true, writable: true })
+    const fresh = await import('../progress')
+    expect(() => fresh.restoreBackup(0)).toThrow()
+  })
+})
