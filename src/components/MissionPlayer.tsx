@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { TwistyCube, type TwistyCubeProps } from './TwistyCube'
 import { SayIt } from './SayIt'
 import { MissionCheck } from './MissionCheck'
@@ -25,14 +25,72 @@ function bumpHelp(prev: HelpKind, next: HelpKind): HelpKind {
   return HELP_ORDER.indexOf(next) > HELP_ORDER.indexOf(prev) ? next : prev
 }
 
+// Where she is inside a mission survives leaving the Cube tab (Settings,
+// Piano, ...) and coming back: kept per mission in sessionStorage, cleared
+// when the mission is completed.
+interface SavedSpot {
+  phase: Phase
+  stepIndex: number
+  help: HelpKind
+  tries: number
+}
+
+function spotKey(holdId: string, missionId: string): string {
+  return `cubeclimb.mission.${holdId}.${missionId}`
+}
+
+function readSpot(holdId: string, missionId: string): SavedSpot | null {
+  try {
+    const raw = sessionStorage.getItem(spotKey(holdId, missionId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<SavedSpot>
+    const phase: Phase = parsed.phase === 'do' || parsed.phase === 'check' ? parsed.phase : 'look'
+    return {
+      phase,
+      stepIndex: typeof parsed.stepIndex === 'number' ? parsed.stepIndex : 0,
+      help: parsed.help === 'scan' || parsed.help === 'walkthrough' ? parsed.help : 'none',
+      tries: typeof parsed.tries === 'number' ? parsed.tries : 1,
+    }
+  } catch {
+    return null
+  }
+}
+
+function writeSpot(holdId: string, missionId: string, spot: SavedSpot): void {
+  try {
+    // A scan in progress can't be resumed, so it comes back as the check screen.
+    sessionStorage.setItem(spotKey(holdId, missionId), JSON.stringify({ ...spot, phase: spot.phase === 'scan' ? 'check' : spot.phase }))
+  } catch {
+    // ignore - she just restarts the mission from Look
+  }
+}
+
+export function clearMissionSpot(holdId: string, missionId: string): void {
+  try {
+    sessionStorage.removeItem(spotKey(holdId, missionId))
+  } catch {
+    // ignore
+  }
+}
+
 /** One mission's Look -> Do -> Check -> (Show me my cube) flow. */
 export function MissionPlayer({ lesson, mission, tempoScale, onDone, onExit }: MissionPlayerProps) {
-  const [phase, setPhase] = useState<Phase>('look')
-  const [stepIndex, setStepIndex] = useState(0)
-  const [help, setHelp] = useState<HelpKind>('none')
-  const [tries, setTries] = useState(1)
+  const saved = readSpot(lesson.id, mission.id)
+  const [phase, setPhase] = useState<Phase>(saved?.phase ?? 'look')
+  const [stepIndex, setStepIndex] = useState(() => Math.min(saved?.stepIndex ?? 0, Math.max(0, mission.steps.length - 1)))
+  const [help, setHelp] = useState<HelpKind>(saved?.help ?? 'none')
+  const [tries, setTries] = useState(saved?.tries ?? 1)
 
   useMissionMinutesTracker('kid', lesson.id, mission.id)
+
+  useEffect(() => {
+    writeSpot(lesson.id, mission.id, { phase, stepIndex, help, tries })
+  }, [lesson.id, mission.id, phase, stepIndex, help, tries])
+
+  function finish(result: { help: HelpKind; tries: number }) {
+    clearMissionSpot(lesson.id, mission.id)
+    onDone(result)
+  }
 
   const step: MissionStep | undefined = mission.steps[stepIndex]
   const isLastStep = stepIndex >= mission.steps.length - 1
@@ -177,7 +235,7 @@ export function MissionPlayer({ lesson, mission, tempoScale, onDone, onExit }: M
         <MissionCheck
           mission={mission}
           tempoScale={tempoScale}
-          onYes={() => onDone({ help, tries })}
+          onYes={() => finish({ help, tries })}
           onShowAgain={goToDo}
           onScan={mission.goalPhase ? () => setPhase('scan') : undefined}
           onNotYet={() => setTries((t) => t + 1)}
@@ -191,12 +249,12 @@ export function MissionPlayer({ lesson, mission, tempoScale, onDone, onExit }: M
           onPassed={() => {
             const nextHelp = bumpHelp(help, 'scan')
             setHelp(nextHelp)
-            onDone({ help: nextHelp, tries })
+            finish({ help: nextHelp, tries })
           }}
           onWalkedThrough={() => {
             const nextHelp = bumpHelp(help, 'walkthrough')
             setHelp(nextHelp)
-            onDone({ help: nextHelp, tries })
+            finish({ help: nextHelp, tries })
           }}
           onCancel={() => setPhase('check')}
         />

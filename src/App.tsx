@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Gate } from './components/Gate'
 import { isInArea, useRoute } from './router'
 import { useProgress } from './store/progress'
@@ -42,6 +42,32 @@ const SYNC_DOT_COLOR: Record<SyncStatus, string> = {
   error: '#e62b2b',
 }
 
+// The Cube and Piano tabs go back to wherever she was inside that area
+// (a mission mid-step, the parent review, ...) instead of the area's home.
+// Tapping the tab of the area she is already in goes to that area's home.
+const LAST_PATH_PREFIX = 'cubeclimb.lastPath.'
+
+function rememberAreaPath(path: string): void {
+  for (const area of ['cube', 'piano'] as const) {
+    if (!isInArea(path, area)) continue
+    // The live recording screen is reached through the recording banner, not the tab.
+    if (path === '/piano/record') return
+    try {
+      sessionStorage.setItem(LAST_PATH_PREFIX + area, path)
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function lastAreaPath(area: 'cube' | 'piano'): string | null {
+  try {
+    return sessionStorage.getItem(LAST_PATH_PREFIX + area)
+  } catch {
+    return null
+  }
+}
+
 function Screen({ path }: { path: string }) {
   if (path === '/home') return <Home />
   if (path === '/cube' || path === '/wall') return <Wall />
@@ -61,11 +87,25 @@ function App() {
   const progress = useProgress()
   const syncStatus = useSyncStatus()
   const mainRef = useRef<HTMLElement | null>(null)
+  const bottomRef = useRef<HTMLDivElement | null>(null)
+  // The bottom stack (banners + menu) is position: fixed so it stays on
+  // screen no matter which element ends up scrolling on a given browser;
+  // <main> gets matching bottom padding so nothing hides behind it.
+  const [bottomHeight, setBottomHeight] = useState(80)
+
+  useEffect(() => {
+    const el = bottomRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => setBottomHeight(el.getBoundingClientRect().height))
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
   // <main> is the only scrolling region now (see .cc-app-shell) - jump it
   // back to the top on every route change, same as a fresh page would.
   useEffect(() => {
     mainRef.current?.scrollTo(0, 0)
+    rememberAreaPath(path)
   }, [path])
 
   return (
@@ -102,14 +142,16 @@ function App() {
         />
       </header>
 
-      <main ref={mainRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <main
+        ref={mainRef}
+        style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: bottomHeight }}
+      >
         <Screen path={path} />
       </main>
 
-      <div style={{ flexShrink: 0 }}>
-        <RecordingBanner path={path} />
-        <UpdateBanner path={path} />
-      </div>
+      <div ref={bottomRef} style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 40 }}>
+      <RecordingBanner path={path} />
+      <UpdateBanner path={path} />
 
       <nav
         className="cc-safe-bottom cc-safe-x"
@@ -125,11 +167,12 @@ function App() {
       >
         {NAV_ITEMS.map((item) => {
           const active = item.area ? isInArea(path, item.area) : path === item.path
+          const target = item.area && !active ? (lastAreaPath(item.area) ?? item.path) : item.path
           return (
             <button
               key={item.path}
               type="button"
-              onClick={() => navigate(item.path)}
+              onClick={() => navigate(target)}
               aria-current={active ? 'page' : undefined}
               style={{
                 display: 'flex',
@@ -155,6 +198,7 @@ function App() {
           )
         })}
       </nav>
+      </div>
     </div>
     </Gate>
   )
