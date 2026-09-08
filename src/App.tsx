@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { Gate } from './components/Gate'
 import { isInArea, useRoute } from './router'
 import { useProgress } from './store/progress'
@@ -58,16 +59,17 @@ function App() {
   const { path, navigate } = useRoute()
   const progress = useProgress()
   const syncStatus = useSyncStatus()
+  const mainRef = useRef<HTMLElement | null>(null)
+
+  // <main> is the only scrolling region now (see .cc-app-shell) - jump it
+  // back to the top on every route change, same as a fresh page would.
+  useEffect(() => {
+    mainRef.current?.scrollTo(0, 0)
+  }, [path])
 
   return (
     <Gate>
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100%',
-      }}
-    >
+    <div className="cc-app-shell">
       <header
         className="cc-safe-top cc-safe-x"
         style={{
@@ -78,6 +80,7 @@ function App() {
           padding: '0.75rem 1rem',
           background: 'var(--cc-surface)',
           borderBottom: '1px solid var(--cc-border)',
+          flexShrink: 0,
         }}
       >
         <strong style={{ fontSize: '1.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -98,11 +101,13 @@ function App() {
         />
       </header>
 
-      <main style={{ flex: 1, overflow: 'auto' }}>
+      <main ref={mainRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <Screen path={path} />
       </main>
 
-      <RecordingBanner path={path} />
+      <div style={{ flexShrink: 0 }}>
+        <RecordingBanner path={path} />
+      </div>
 
       <nav
         className="cc-safe-bottom cc-safe-x"
@@ -113,6 +118,7 @@ function App() {
           padding: '0.5rem',
           background: 'var(--cc-surface)',
           borderTop: '1px solid var(--cc-border)',
+          flexShrink: 0,
         }}
       >
         {NAV_ITEMS.map((item) => {

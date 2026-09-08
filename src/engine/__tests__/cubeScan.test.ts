@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { SOLVED, applyAlg, facePositions, FACE_ORDER, type Face } from '../cube'
+import { CENTER_INDICES } from '../pieces'
 import {
   averagePatch,
+  blankFacelets,
+  canConfirm,
   classifySticker,
   deltaE,
   faceletsFromCaptures,
@@ -9,6 +12,7 @@ import {
   referenceColors,
   rgbToLab,
   SCAN_ORDER,
+  type ExtraRefs,
   type FaceCapture,
   type Rgb,
 } from '../cubeScan'
@@ -101,6 +105,16 @@ describe('classifySticker', () => {
     const result = classifySticker(boundary, REFS)
     expect(result.confidence).toBeLessThan(0.35)
   })
+
+  it('extraRefs fixes a red-shifted orange that default refs misread as red', () => {
+    const redShiftedOrange: Rgb = hexToRgb('#f04808')
+    const withoutExtra = classifySticker(redShiftedOrange, REFS)
+    expect(withoutExtra.face).toBe('L')
+
+    const extraRefs: ExtraRefs = { R: [hexToRgb('#f07018')] }
+    const withExtra = classifySticker(redShiftedOrange, REFS, extraRefs)
+    expect(withExtra.face).toBe('R')
+  })
 })
 
 describe('referenceColors', () => {
@@ -183,6 +197,61 @@ describe('faceletsFromCaptures', () => {
     expect(lowConfidence).toContain(firstIndex)
     expect(facelets[firstIndex]).toBe('?')
   })
+
+  it('uses frozen labels verbatim, never re-classifying, and keeps ? as low-confidence', () => {
+    // Deliberately wrong/ambiguous samples - if labels were ignored these
+    // would classify as something else (or as low-confidence at index 0).
+    const samples = Array.from({ length: 9 }, () => REFS.F)
+    samples[0] = REFS.L // would normally read as 'L'
+    const labels: (Face | '?')[] = ['R', 'F', 'F', 'F', 'F', 'F', 'F', 'F', '?']
+    const { facelets, lowConfidence } = faceletsFromCaptures([{ face: 'F', samples, labels }])
+    const positions = facePositions('F')
+    expect(facelets[positions[0]]).toBe('R') // label wins over the sample's real colour
+    expect(facelets[positions[8]]).toBe('?') // '?' label stays '?'
+    expect(lowConfidence).toContain(positions[8])
+    expect(facelets[positions[4]]).toBe('F') // centre always forced to the face letter
+  })
+
+  it('extraRefs learned mid-scan are used when classifying (no labels present)', () => {
+    const redShiftedOrange = hexToRgb('#d04808')
+    const samples = Array.from({ length: 9 }, () => REFS.R)
+    samples[0] = redShiftedOrange
+    const extraRefs: ExtraRefs = { R: [hexToRgb('#f86008')] }
+
+    const withoutExtra = faceletsFromCaptures([{ face: 'R', samples }])
+    const withExtra = faceletsFromCaptures([{ face: 'R', samples }], extraRefs)
+    const firstIndex = facePositions('R')[0]
+    expect(withoutExtra.facelets[firstIndex]).not.toBe('R')
+    expect(withExtra.facelets[firstIndex]).toBe('R')
+  })
+})
+
+describe('canConfirm', () => {
+  it('is false when there are no labels yet', () => {
+    expect(canConfirm(null)).toBe(false)
+  })
+
+  it('is false while any label is still ?, including a manually-picked one', () => {
+    expect(canConfirm(['U', 'R', 'F', 'D', 'L', 'B', 'U', 'R', '?'])).toBe(false)
+  })
+
+  it('is true once every label is a real face', () => {
+    expect(canConfirm(['U', 'R', 'F', 'D', 'L', 'B', 'U', 'R', 'F'])).toBe(true)
+  })
+})
+
+describe('blankFacelets', () => {
+  it('has exactly the 6 centre letters and 48 unknowns', () => {
+    const blank = blankFacelets()
+    expect(blank.length).toBe(54)
+    CENTER_INDICES.forEach((idx, i) => {
+      expect(blank[idx]).toBe(FACE_ORDER[i])
+    })
+    const unknowns = blank.split('').filter((c) => c === '?')
+    expect(unknowns.length).toBe(48)
+    const letters = blank.split('').filter((c) => c !== '?')
+    expect(letters.sort()).toEqual([...FACE_ORDER].sort())
+  })
 })
 
 describe('averagePatch', () => {
@@ -228,5 +297,28 @@ describe('averagePatch', () => {
     expect(() => averagePatch(data, 10, 0, 0, 5)).not.toThrow()
     const result = averagePatch(data, 10, 0, 0, 5)
     expect(result).toEqual({ r: 5, g: 6, b: 7 })
+  })
+
+  it('trims darkest/brightest 25% so a glare highlight does not skew the reading', () => {
+    const width = 20
+    const height = 20
+    const base: Rgb = { r: 12, g: 200, b: 40 }
+    const glare: Rgb = { r: 250, g: 250, b: 250 }
+    const data = new Uint8ClampedArray(width * height * 4)
+    const total = width * height
+    const glareCount = Math.round(total * 0.25)
+    let glareLeft = glareCount
+    for (let p = 0; p < total; p++) {
+      const useGlare = glareLeft > 0 && p % 4 === 0 // spread the glare pixels through the patch
+      const fill = useGlare ? glare : base
+      if (useGlare) glareLeft--
+      const i = p * 4
+      data[i] = fill.r
+      data[i + 1] = fill.g
+      data[i + 2] = fill.b
+      data[i + 3] = 255
+    }
+    const result = averagePatch(data, width, width / 2, height / 2, width / 2)
+    expect(result).toEqual(base)
   })
 })

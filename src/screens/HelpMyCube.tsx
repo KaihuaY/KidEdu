@@ -6,7 +6,7 @@ import { SayIt } from '../components/SayIt'
 import { fireConfetti } from '../components/Confetti'
 import { CameraScan } from '../components/CameraScan'
 import { applyAlg, invertAlg, isSolved } from '../engine/cube'
-import { CENTER_INDICES } from '../engine/pieces'
+import { blankFacelets } from '../engine/cubeScan'
 import { validateFacelets } from '../engine/validate'
 import { NAMED_ALGS } from '../engine/notation'
 import { detectPhase, solveLBL, type PhaseId, type Solution, type SolveStep } from '../engine/solver'
@@ -16,23 +16,14 @@ import { logSolve } from '../store/solves'
 import { CubeTabs } from '../components/CubeTabs'
 
 const NET_STORAGE_KEY = 'cubeclimb.help.net'
-const CENTER_LETTERS = ['U', 'R', 'F', 'D', 'L', 'B']
-
-function blankNet(): string {
-  const chars = Array.from({ length: 54 }, () => '?')
-  CENTER_INDICES.forEach((idx, i) => {
-    chars[idx] = CENTER_LETTERS[i]
-  })
-  return chars.join('')
-}
 
 function readStoredNet(): string {
   try {
-    if (typeof sessionStorage === 'undefined') return blankNet()
+    if (typeof sessionStorage === 'undefined') return blankFacelets()
     const raw = sessionStorage.getItem(NET_STORAGE_KEY)
-    return raw && raw.length === 54 ? raw : blankNet()
+    return raw && raw.length === 54 ? raw : blankFacelets()
   } catch {
-    return blankNet()
+    return blankFacelets()
   }
 }
 
@@ -252,7 +243,7 @@ export function HelpMyCube() {
     setSolveError(null)
     setCelebrating(null)
     setScanMessage(null)
-    setFacelets(blankNet())
+    setFacelets(blankFacelets())
   }
 
   function handleInitialScanDone(scanned: string) {

@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { TwistyCube } from './TwistyCube'
 import { CUBE_COLORS } from '../content/colors'
-import type { Face } from '../engine/cube'
+import { FACE_ORDER, type Face } from '../engine/cube'
 import {
   LOW_CONFIDENCE_THRESHOLD,
+  PATCH_HALF_FRACTION,
   SCAN_ORDER,
   averagePatch,
+  canConfirm,
   classifySticker,
   faceletsFromCaptures,
   referenceColors,
+  type ExtraRefs,
   type FaceCapture,
   type Rgb,
 } from '../engine/cubeScan'
@@ -19,6 +22,9 @@ export interface CameraScanProps {
   initialFacelets: string
   onDone: (facelets: string) => void
   onCancel: () => void
+  /** Which faces to walk through, in order. Defaults to all six (SCAN_ORDER)
+   * - a caller can pass a single face to re-scan just that one. */
+  faces?: Face[]
 }
 
 const FACE_INSTRUCTIONS: Record<Face, string> = {
@@ -78,7 +84,7 @@ function cameraSupported(): boolean {
 
 const GUIDE_SIZE = 'min(70vw, 360px)'
 
-export function CameraScan({ initialFacelets, onDone, onCancel }: CameraScanProps) {
+export function CameraScan({ initialFacelets, onDone, onCancel, faces = SCAN_ORDER }: CameraScanProps) {
   const [faceIndex, setFaceIndex] = useState(0)
   const [captures, setCaptures] = useState<FaceCapture[]>([])
   const [phase, setPhase] = useState<Phase>(() => (cameraSupported() ? 'closed' : 'error'))
@@ -88,13 +94,22 @@ export function CameraScan({ initialFacelets, onDone, onCancel }: CameraScanProp
       : { message: "This browser can't use the camera. You can still tap the colours." },
   )
   const [previewSamples, setPreviewSamples] = useState<Rgb[] | null>(null)
+  // Classified once, right after capture - the grid renders from this state,
+  // never re-classifying on every render.
+  const [previewLabels, setPreviewLabels] = useState<(Face | '?')[] | null>(null)
+  const [previewLow, setPreviewLow] = useState<boolean[]>([])
+  const [pickerIndex, setPickerIndex] = useState<number | null>(null)
+  // Session-only: colours Nora hand-picked earlier this scan become extra
+  // references classifySticker also checks, so the same lighting mistake
+  // doesn't keep tripping up later faces.
+  const [learnedSamples, setLearnedSamples] = useState<ExtraRefs>({})
   const [mirrored, setMirrored] = useState(false)
 
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
-  const face = SCAN_ORDER[faceIndex]
-  const isLastFace = faceIndex === SCAN_ORDER.length - 1
+  const face = faces[faceIndex]
+  const isLastFace = faceIndex === faces.length - 1
   const capturedFaces = useMemo(() => new Set(captures.map((c) => c.face)), [captures])
   const refs = useMemo(() => referenceColors(captures), [captures])
 
@@ -175,7 +190,7 @@ export function CameraScan({ initialFacelets, onDone, onCancel }: CameraScanProp
       cropY0 = (vh - vw) / 2
     }
     const cellSize = cropSize / 3
-    const half = cellSize * 0.12
+    const half = cellSize * PATCH_HALF_FRACTION
 
     const samples: Rgb[] = []
     for (let row = 0; row < 3; row++) {
@@ -189,25 +204,82 @@ export function CameraScan({ initialFacelets, onDone, onCancel }: CameraScanProp
         samples.push(averagePatch(frame.data, canvas.width, cx, cy, half))
       }
     }
+
+    // Classify once, right here - the preview grid just renders this.
+    const labels: (Face | '?')[] = []
+    const low: boolean[] = []
+    for (let i = 0; i < 9; i++) {
+      if (i === 4) {
+        labels.push(face) // centre - always known, never editable
+        low.push(false)
+        continue
+      }
+      const result = classifySticker(samples[i], refs, learnedSamples)
+      if (result.confidence < LOW_CONFIDENCE_THRESHOLD) {
+        labels.push('?')
+        low.push(true)
+      } else {
+        labels.push(result.face)
+        low.push(false)
+      }
+    }
+
     video.pause()
     setPreviewSamples(samples)
+    setPreviewLabels(labels)
+    setPreviewLow(low)
+    setPickerIndex(null)
     setPhase('preview')
   }
 
   function retake() {
     setPreviewSamples(null)
+    setPreviewLabels(null)
+    setPreviewLow([])
+    setPickerIndex(null)
     videoRef.current?.play().catch(() => {})
     setPhase('live')
   }
 
+  function openPicker(i: number) {
+    if (i === 4) return // centre is never editable
+    setPickerIndex(i)
+  }
+
+  function pickLabel(i: number, label: Face | '?') {
+    setPreviewLabels((labels) => {
+      if (!labels) return labels
+      const next = [...labels]
+      next[i] = label
+      return next
+    })
+    setPreviewLow((low) => {
+      if (i >= low.length) return low
+      const next = [...low]
+      next[i] = false
+      return next
+    })
+    if (label !== '?' && previewSamples) {
+      const sample = previewSamples[i]
+      setLearnedSamples((prev) => ({ ...prev, [label]: [...(prev[label] ?? []), sample] }))
+    }
+    setPickerIndex(null)
+  }
+
   function confirm() {
-    if (!previewSamples) return
-    const nextCaptures = [...captures.filter((c) => c.face !== face), { face, samples: previewSamples }]
+    if (!previewSamples || !previewLabels) return
+    const nextCaptures = [
+      ...captures.filter((c) => c.face !== face),
+      { face, samples: previewSamples, labels: previewLabels },
+    ]
     setCaptures(nextCaptures)
     setPreviewSamples(null)
+    setPreviewLabels(null)
+    setPreviewLow([])
+    setPickerIndex(null)
 
     if (isLastFace) {
-      const { facelets } = faceletsFromCaptures(nextCaptures)
+      const { facelets } = faceletsFromCaptures(nextCaptures, learnedSamples)
       const merged = facelets
         .split('')
         .map((c, i) => (c === '?' ? (initialFacelets[i] ?? '?') : c))
@@ -226,6 +298,8 @@ export function CameraScan({ initialFacelets, onDone, onCancel }: CameraScanProp
     stopStream()
     onCancel()
   }
+
+  const confirmDisabled = !canConfirm(previewLabels)
 
   return (
     <div
@@ -265,6 +339,12 @@ export function CameraScan({ initialFacelets, onDone, onCancel }: CameraScanProp
             {FACE_INSTRUCTIONS[face]}
           </p>
         </div>
+      )}
+
+      {phase === 'live' && (
+        <p style={{ margin: 0, color: 'rgba(255,255,255,0.85)', fontSize: '0.9rem', fontWeight: 700 }}>
+          💡 Bright room, no glare on the stickers
+        </p>
       )}
 
       {phase === 'error' && errorInfo && (
@@ -337,9 +417,10 @@ export function CameraScan({ initialFacelets, onDone, onCancel }: CameraScanProp
             }}
           />
 
-          {/* 3x3 guide grid */}
+          {/* 3x3 guide grid - a plain overlay while live, interactive
+              (tappable) preview cells once a photo's been classified. */}
           <div
-            aria-hidden
+            aria-hidden={phase === 'live'}
             style={{
               position: 'absolute',
               inset: 0,
@@ -354,41 +435,100 @@ export function CameraScan({ initialFacelets, onDone, onCancel }: CameraScanProp
               const isCenter = i === 4
 
               let swatch: { hex: string; label: string } | null = null
-              if (phase === 'preview' && previewSamples) {
-                if (isCenter) {
-                  swatch = { hex: CUBE_COLORS[face].hex, label: CUBE_COLORS[face].name }
-                } else {
-                  const result = classifySticker(previewSamples[i], refs)
-                  swatch =
-                    result.confidence < LOW_CONFIDENCE_THRESHOLD
-                      ? { hex: 'var(--cube-unknown)', label: '?' }
-                      : { hex: CUBE_COLORS[result.face].hex, label: CUBE_COLORS[result.face].name }
-                }
+              if (phase === 'preview' && previewLabels) {
+                const label = previewLabels[i]
+                swatch =
+                  label === '?'
+                    ? { hex: 'var(--cube-unknown)', label: '?' }
+                    : { hex: CUBE_COLORS[label].hex, label: CUBE_COLORS[label].name }
+              }
+              const isLow = phase === 'preview' && !!previewLow[i]
+
+              const cellBorderStyle = {
+                borderTop: row > 0 ? '3px solid rgba(255,255,255,0.85)' : 'none',
+                borderLeft: col > 0 ? '3px solid rgba(255,255,255,0.85)' : 'none',
+              } as const
+
+              const swatchNode = swatch && (
+                <div
+                  style={{
+                    width: '78%',
+                    height: '78%',
+                    borderRadius: '0.5rem',
+                    background: swatch.hex,
+                    opacity: 0.9,
+                    boxShadow: '0 0 0 2px rgba(0,0,0,0.35)',
+                  }}
+                />
+              )
+
+              const lowBadge = isLow && (
+                <span
+                  aria-hidden
+                  className="cc-pulse"
+                  style={{
+                    position: 'absolute',
+                    top: 4,
+                    right: 4,
+                    background: '#fff',
+                    color: '#10122b',
+                    borderRadius: '50%',
+                    width: 20,
+                    height: 20,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.75rem',
+                    fontWeight: 800,
+                    boxShadow: '0 0 0 2px rgba(0,0,0,0.4)',
+                  }}
+                >
+                  ?
+                </span>
+              )
+
+              if (phase === 'preview' && !isCenter) {
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => openPicker(i)}
+                    aria-label={`Sticker ${i + 1}: ${swatch ? swatch.label : 'unknown'}`}
+                    className={isLow ? 'cc-pulse' : undefined}
+                    style={{
+                      ...cellBorderStyle,
+                      position: 'relative',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minWidth: 56,
+                      minHeight: 56,
+                      width: '100%',
+                      height: '100%',
+                      background: 'transparent',
+                      border: 'none',
+                      padding: 0,
+                      cursor: 'pointer',
+                      touchAction: 'manipulation',
+                    }}
+                  >
+                    {swatchNode}
+                    {lowBadge}
+                  </button>
+                )
               }
 
               return (
                 <div
                   key={i}
                   style={{
-                    borderTop: row > 0 ? '3px solid rgba(255,255,255,0.85)' : 'none',
-                    borderLeft: col > 0 ? '3px solid rgba(255,255,255,0.85)' : 'none',
+                    ...cellBorderStyle,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
-                  {swatch && (
-                    <div
-                      style={{
-                        width: '78%',
-                        height: '78%',
-                        borderRadius: '0.5rem',
-                        background: swatch.hex,
-                        opacity: 0.9,
-                        boxShadow: '0 0 0 2px rgba(0,0,0,0.35)',
-                      }}
-                    />
-                  )}
+                  {swatchNode}
                   {isCenter && phase === 'live' && (
                     <span
                       style={{
@@ -422,29 +562,93 @@ export function CameraScan({ initialFacelets, onDone, onCancel }: CameraScanProp
       )}
 
       {phase === 'preview' && (
-        <div style={{ display: 'flex', gap: '0.75rem', width: '100%', maxWidth: 420 }}>
-          <button
-            type="button"
-            className="cc-btn cc-btn-surface"
-            style={{ flex: 1, minHeight: 72, fontSize: '1.05rem', background: '#fff' }}
-            onClick={retake}
-          >
-            🔁 Retake
-          </button>
-          <button
-            type="button"
-            className="cc-btn cc-btn-primary"
-            style={{ flex: 1, minHeight: 72, fontSize: '1.05rem' }}
-            onClick={confirm}
-          >
-            {isLastFace ? 'Done ✅' : 'Looks right ✅'}
-          </button>
+        <p style={{ margin: 0, color: 'rgba(255,255,255,0.85)', fontSize: '0.9rem', fontWeight: 700 }}>
+          Colours look wrong? Tap a square to fix it
+        </p>
+      )}
+
+      {phase === 'preview' && pickerIndex !== null && (
+        <div
+          className="cc-card"
+          style={{
+            padding: '0.85rem 1rem',
+            width: '100%',
+            maxWidth: 420,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.6rem',
+          }}
+        >
+          <p style={{ margin: 0, fontWeight: 700 }}>What colour is sticker {pickerIndex + 1}?</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+            {FACE_ORDER.map((f) => (
+              <button
+                key={f}
+                type="button"
+                className="cc-btn cc-btn-surface"
+                style={{ minHeight: 56 }}
+                aria-label={`Set sticker ${pickerIndex + 1} to ${CUBE_COLORS[f].name}`}
+                onClick={() => pickLabel(pickerIndex, f)}
+              >
+                <span
+                  aria-hidden
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: '0.35rem',
+                    background: CUBE_COLORS[f].hex,
+                    boxShadow: '0 0 0 1px rgba(0,0,0,0.25)',
+                    display: 'inline-block',
+                  }}
+                />
+                {CUBE_COLORS[f].name}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="cc-btn cc-btn-surface"
+              style={{ minHeight: 56 }}
+              aria-label={`Leave sticker ${pickerIndex + 1} unknown`}
+              onClick={() => pickLabel(pickerIndex, '?')}
+            >
+              ❓ Not sure
+            </button>
+          </div>
+        </div>
+      )}
+
+      {phase === 'preview' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', width: '100%', maxWidth: 420 }}>
+          <div style={{ display: 'flex', gap: '0.75rem' }}>
+            <button
+              type="button"
+              className="cc-btn cc-btn-surface"
+              style={{ flex: 1, minHeight: 72, fontSize: '1.05rem', background: '#fff' }}
+              onClick={retake}
+            >
+              🔁 Retake
+            </button>
+            <button
+              type="button"
+              className="cc-btn cc-btn-primary"
+              style={{ flex: 1, minHeight: 72, fontSize: '1.05rem' }}
+              disabled={confirmDisabled}
+              onClick={confirm}
+            >
+              {isLastFace ? 'Done ✅' : 'Looks right ✅'}
+            </button>
+          </div>
+          {confirmDisabled && (
+            <button type="button" className="cc-btn cc-btn-surface" style={{ background: 'rgba(255,255,255,0.9)' }} onClick={confirm}>
+              Leave the ? blank ▶
+            </button>
+          )}
         </div>
       )}
 
       {phase !== 'error' && (
         <div style={{ display: 'flex', gap: '0.5rem' }} aria-label="Faces scanned">
-          {SCAN_ORDER.map((f) => (
+          {faces.map((f) => (
             <div
               key={f}
               title={CUBE_COLORS[f].name}

@@ -62,6 +62,18 @@
  * instructed, `photoToFacelets` is the identity permutation. It is still
  * written as an explicit function (not skipped) so a future pose change only
  * has to edit the permutation table here, not every call site.
+ *
+ * ---------------------------------------------------------------------
+ * White balance: considered, skipped
+ * ---------------------------------------------------------------------
+ *
+ * A per-frame white-balance correction (e.g. normalizing against a known-grey
+ * patch) was considered and deliberately left out. `referenceColors` already
+ * photographs each face's own centre sticker under the same lighting as its
+ * other 8 stickers, so the six references it builds are already adapted to
+ * whatever colour cast the current lighting/camera produces - a second,
+ * separate white-balance pass would be correcting for something the
+ * per-face references already absorb, for real extra complexity.
  */
 
 import { CENTER_INDICES } from './pieces'
@@ -86,7 +98,20 @@ export interface FaceCapture {
   face: Face
   /** 9 samples, reading order as photographed (top-left to bottom-right). */
   samples: Rgb[]
+  /**
+   * 9 labels, same photo order as `samples`, frozen at the moment Nora
+   * tapped "Looks right" (after any manual picker corrections). When
+   * present, `faceletsFromCaptures` uses these verbatim instead of
+   * reclassifying - the centre slot is still forced to the face's own
+   * letter, and a '?' here stays '?' (and is reported as low-confidence).
+   */
+  labels?: (Face | '?')[]
 }
+
+/** Learned corrections gathered during a scan: extra reference samples per
+ * face, on top of the primary centre-sticker reference, that `classifySticker`
+ * also checks (nearest of all candidates wins). Session-only, never persisted. */
+export type ExtraRefs = Partial<Record<Face, Rgb[]>>
 
 /** A sticker classified below this confidence is left '?' for Nora to fix by hand. */
 export const LOW_CONFIDENCE_THRESHOLD = 0.35
@@ -200,15 +225,45 @@ export function referenceColors(captures: FaceCapture[]): Record<Face, Rgb> {
  *     higher hue angle than red on the a*-b* wheel.
  * `confidence` is 0..1, where 1 means the winner is far ahead of the runner
  * up and 0 means it was a coin flip.
+ *
+ * `extraRefs` adds learned corrections on top of each face's primary
+ * reference (e.g. a colour Nora hand-picked earlier in this scan): for every
+ * face the distance used is the *minimum* deltaE over the primary reference
+ * plus any of that face's extra references, and the two hard-pair rules
+ * below read the chroma/hue of whichever single reference actually won that
+ * minimum - not always the primary one - so a learned correction can shift
+ * the white/yellow or red/orange threshold, not just the raw ranking.
  */
-export function classifySticker(sample: Rgb, refs: Record<Face, Rgb>): { face: Face; confidence: number } {
+export function classifySticker(
+  sample: Rgb,
+  refs: Record<Face, Rgb>,
+  extraRefs?: ExtraRefs,
+): { face: Face; confidence: number } {
   const sampleLab = rgbToLab(sample)
-  const refLabs = {} as Record<Face, Lab>
-  for (const face of FACE_ORDER) refLabs[face] = rgbToLab(refs[face])
 
-  const ranked = FACE_ORDER.map((face) => ({ face, d: deltaE(sampleLab, refLabs[face]) })).sort(
-    (a, b) => a.d - b.d,
-  )
+  // For every face, find the nearest candidate (primary reference plus any
+  // learned corrections) and remember which candidate's Lab actually won -
+  // the hard-pair rules need that winning Lab, not necessarily the primary
+  // reference's.
+  const bestLab = {} as Record<Face, Lab>
+  const bestDist = {} as Record<Face, number>
+  for (const face of FACE_ORDER) {
+    const candidates: Rgb[] = [refs[face], ...(extraRefs?.[face] ?? [])]
+    let winnerLab = rgbToLab(candidates[0])
+    let winnerDist = deltaE(sampleLab, winnerLab)
+    for (let i = 1; i < candidates.length; i++) {
+      const lab = rgbToLab(candidates[i])
+      const d = deltaE(sampleLab, lab)
+      if (d < winnerDist) {
+        winnerDist = d
+        winnerLab = lab
+      }
+    }
+    bestLab[face] = winnerLab
+    bestDist[face] = winnerDist
+  }
+
+  const ranked = FACE_ORDER.map((face) => ({ face, d: bestDist[face] })).sort((a, b) => a.d - b.d)
 
   let winner = ranked[0].face
   // Base confidence: how far the nearest reference is ahead of the runner up.
@@ -220,23 +275,27 @@ export function classifySticker(sample: Rgb, refs: Record<Face, Rgb>): { face: F
   // confidence are recomputed from the dedicated rule below, along a single
   // scalar axis (chroma, or hue angle) where the two references are cleanly
   // separated regardless of overall deltaE.
-  function applyHardPairRule(a: Face, b: Face, decide: () => { face: Face; confidence: number }): void {
+  function applyHardPairRule(
+    a: Face,
+    b: Face,
+    decide: (labA: Lab, labB: Lab) => { face: Face; confidence: number },
+  ): void {
     const top2 = new Set([ranked[0].face, ranked[1].face])
     if (!top2.has(a) || !top2.has(b)) return
-    const result = decide()
+    const result = decide(bestLab[a], bestLab[b])
     winner = result.face
     confidence = result.confidence
   }
 
-  applyHardPairRule('D', 'U', () => {
+  applyHardPairRule('D', 'U', (labD, labU) => {
     // White stickers stay close to the neutral axis (chroma near 0) even
     // under warm/cool lighting; yellow carries real chroma even when the
     // exposure washes it out pale. The reference yellow itself is usually
     // strongly saturated (a real yellow sticker), so splitting exactly
     // halfway between the two reference chromas sets the bar too high for a
     // washed-out yellow - use a threshold closer to the white end instead.
-    const whiteChroma = chroma(refLabs.D)
-    const yellowChroma = chroma(refLabs.U)
+    const whiteChroma = chroma(labD)
+    const yellowChroma = chroma(labU)
     const threshold = whiteChroma + (yellowChroma - whiteChroma) * 0.25
     const spread = Math.max(yellowChroma - whiteChroma, 1e-6)
     const sampleChroma = chroma(sampleLab)
@@ -244,11 +303,11 @@ export function classifySticker(sample: Rgb, refs: Record<Face, Rgb>): { face: F
     return { face, confidence: clamp01(Math.abs(sampleChroma - threshold) / (spread * 0.5)) }
   })
 
-  applyHardPairRule('L', 'R', () => {
+  applyHardPairRule('L', 'R', (labL, labR) => {
     // Red and orange have similar chroma; the hue angle (where on the
     // a*-b* wheel the colour sits) is what tells them apart.
-    const redHue = hueDeg(refLabs.L)
-    const orangeHue = hueDeg(refLabs.R)
+    const redHue = hueDeg(labL)
+    const orangeHue = hueDeg(labR)
     const mid = (redHue + orangeHue) / 2
     const spread = Math.max(Math.abs(orangeHue - redHue), 1e-6)
     const sampleHue = hueDeg(sampleLab)
@@ -276,9 +335,13 @@ const PHOTO_TO_FACELET_PERMUTATION: Record<Face, number[]> = {
   B: [0, 1, 2, 3, 4, 5, 6, 7, 8],
 }
 
-export function photoToFacelets(face: Face, samples: Rgb[]): Rgb[] {
+function reorderByPhoto<T>(face: Face, items: T[]): T[] {
   const order = PHOTO_TO_FACELET_PERMUTATION[face]
-  return order.map((photoIndex) => samples[photoIndex])
+  return order.map((photoIndex) => items[photoIndex])
+}
+
+export function photoToFacelets(face: Face, samples: Rgb[]): Rgb[] {
+  return reorderByPhoto(face, samples)
 }
 
 /**
@@ -286,8 +349,17 @@ export function photoToFacelets(face: Face, samples: Rgb[]): Rgb[] {
  * captured so far. Faces not captured stay '?' (except their centre, which
  * is always known - centres never move). Stickers classified below
  * `LOW_CONFIDENCE_THRESHOLD` become '?' too, so Nora fixes them by hand.
+ *
+ * When a capture carries `labels` (set once Nora confirmed "Looks right",
+ * after any manual picker corrections), those labels are used verbatim
+ * instead of reclassifying - a '?' label stays '?' and is reported in
+ * `lowConfidence`. `extraRefs` (learned corrections gathered so far this
+ * scan) is only used for captures classified fresh.
  */
-export function faceletsFromCaptures(captures: FaceCapture[]): { facelets: string; lowConfidence: number[] } {
+export function faceletsFromCaptures(
+  captures: FaceCapture[],
+  extraRefs?: ExtraRefs,
+): { facelets: string; lowConfidence: number[] } {
   const chars: string[] = new Array(54).fill('?')
   FACE_ORDER.forEach((face, i) => {
     chars[CENTER_INDICES[i]] = face
@@ -297,11 +369,21 @@ export function faceletsFromCaptures(captures: FaceCapture[]): { facelets: strin
   const lowConfidence: number[] = []
 
   for (const capture of captures) {
-    const ordered = photoToFacelets(capture.face, capture.samples)
     const positions = facePositions(capture.face)
+    const orderedLabels = capture.labels ? reorderByPhoto(capture.face, capture.labels) : undefined
+    const ordered = orderedLabels ? null : photoToFacelets(capture.face, capture.samples)
+
     for (let i = 0; i < 9; i++) {
       if (i === 4) continue // centre - already set, and known by definition
-      const { face: guess, confidence } = classifySticker(ordered[i], refs)
+
+      if (orderedLabels) {
+        const label = orderedLabels[i]
+        chars[positions[i]] = label
+        if (label === '?') lowConfidence.push(positions[i])
+        continue
+      }
+
+      const { face: guess, confidence } = classifySticker(ordered![i], refs, extraRefs)
       if (confidence < LOW_CONFIDENCE_THRESHOLD) {
         chars[positions[i]] = '?'
         lowConfidence.push(positions[i])
@@ -315,8 +397,40 @@ export function faceletsFromCaptures(captures: FaceCapture[]): { facelets: strin
 }
 
 /**
+ * Whether a scanned face's preview labels are ready to confirm - false while
+ * any sticker (including a manually-picked "not sure") is still '?'. Pure
+ * and DOM-free so CameraScan's "Looks right" disabled logic is unit
+ * testable without a browser.
+ */
+export function canConfirm(labels: (Face | '?')[] | null): boolean {
+  if (!labels) return false
+  return !labels.includes('?')
+}
+
+/** A blank facelet net: every non-centre sticker unknown, centres fixed to
+ * their face letter (centres never move, so they're always known). */
+export function blankFacelets(): string {
+  const chars: string[] = new Array(54).fill('?')
+  FACE_ORDER.forEach((face, i) => {
+    chars[CENTER_INDICES[i]] = face
+  })
+  return chars.join('')
+}
+
+/** Half-width of a sampled patch as a fraction of one grid cell's side -
+ * shared so CameraScan's capture() and any future caller size the sample
+ * square the same way. */
+export const PATCH_HALF_FRACTION = 0.16
+
+/**
  * Average colour of a square patch centred at (cx, cy) in an RGBA buffer
  * (e.g. ImageData.data), shared by CameraScan's canvas sampling.
+ *
+ * Uses a trimmed mean rather than a plain mean: the darkest and brightest
+ * 25% of pixels in the patch are dropped (at least one pixel is always kept)
+ * before averaging the rest, so a stray glare highlight or shadow corner
+ * inside the sampled square doesn't drag the reading off the sticker's real
+ * colour.
  */
 export function averagePatch(data: Uint8ClampedArray, width: number, cx: number, cy: number, half: number): Rgb {
   const height = Math.floor(data.length / (width * 4))
@@ -325,19 +439,28 @@ export function averagePatch(data: Uint8ClampedArray, width: number, cx: number,
   const y0 = Math.max(0, Math.floor(cy - half))
   const y1 = Math.min(height - 1, Math.ceil(cy + half))
 
-  let r = 0
-  let g = 0
-  let b = 0
-  let count = 0
+  const pixels: Rgb[] = []
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       const i = (y * width + x) * 4
-      r += data[i]
-      g += data[i + 1]
-      b += data[i + 2]
-      count++
+      pixels.push({ r: data[i], g: data[i + 1], b: data[i + 2] })
     }
   }
-  if (count === 0) return { r: 0, g: 0, b: 0 }
-  return { r: Math.round(r / count), g: Math.round(g / count), b: Math.round(b / count) }
+  if (pixels.length === 0) return { r: 0, g: 0, b: 0 }
+
+  pixels.sort((a, b) => a.r + a.g + a.b - (b.r + b.g + b.b))
+  const dropEach = Math.min(Math.floor(pixels.length * 0.25), Math.floor((pixels.length - 1) / 2))
+  const start = dropEach
+  const end = pixels.length - dropEach
+  const kept = pixels.slice(start, end)
+
+  let r = 0
+  let g = 0
+  let b = 0
+  for (const p of kept) {
+    r += p.r
+    g += p.g
+    b += p.b
+  }
+  return { r: Math.round(r / kept.length), g: Math.round(g / kept.length), b: Math.round(b / kept.length) }
 }
