@@ -35,6 +35,8 @@ export interface Settings {
   pianoPieces: PianoPiece[]
   /** How many days of local audio to keep before pruning. */
   recordingKeepDays: number
+  /** Show raw notation letters (R, U, F...) in the cube missions. Default off - Nora reads the kid-friendly names first. */
+  showMoveLetters?: boolean
   /** Parent-entered once, synced via the private gist. Undefined = uploads off. */
   driveUpload?: { scriptUrl: string; secret: string; folderName: string }
   prizePools: {
@@ -254,6 +256,7 @@ export function defaultDoc(): ProgressDoc {
       goalMinutes: { cube: 10, piano: 15 },
       pianoPieces: [],
       recordingKeepDays: 14,
+      showMoveLetters: false,
       prizePools: {
         gold: [
           goldCashPrize(),

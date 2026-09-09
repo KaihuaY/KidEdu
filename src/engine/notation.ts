@@ -122,6 +122,8 @@ export interface NamedAlg {
   kidName: string
   alg: string
   hint: string
+  /** An optional "why does this work?" disclosure - intuition only, no group theory. */
+  why?: { text: string; say: string }
 }
 
 /** The seven little tricks Nora learns by heart. */
@@ -131,42 +133,70 @@ export const NAMED_ALGS: NamedAlg[] = [
     kidName: 'The Elevator 🛗',
     alg: "R U R' U'",
     hint: 'Right side up, top layer left, right side down, top layer right. Do it again and again. Watch the corner ride down into its home.',
+    why: {
+      text: "The corner rides UP the right side, the top turns to move it out of the way, then the right side comes back DOWN. Every other piece ends up back where it was, because each move gets undone.",
+      say: 'The corner rides up the right side, the top moves it out of the way, then the right side comes back down. Everything else ends up back where it was.',
+    },
   },
   {
     id: 'goRight',
     kidName: 'Send it Right ➡️',
     alg: "U R U' R' U' F' U F",
     hint: 'The edge on top wants to go down and to the RIGHT. Push the top away from the slot first, then bring it back home.',
+    why: {
+      text: 'First we park the edge above its home. Then a little detour: take a corner out, drop the edge in, put the corner back. The bottom never notices.',
+      say: 'First we park the edge above its home. Then a little detour: take a corner out, drop the edge in, put the corner back. The bottom never notices.',
+    },
   },
   {
     id: 'goLeft',
     kidName: 'Send it Left ⬅️',
     alg: "U' L' U L U F U' F'",
     hint: 'This one is the mirror of Send it Right. The edge on top wants to go down and to the LEFT.',
+    why: {
+      text: 'First we park the edge above its home. Then a little detour: take a corner out, drop the edge in, put the corner back - the mirror image of Send it Right, on the LEFT side this time. The bottom never notices.',
+      say: 'First we park the edge above its home. Then a little detour on the left side: take a corner out, drop the edge in, put the corner back. The bottom never notices.',
+    },
   },
   {
     id: 'yellowCross',
     kidName: 'Yellow Cross ☀️',
     alg: "F R U R' U' F'",
     hint: 'Dot, then L shape, then line, then cross. Hold the L in the top-left corner, and hold the line going across.',
+    why: {
+      text: "F opens a door. R U R' U' is one Elevator ride that flips two top edges. F' closes the door so the bottom stays safe.",
+      say: 'F opens a door. The Elevator flips two top edges. F backwards closes the door so the bottom stays safe.',
+    },
   },
   {
     id: 'fish',
     kidName: 'The Fish 🐟',
     alg: "R U R' U R U2 R'",
     hint: 'Three yellow edges swim around the top while the front one stays home. Turn the top afterwards to line the colours up.',
+    why: {
+      text: 'Three Elevator-style rides on the same side spin three top edges around like a merry-go-round, and the bottom stays put.',
+      say: 'Three Elevator-style rides on the same side spin three top edges around like a merry-go-round, and the bottom stays put.',
+    },
   },
   {
     id: 'cornerCycle',
     kidName: 'Corner Swap 🔄',
     alg: "U R U' L' U R' U' L",
     hint: 'Three corners take a walk around the top while the front-right corner stays home. It tilts them on the way. The Bottom Elevator fixes that afterwards.',
+    why: {
+      text: 'The right side moves one corner out, the left side moves another corner in. Doing it twice sends the corners around in a circle.',
+      say: 'The right side moves one corner out, the left side moves another corner in. Doing it twice sends the corners around in a circle.',
+    },
   },
   {
     id: 'cornerTwist',
     kidName: 'Bottom Elevator 🛗',
     alg: "R' D' R D",
     hint: 'Hold the corner at the front-right-top. Do Bottom Elevator 2 or 4 times until yellow is on top. The rest of the cube might look messy. Do not worry, it fixes itself at the end!',
+    why: {
+      text: 'The Bottom Elevator twists ONE corner a little at a time. It looks like it breaks the bottom, but the top turn brings the next corner and the last rides fix everything.',
+      say: 'The Bottom Elevator twists one corner a little at a time. It looks like it breaks the bottom, but the top turn brings the next corner and the last rides fix everything.',
+    },
   },
 ]
 

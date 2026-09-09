@@ -114,10 +114,24 @@ export interface LearnCard {
 /** A mission's Look/Do card is just a LearnCard - same shape, same rendering. */
 export type MissionCard = LearnCard
 
-/** One step of a mission's "Do" phase: an animated card, or a tap-along practice drill. */
+/**
+ * One case she might see, offered as a tappable card in a `pick` step's
+ * "which one looks like yours?" picker. `display` is always a STILL picture
+ * (`alg: ''`) of the case; `then` is the sequence of steps to run once she
+ * picks it (usually a single `do` card carrying the animated trick).
+ */
+export interface PickOption {
+  label: string
+  display: { setupAlg: string; alg: string }
+  stickering?: string
+  then: MissionStep[]
+}
+
+/** One step of a mission's "Do" phase: an animated card, a tap-along practice drill, or a case picker. */
 export type MissionStep =
-  | (MissionCard & { kind: 'do'; namedAlgId?: string })
+  | (MissionCard & { kind: 'do'; namedAlgId?: string; followAlong?: boolean })
   | { kind: 'practice'; prompt: string; say: string; sequence: string; sequences?: string[] }
+  | { kind: 'pick'; title: string; text: string; say: string; options: PickOption[] }
 
 /** The "does yours look like this?" picture shown at the end of a mission. */
 export interface MissionCheck {
@@ -213,6 +227,11 @@ export function forwardDisplay(movesFromSolved: string): { setupAlg: string; alg
  */
 export function learnDisplay(movesFromSolved: string, alg: string): { setupAlg: string; alg: string } {
   return { setupAlg: ('z2 ' + movesFromSolved).trim(), alg }
+}
+
+/** A still preview (`alg: ''`) of a Do card's display, for a PickOption. */
+function stillOf(display: { setupAlg: string; alg: string }): { setupAlg: string; alg: string } {
+  return { setupAlg: display.setupAlg, alg: '' }
 }
 
 /** The facelet state a display pair (setupAlg/alg) shows while paused, before `alg` plays. */
@@ -339,6 +358,54 @@ const CROSS_CASE_MIDDLE = `${DAISY_MOVES} R'`
 const CROSS_CASE_FLIPPED = "R2 B2 L' F"
 /** Daisy with the front petal already tucked down - a fresh, aligned front petal ready to tuck. */
 const CROSS_CASE_TUCK_ONE = `${DAISY_MOVES} F2`
+
+/**
+ * The three cases a white edge can be in on the way to becoming a daisy
+ * petal - shared between D2 (first petal) and D3 (every later petal, same
+ * three tricks). Each option's `display` is a still of the exact case its
+ * `then` step animates.
+ */
+const PETAL_OPTIONS: PickOption[] = [
+  {
+    label: 'White on the bottom',
+    display: stillOf(learnDisplay(CROSS_CASE_BOTTOM, 'F2')),
+    then: [
+      {
+        kind: 'do',
+        title: 'A white edge on the bottom',
+        text: 'See the white edge on the bottom, white pointing DOWN? Turn that side TWICE. Whoosh, it flies up!',
+        say: 'A white edge on the bottom with white pointing down. Turn that side twice and up it comes.',
+        display: learnDisplay(CROSS_CASE_BOTTOM, 'F2'),
+      },
+    ],
+  },
+  {
+    label: 'In the middle row',
+    display: stillOf(learnDisplay(CROSS_CASE_MIDDLE, 'R')),
+    then: [
+      {
+        kind: 'do',
+        title: 'A white edge in the middle row',
+        text: 'White edge stuck in the middle row? One turn of that side lifts it up. If a petal is already there, turn the TOP first to make room.',
+        say: 'A white edge in the middle row. Turn that side once to lift it up. If a petal is in the way, turn the top first.',
+        display: learnDisplay(CROSS_CASE_MIDDLE, 'R'),
+      },
+    ],
+  },
+  {
+    label: 'On top, sideways',
+    display: stillOf(learnDisplay(CROSS_CASE_FLIPPED, "F' L'")),
+    then: [
+      {
+        kind: 'do',
+        title: 'White is pointing sideways',
+        text: 'This one is on top but white looks at YOU. Turn it out, then bring it up the next side.',
+        say: 'This white edge is on top but pointing sideways. Turn it out, then bring it up the next side.',
+        display: learnDisplay(CROSS_CASE_FLIPPED, "F' L'"),
+      },
+    ],
+  },
+]
 
 /** The white corner is home but twisted - one Elevator pops it back onto the top. */
 const CORNER_CASE_STUCK = repeatAlg(ELEVATOR, 2)
@@ -633,25 +700,11 @@ const daisy: Lesson = {
       },
       steps: [
         {
-          kind: 'do',
-          title: 'A white edge on the bottom',
-          text: 'See the white edge on the bottom, white pointing DOWN? Turn that side TWICE. Whoosh, it flies up!',
-          say: 'A white edge on the bottom with white pointing down. Turn that side twice and up it comes.',
-          display: learnDisplay(CROSS_CASE_BOTTOM, 'F2'),
-        },
-        {
-          kind: 'do',
-          title: 'A white edge in the middle row',
-          text: 'White edge stuck in the middle row? One turn of that side lifts it up. If a petal is already there, turn the TOP first to make room.',
-          say: 'A white edge in the middle row. Turn that side once to lift it up. If a petal is in the way, turn the top first.',
-          display: learnDisplay(CROSS_CASE_MIDDLE, 'R'),
-        },
-        {
-          kind: 'do',
-          title: 'White is pointing sideways',
-          text: 'This one is on top but white looks at YOU. Turn it out, then bring it up the next side.',
-          say: 'This white edge is on top but pointing sideways. Turn it out, then bring it up the next side.',
-          display: learnDisplay(CROSS_CASE_FLIPPED, "F' L'"),
+          kind: 'pick',
+          title: 'Which one looks like yours?',
+          text: 'Every white edge you find will be in one of these three spots. Tap the one that matches.',
+          say: 'Every white edge you find will be in one of these three spots. Tap the one that matches yours.',
+          options: PETAL_OPTIONS,
         },
       ],
       check: {
@@ -676,11 +729,11 @@ const daisy: Lesson = {
       },
       steps: [
         {
-          kind: 'do',
-          title: 'Same three tricks work again',
-          text: 'Bottom, middle row, or sideways on top - the same three moves make any white edge into a petal.',
-          say: 'The same three moves work for any white edge: bottom, middle row, or sideways on top.',
-          display: learnDisplay(CROSS_CASE_MIDDLE, 'R'),
+          kind: 'pick',
+          title: 'Which one is your next white edge?',
+          text: 'Bottom, middle row, or sideways on top - the same three moves make any white edge into a petal. Which case matches?',
+          say: 'The same three moves work for any white edge: bottom, middle row, or sideways on top. Which case matches?',
+          options: PETAL_OPTIONS,
         },
         {
           kind: 'do',
@@ -1048,12 +1101,40 @@ const corners: Lesson = {
       },
       steps: [
         {
-          kind: 'do',
-          title: 'One more stuck-downstairs case',
-          text: 'If the last corner is already down but twisted, remember: ONE Elevator pops it back up, then bring it home properly.',
-          say: 'A twisted corner already downstairs needs one Elevator to pop it back up first.',
-          display: learnDisplay(CORNER_CASE_STUCK, ELEVATOR),
-          namedAlgId: 'elevator',
+          kind: 'pick',
+          title: 'Which one looks like yours?',
+          text: 'One white corner left. Is it already on top, or stuck downstairs twisted the wrong way?',
+          say: 'Is the last white corner already on top, or stuck downstairs twisted the wrong way?',
+          options: [
+            {
+              label: 'On top, above home',
+              display: stillOf(caseDisplay(repeatAlg(ELEVATOR, 3))),
+              then: [
+                {
+                  kind: 'do',
+                  title: 'Ride the Elevator until it drops in',
+                  text: 'Same trick as before: keep doing The Elevator until the white sticker points DOWN.',
+                  say: 'Keep doing the Elevator until the white sticker points down.',
+                  display: caseDisplay(repeatAlg(ELEVATOR, 3)),
+                  namedAlgId: 'elevator',
+                },
+              ],
+            },
+            {
+              label: 'Stuck downstairs, twisted',
+              display: stillOf(learnDisplay(CORNER_CASE_STUCK, ELEVATOR)),
+              then: [
+                {
+                  kind: 'do',
+                  title: 'Pop it back up first',
+                  text: 'If the last corner is already down but twisted, remember: ONE Elevator pops it back up, then bring it home properly.',
+                  say: 'A twisted corner already downstairs needs one Elevator to pop it back up first.',
+                  display: learnDisplay(CORNER_CASE_STUCK, ELEVATOR),
+                  namedAlgId: 'elevator',
+                },
+              ],
+            },
+          ],
         },
       ],
       check: {
@@ -1190,12 +1271,40 @@ const middle: Lesson = {
       },
       steps: [
         {
-          kind: 'do',
-          title: 'Fill all four middle spots',
-          text: 'When you cannot find a no-yellow edge on top, one wrong edge might be stuck downstairs - do Send it Right once to pop it back up, then send it home properly.',
-          say: 'If you cannot find a no-yellow edge on top, one might be stuck in the middle already - pop it up first.',
-          display: learnDisplay(MIDDLE_CASE_STUCK, GO_RIGHT),
-          namedAlgId: 'goRight',
+          kind: 'pick',
+          title: 'Which one looks like yours?',
+          text: 'One middle spot left. Is the edge waiting on top with no yellow, or already stuck in the wrong middle spot?',
+          say: 'Is the last edge waiting on top with no yellow, or already stuck in the wrong middle spot?',
+          options: [
+            {
+              label: 'An edge on top, no yellow',
+              display: stillOf(caseDisplay(GO_RIGHT)),
+              then: [
+                {
+                  kind: 'do',
+                  title: 'Send it home',
+                  text: 'Line it up with the front colour, check where its top colour lives, then Send it Right or Send it Left.',
+                  say: 'Line it up, check its top colour, then send it right or send it left.',
+                  display: caseDisplay(GO_RIGHT),
+                  namedAlgId: 'goRight',
+                },
+              ],
+            },
+            {
+              label: 'Stuck in the wrong middle spot',
+              display: stillOf(learnDisplay(MIDDLE_CASE_STUCK, GO_RIGHT)),
+              then: [
+                {
+                  kind: 'do',
+                  title: 'Fill all four middle spots',
+                  text: 'When you cannot find a no-yellow edge on top, one wrong edge might be stuck downstairs - do Send it Right once to pop it back up, then send it home properly.',
+                  say: 'If you cannot find a no-yellow edge on top, one might be stuck in the middle already - pop it up first.',
+                  display: learnDisplay(MIDDLE_CASE_STUCK, GO_RIGHT),
+                  namedAlgId: 'goRight',
+                },
+              ],
+            },
+          ],
         },
       ],
       check: {
@@ -1245,22 +1354,57 @@ const yellowCross: Lesson = {
       },
       steps: [
         {
-          kind: 'do',
-          title: 'The L',
-          text: "Two yellow edges NEXT TO each other make an L. Turn the top until the L points BACK and LEFT. Now do the Yellow Cross trick.",
-          say: 'Two yellow edges next to each other make an L. Hold the L pointing back and left, then do the trick.',
-          display: caseDisplay(YC_L_FIX),
-          stickering: 'EOLL',
-          namedAlgId: 'yellowCross',
-        },
-        {
-          kind: 'do',
-          title: 'The line',
-          text: 'Two yellow edges ACROSS from each other make a line. Hold it going LEFT to RIGHT. Do the Yellow Cross trick once.',
-          say: 'Two yellow edges across from each other make a line. Hold it left to right and do the trick once.',
-          display: caseDisplay(YC_LINE_FIX),
-          stickering: 'EOLL',
-          namedAlgId: 'yellowCross',
+          kind: 'pick',
+          title: 'Dot, L, or line?',
+          text: 'Look at the four edges around the yellow centre. Which shape matches yours?',
+          say: 'Look at the four edges around the yellow centre. Which shape matches yours - a dot, an L, or a line?',
+          options: [
+            {
+              label: 'A dot (no yellow edges up top)',
+              display: stillOf(learnDisplay(invertAlg(YC_DOT_FIX), YELLOW_CROSS)),
+              then: [
+                {
+                  kind: 'do',
+                  title: 'The dot',
+                  text: 'No yellow edges standing up at all? Just do the Yellow Cross trick once. Watch it turn into an L!',
+                  say: 'No yellow edges standing up at all. Do the Yellow Cross trick once and watch it turn into an L.',
+                  display: learnDisplay(invertAlg(YC_DOT_FIX), YELLOW_CROSS),
+                  stickering: 'EOLL',
+                  namedAlgId: 'yellowCross',
+                },
+              ],
+            },
+            {
+              label: 'An L (two next to each other)',
+              display: stillOf(caseDisplay(YC_L_FIX)),
+              then: [
+                {
+                  kind: 'do',
+                  title: 'The L',
+                  text: "Two yellow edges NEXT TO each other make an L. Turn the top until the L points BACK and LEFT. Now do the Yellow Cross trick.",
+                  say: 'Two yellow edges next to each other make an L. Hold the L pointing back and left, then do the trick.',
+                  display: caseDisplay(YC_L_FIX),
+                  stickering: 'EOLL',
+                  namedAlgId: 'yellowCross',
+                },
+              ],
+            },
+            {
+              label: 'A line (two across from each other)',
+              display: stillOf(caseDisplay(YC_LINE_FIX)),
+              then: [
+                {
+                  kind: 'do',
+                  title: 'The line',
+                  text: 'Two yellow edges ACROSS from each other make a line. Hold it going LEFT to RIGHT. Do the Yellow Cross trick once.',
+                  say: 'Two yellow edges across from each other make a line. Hold it left to right and do the trick once.',
+                  display: caseDisplay(YC_LINE_FIX),
+                  stickering: 'EOLL',
+                  namedAlgId: 'yellowCross',
+                },
+              ],
+            },
+          ],
         },
       ],
       check: {
@@ -1345,13 +1489,42 @@ const yellowEdges: Lesson = {
       },
       steps: [
         {
-          kind: 'do',
-          title: 'Two matching, across from each other',
-          text: 'These two match, but they sit across from each other. No back-and-right pair to hold yet! Do the Fish once anywhere, then look again.',
-          say: 'If the two matching edges are across from each other, do the Fish once anywhere and look again.',
-          display: learnDisplay(invertAlg(EDGES_OPPOSITE_FIX), FISH),
-          stickering: 'ELL',
-          namedAlgId: 'fish',
+          kind: 'pick',
+          title: 'Which one looks like yours?',
+          text: 'Two yellow edges match their centres. Are they sitting right next to each other, or across from each other?',
+          say: 'Are the two matching edges sitting right next to each other, or across from each other?',
+          options: [
+            {
+              label: 'Two matching, next to each other',
+              display: stillOf(caseDisplay(EDGES_ADJACENT_FIX)),
+              then: [
+                {
+                  kind: 'do',
+                  title: 'Two matching, next to each other',
+                  text: 'These two already match and sit right next door to each other. Hold them at the BACK and the RIGHT, then do the Fish and turn the top to finish.',
+                  say: 'Hold the two matching edges at the back and the right, then do the Fish and turn the top to finish.',
+                  display: caseDisplay(EDGES_ADJACENT_FIX),
+                  stickering: 'ELL',
+                  namedAlgId: 'fish',
+                },
+              ],
+            },
+            {
+              label: 'Two matching, across from each other',
+              display: stillOf(learnDisplay(invertAlg(EDGES_OPPOSITE_FIX), FISH)),
+              then: [
+                {
+                  kind: 'do',
+                  title: 'Two matching, across from each other',
+                  text: 'These two match, but they sit across from each other. No back-and-right pair to hold yet! Do the Fish once anywhere, then look again.',
+                  say: 'If the two matching edges are across from each other, do the Fish once anywhere and look again.',
+                  display: learnDisplay(invertAlg(EDGES_OPPOSITE_FIX), FISH),
+                  stickering: 'ELL',
+                  namedAlgId: 'fish',
+                },
+              ],
+            },
+          ],
         },
       ],
       check: {

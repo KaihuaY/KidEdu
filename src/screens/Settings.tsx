@@ -459,6 +459,22 @@ export function Settings() {
       </section>
 
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Cube learning</h2>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 700, minHeight: 56 }}>
+          <input
+            type="checkbox"
+            checked={settings.showMoveLetters ?? false}
+            onChange={(e) => update('settings', (s) => ({ ...s, showMoveLetters: e.target.checked }))}
+            style={{ width: 24, height: 24 }}
+          />
+          Show move letters (R, U, F…)
+        </label>
+        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+          Off by default - she learns the moves by their friendly names first.
+        </p>
+      </section>
+
+      <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <h2 style={{ margin: 0, fontSize: '1.05rem' }}>This week&apos;s piano pieces</h2>
         <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
           Nora picks one of these before she records.
