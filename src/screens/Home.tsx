@@ -2,6 +2,8 @@ import { navigate } from '../router'
 import { useProgress } from '../store/progress'
 import { localDay } from '../store/sessions'
 import { activeSecondsForDay, goalProgress } from '../store/pianoRewards'
+import { cubeStatusText, ensureTodaysPlan, tomorrowsMission } from '../store/dailyPlan'
+import { LESSON_LIST } from '../content/lessons'
 import { SayIt } from '../components/SayIt'
 import { ActivityCard } from '../components/ActivityCard'
 import { TokenPill } from '../components/TokenPill'
@@ -13,6 +15,11 @@ export function Home() {
   const greeting = `Hi ${kidName}! What do you want to practice today?`
   const today = localDay()
   const cubeDoneToday = profile.sessions.some((s) => s.day === today)
+  const cubePlan = ensureTodaysPlan(today)
+  const tomorrow = cubePlan.mission?.doneAt ? tomorrowsMission(cubePlan, LESSON_LIST) : undefined
+  const cubeStatus = tomorrow
+    ? `Done today ✅ · Tomorrow: ${tomorrow.title}`
+    : cubeStatusText(cubePlan, kidName)
   const pianoGoal = progress.settings.goalMinutes.piano
   const pianoActiveSec = activeSecondsForDay(progress.piano.takes, today)
   const pianoDoneToday = Boolean(progress.piano.days[today]?.goalReachedAt)
@@ -36,7 +43,7 @@ export function Home() {
         title="Cube"
         ringProgress={cubeDoneToday ? 1 : 0}
         streak={profile.streak.current}
-        status={cubeDoneToday ? 'Done today ✅' : `▶ ${progress.settings.goalMinutes.cube} min`}
+        status={cubeStatus}
         onClick={() => navigate('/cube')}
       />
 

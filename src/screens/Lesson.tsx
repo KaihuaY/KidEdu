@@ -10,19 +10,28 @@ import {
   missionById,
   nextHoldId,
   nextMissionId,
+  LESSON_LIST,
   type Checkpoint,
   type Lesson as LessonContent,
   type Mission,
+  type MissionCard,
 } from '../content/lessons'
 import { getDoc, useProgress, type HelpKind, type HoldProgress } from '../store/progress'
 import {
   completeMission,
+  completeWarmup,
   isMissionDone,
   isMissionUnlocked,
   masterHold,
   missionsDoneCount,
 } from '../store/missions'
+import { ensureTodaysPlan, tomorrowsMission } from '../store/dailyPlan'
 import type { Tier } from '../store/rewards'
+
+/** A page shared with someone else, or copied to the clipboard when the Web Share API isn't available. */
+type ShareNavigator = Navigator & {
+  share?: (data: { text?: string; title?: string; url?: string }) => Promise<void>
+}
 
 // ---------------------------------------------------------------------------
 // Checkpoints - "before you start this hold, your cube should look like X"
@@ -238,6 +247,8 @@ interface Celebration {
   message: string
   tier?: Tier
   holdMastered: boolean
+  /** Set only when the finished mission was today's planned one - the next mission's Look picture. */
+  teaser?: { title: string; look: MissionCard }
 }
 
 function tierMessage(tier: Tier, who: string): string {
@@ -247,14 +258,16 @@ function tierMessage(tier: Tier, who: string): string {
 }
 
 export function Lesson() {
-  const { params } = useRoute()
+  const { params, path } = useRoute()
   const lesson = lessonById(params.id ?? '')
   const missionId = params.missionId
+  const isWarmup = path.endsWith('/warmup')
   const progressDoc = useProgress()
   const profile = progressDoc.profiles.kid
 
   const [tempoScale, setTempoScale] = useState(1)
   const [celebration, setCelebration] = useState<Celebration | null>(null)
+  const [showCopied, setShowCopied] = useState(false)
   const [ritualDone, setRitualDone] = useState(() => hasAckedRitual())
   const [checkpointAcked, setCheckpointAcked] = useState(() => hasAckedCheckpoint(lesson?.id ?? ''))
 
@@ -286,10 +299,23 @@ export function Lesson() {
 
   const mission = missionId ? missionById(lesson.id, missionId) : undefined
 
-  function handleMissionDone(result: { help: HelpKind; tries: number }) {
+  function handleMissionDone(result: { help: HelpKind; tries: number; warmup?: boolean }) {
     if (!mission) return
-    const tier = completeMission('kid', lesson!.id, mission.id, result.help, result.tries)
     const who = progressDoc.settings.kidName
+
+    if (result.warmup) {
+      completeWarmup('kid', lesson!.id, mission.id)
+      fireConfetti('small')
+      const plan = ensureTodaysPlan()
+      if (plan.mission && !plan.mission.doneAt) {
+        navigate(`/lesson/${plan.mission.holdId}/${plan.mission.missionId}`)
+      } else {
+        navigate('/wall')
+      }
+      return
+    }
+
+    const tier = completeMission('kid', lesson!.id, mission.id, result.help, result.tries)
     const missionIds = lesson!.missions.map((m) => m.id)
     const freshHold = getDoc().profiles.kid.holds[lesson!.id]
     const allDone = missionsDoneCount(freshHold, missionIds) === missionIds.length
@@ -304,7 +330,36 @@ export function Lesson() {
       })
     } else {
       fireConfetti(tier === 'gold' ? 'big' : 'small')
-      setCelebration({ message: tierMessage(tier, who), tier, holdMastered: false })
+      // completeMission() already stamped cubeDay.mission.doneAt when this
+      // was today's planned mission, so ensureTodaysPlan() reflects that now.
+      const plan = ensureTodaysPlan()
+      const isTodaysMission = plan.mission?.holdId === lesson!.id && plan.mission?.missionId === mission.id
+      setCelebration({
+        message: tierMessage(tier, who),
+        tier,
+        holdMastered: false,
+        teaser: isTodaysMission ? tomorrowsMission(plan, LESSON_LIST) : undefined,
+      })
+    }
+    setShowCopied(false)
+  }
+
+  /** Shares (or copies, when Web Share isn't available) a short line about the mission she just finished. */
+  async function shareMissionDone() {
+    if (!mission) return
+    const emoji = celebration?.tier === 'gold' ? ' 🥇' : celebration?.tier === 'silver' ? ' 🥈' : celebration?.tier === 'bronze' ? ' 🥉' : ''
+    const text = `${progressDoc.settings.kidName} just finished "${mission.title}" on her cube climb! 🧗${emoji}`
+    const nav = typeof navigator !== 'undefined' ? (navigator as ShareNavigator) : undefined
+    try {
+      if (nav?.share) {
+        await nav.share({ text })
+      } else if (nav?.clipboard) {
+        await nav.clipboard.writeText(text)
+        setShowCopied(true)
+        setTimeout(() => setShowCopied(false), 2000)
+      }
+    } catch {
+      // Cancelling the share sheet isn't an error - nothing to do.
     }
   }
 
@@ -357,6 +412,7 @@ export function Lesson() {
           lesson={lesson}
           mission={mission}
           tempoScale={tempoScale}
+          warmup={isWarmup}
           onDone={handleMissionDone}
           onExit={() => navigate(`/lesson/${lesson.id}`)}
         />
@@ -383,45 +439,82 @@ export function Lesson() {
         >
           <div className="cc-card" style={{ padding: '1.75rem', maxWidth: 360, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <h2 style={{ margin: 0, fontSize: '1.25rem' }}>{celebration.message}</h2>
+
+            {celebration.teaser && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                <strong style={{ fontSize: '1.05rem' }}>Tomorrow: {celebration.teaser.title}</strong>
+                {celebration.teaser.look.display && (
+                  <div className="cc-card" style={{ height: 220, width: 220, padding: '0.4rem' }}>
+                    <TwistyCube
+                      setupAlg={celebration.teaser.look.display.setupAlg}
+                      alg=""
+                      stickering={celebration.teaser.look.stickering as TwistyCubeProps['stickering']}
+                      controls="none"
+                    />
+                  </div>
+                )}
+                <p style={{ margin: 0, fontWeight: 700 }}>See you tomorrow, {progressDoc.settings.kidName}! 🧗</p>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                className="cc-btn cc-btn-surface"
-                onClick={() => {
-                  setCelebration(null)
-                  navigate(`/lesson/${lesson.id}`)
-                }}
-              >
-                Keep going
+              <button type="button" className="cc-btn cc-btn-surface" onClick={shareMissionDone}>
+                {showCopied ? 'Copied! 📋' : '📤 Show someone'}
               </button>
-              {celebration.holdMastered && nextHold && (
+
+              {celebration.teaser ? (
                 <button
                   type="button"
                   className="cc-btn cc-btn-primary"
                   onClick={() => {
                     setCelebration(null)
-                    navigate(`/lesson/${nextHold}`)
+                    navigate('/wall')
                   }}
                 >
-                  Next hold ▶
-                </button>
-              )}
-              {celebration.holdMastered && !nextHold && (
-                <button type="button" className="cc-btn cc-btn-primary" onClick={() => navigate('/wall')}>
                   Back to the Wall
                 </button>
-              )}
-              {!celebration.holdMastered && mission && nextMissionId(lesson, mission.id) && (
-                <button
-                  type="button"
-                  className="cc-btn cc-btn-primary"
-                  onClick={() => {
-                    setCelebration(null)
-                    navigate(`/lesson/${lesson.id}/${nextMissionId(lesson, mission.id)}`)
-                  }}
-                >
-                  Next mission ▶
-                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="cc-btn cc-btn-surface"
+                    onClick={() => {
+                      setCelebration(null)
+                      navigate(`/lesson/${lesson.id}`)
+                    }}
+                  >
+                    Keep going
+                  </button>
+                  {celebration.holdMastered && nextHold && (
+                    <button
+                      type="button"
+                      className="cc-btn cc-btn-primary"
+                      onClick={() => {
+                        setCelebration(null)
+                        navigate(`/lesson/${nextHold}`)
+                      }}
+                    >
+                      Next hold ▶
+                    </button>
+                  )}
+                  {celebration.holdMastered && !nextHold && (
+                    <button type="button" className="cc-btn cc-btn-primary" onClick={() => navigate('/wall')}>
+                      Back to the Wall
+                    </button>
+                  )}
+                  {!celebration.holdMastered && mission && nextMissionId(lesson, mission.id) && (
+                    <button
+                      type="button"
+                      className="cc-btn cc-btn-primary"
+                      onClick={() => {
+                        setCelebration(null)
+                        navigate(`/lesson/${lesson.id}/${nextMissionId(lesson, mission.id)}`)
+                      }}
+                    >
+                      Next mission ▶
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>

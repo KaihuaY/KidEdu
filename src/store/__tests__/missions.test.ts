@@ -3,15 +3,18 @@ import {
   addMissionMinutes,
   bumpMissionTries,
   completeMission,
+  completeWarmup,
   firstOpenMission,
   isMissionDone,
   isMissionUnlocked,
+  markDailyMissionDone,
   masterHold,
   missionStars,
   missionsDoneCount,
   tierForHelp,
 } from '../missions'
-import { getDoc, resetAll, type HoldProgress } from '../progress'
+import { getDoc, resetAll, update, type HoldProgress } from '../progress'
+import { localDay } from '../sessions'
 
 // Same in-memory localStorage mock used by store/__tests__/progress.test.ts.
 class MemoryStorage implements Storage {
@@ -102,6 +105,106 @@ describe('completeMission', () => {
     completeMission('kid', 'daisy', 'D1', 'none', 1) // gold first
     completeMission('kid', 'daisy', 'D1', 'walkthrough', 5) // worse attempt
     expect(kidHold('daisy')?.missions?.D1?.tier).toBe('gold')
+  })
+
+  it('stamps lastDoneDay to today on the first completion and on every replay', () => {
+    const today = localDay()
+    completeMission('kid', 'daisy', 'D1', 'none', 1)
+    expect(kidHold('daisy')?.missions?.D1?.lastDoneDay).toBe(today)
+
+    // Force it stale, then replay - lastDoneDay should move back to today.
+    update('profiles', (profiles) => ({
+      ...profiles,
+      kid: {
+        ...profiles.kid,
+        holds: {
+          ...profiles.kid.holds,
+          daisy: {
+            ...profiles.kid.holds.daisy,
+            missions: {
+              ...profiles.kid.holds.daisy.missions,
+              D1: { ...profiles.kid.holds.daisy.missions!.D1, lastDoneDay: '2000-01-01' },
+            },
+          },
+        },
+      },
+    }))
+    completeMission('kid', 'daisy', 'D1', 'none', 1)
+    expect(kidHold('daisy')?.missions?.D1?.lastDoneDay).toBe(today)
+  })
+
+  it("stamps cubeDay.mission.doneAt when the completion matches today's planned mission", () => {
+    update('profiles', (profiles) => ({
+      ...profiles,
+      kid: { ...profiles.kid, cubeDay: { day: localDay(), mission: { holdId: 'daisy', missionId: 'D1' } } },
+    }))
+    completeMission('kid', 'daisy', 'D1', 'none', 1)
+    expect(getDoc().profiles.kid.cubeDay?.mission?.doneAt).toBeGreaterThan(0)
+  })
+
+  it("does not stamp cubeDay.mission.doneAt for a mission that isn't today's plan", () => {
+    update('profiles', (profiles) => ({
+      ...profiles,
+      kid: { ...profiles.kid, cubeDay: { day: localDay(), mission: { holdId: 'daisy', missionId: 'D2' } } },
+    }))
+    completeMission('kid', 'daisy', 'D1', 'none', 1)
+    expect(getDoc().profiles.kid.cubeDay?.mission?.doneAt).toBeUndefined()
+  })
+})
+
+describe('markDailyMissionDone', () => {
+  it('is idempotent - a second call never moves doneAt forward', () => {
+    update('profiles', (profiles) => ({
+      ...profiles,
+      kid: { ...profiles.kid, cubeDay: { day: localDay(), mission: { holdId: 'daisy', missionId: 'D1' } } },
+    }))
+    markDailyMissionDone('kid', 'daisy', 'D1')
+    const firstDoneAt = getDoc().profiles.kid.cubeDay?.mission?.doneAt
+    expect(firstDoneAt).toBeGreaterThan(0)
+    markDailyMissionDone('kid', 'daisy', 'D1')
+    expect(getDoc().profiles.kid.cubeDay?.mission?.doneAt).toBe(firstDoneAt)
+  })
+
+  it('does nothing when there is no cubeDay at all', () => {
+    markDailyMissionDone('kid', 'daisy', 'D1')
+    expect(getDoc().profiles.kid.cubeDay).toBeUndefined()
+  })
+})
+
+describe('completeWarmup', () => {
+  it('gives +5 XP, no token, and stamps lastDoneDay but not completedAt/tier', () => {
+    const xpBefore = getDoc().profiles.kid.xp
+    completeWarmup('kid', 'daisy', 'D1')
+
+    const doc = getDoc()
+    expect(doc.profiles.kid.xp).toBe(xpBefore + 5)
+    expect(doc.profiles.kid.tokens).toEqual({ gold: 0, silver: 0, bronze: 0 })
+    const mission = doc.profiles.kid.holds.daisy?.missions?.D1
+    expect(mission?.lastDoneDay).toBe(localDay())
+    expect(mission?.completedAt).toBeUndefined()
+    expect(mission?.tier).toBeUndefined()
+  })
+
+  it("stamps cubeDay.warmup.doneAt when it matches today's planned warm-up, once", () => {
+    update('profiles', (profiles) => ({
+      ...profiles,
+      kid: { ...profiles.kid, cubeDay: { day: localDay(), warmup: { holdId: 'daisy', missionId: 'D1' } } },
+    }))
+    completeWarmup('kid', 'daisy', 'D1')
+    const firstDoneAt = getDoc().profiles.kid.cubeDay?.warmup?.doneAt
+    expect(firstDoneAt).toBeGreaterThan(0)
+
+    completeWarmup('kid', 'daisy', 'D1')
+    expect(getDoc().profiles.kid.cubeDay?.warmup?.doneAt).toBe(firstDoneAt) // idempotent
+  })
+
+  it("does not stamp cubeDay.warmup.doneAt for a mission that isn't today's planned warm-up", () => {
+    update('profiles', (profiles) => ({
+      ...profiles,
+      kid: { ...profiles.kid, cubeDay: { day: localDay(), warmup: { holdId: 'daisy', missionId: 'D2' } } },
+    }))
+    completeWarmup('kid', 'daisy', 'D1')
+    expect(getDoc().profiles.kid.cubeDay?.warmup?.doneAt).toBeUndefined()
   })
 })
 

@@ -4,6 +4,7 @@ import { useProgress, type HoldProgress, type ProfileProgress } from '../store/p
 import { lastNDays, logCubeSession, formatClock } from '../store/sessions'
 import { estimateDaysToSummit, estimateMinutesRemaining, useSessionTimer, type HoldMissionsSpec } from '../store/planner'
 import { firstOpenMission, missionsDoneCount, missionStars } from '../store/missions'
+import { ensureTodaysPlan } from '../store/dailyPlan'
 import { HOLD_ORDER, LESSON_LIST, missionById, type Lesson } from '../content/lessons'
 import { fireConfetti } from '../components/Confetti'
 import { CubeTabs } from '../components/CubeTabs'
@@ -68,48 +69,73 @@ export function Wall() {
   const sessionDays = useMemo(() => new Set(profile.sessions.map((s) => s.day)), [profile.sessions])
 
   const wallOrder = HOLD_ORDER.map((_id, i) => i).reverse() // summit at top
-  const nextUp = findNextUp(profile)
-  const nextUpMission = nextUp ? missionById(nextUp.lesson.id, nextUp.missionId) : undefined
+  const plan = ensureTodaysPlan()
+  const planMissionMeta = plan.mission ? missionById(plan.mission.holdId, plan.mission.missionId) : undefined
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '2rem' }}>
       <CubeTabs />
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '0 1rem' }}>
-      {nextUp && nextUpMission ? (
-        <button
-          type="button"
-          className="cc-btn cc-btn-primary"
-          onClick={() => navigate(`/lesson/${nextUp.lesson.id}/${nextUp.missionId}`)}
-          style={{
-            flexDirection: 'column',
-            alignItems: 'flex-start',
-            gap: '0.2rem',
-            padding: '0.9rem 1.1rem',
-            minHeight: 72,
-            textAlign: 'left',
-          }}
-        >
-          <span style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.85 }}>
-            Continue: Hold {nextUp.lesson.number} · {nextUp.lesson.title}
-          </span>
-          <span style={{ fontSize: '1.1rem', fontWeight: 900 }}>{nextUpMission.title} ▶</span>
-        </button>
-      ) : (
-        <div className="cc-card" style={{ padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-          <strong style={{ fontSize: '1.1rem' }}>You did it, {kidName}! 🏔️</strong>
-          <span style={{ color: 'var(--cc-ink-soft)', fontWeight: 700 }}>
-            Every hold is mastered. Try Help with my cube on a real scramble, or beat your best time.
-          </span>
-          <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
-            <button type="button" className="cc-btn cc-btn-primary" onClick={() => navigate('/help')}>
-              🧩 Help with my cube
+      <div className="cc-card" style={{ padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Today&apos;s climb</h2>
+        {plan.allDone ? (
+          <>
+            <strong style={{ fontSize: '1.05rem' }}>You did it, {kidName}! 🏔️</strong>
+            <span style={{ color: 'var(--cc-ink-soft)', fontWeight: 700 }}>
+              Every hold is mastered. Try Help with my cube on a real scramble, or beat your best time.
+            </span>
+            <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+              <button type="button" className="cc-btn cc-btn-primary" onClick={() => navigate('/help')}>
+                🧩 Help with my cube
+              </button>
+              <button type="button" className="cc-btn cc-btn-surface" onClick={() => navigate('/solves')}>
+                ⏱ Beat your time
+              </button>
+            </div>
+          </>
+        ) : plan.mission?.doneAt ? (
+          <>
+            <strong style={{ fontSize: '1.05rem' }}>
+              That&apos;s today&apos;s climb, {kidName}! 🎉 Come back tomorrow.
+            </strong>
+            <button
+              type="button"
+              className="cc-btn cc-btn-surface"
+              style={{ alignSelf: 'flex-start' }}
+              onClick={() => {
+                const more = findNextUp(profile)
+                if (more) navigate(`/lesson/${more.lesson.id}/${more.missionId}`)
+              }}
+            >
+              Climb one more ▶
             </button>
-            <button type="button" className="cc-btn cc-btn-surface" onClick={() => navigate('/solves')}>
-              ⏱ Beat your time
-            </button>
-          </div>
-        </div>
-      )}
+          </>
+        ) : (
+          <>
+            {plan.warmup && (
+              <button
+                type="button"
+                className="cc-btn cc-btn-surface"
+                style={{ justifyContent: 'flex-start', minHeight: 56, textAlign: 'left' }}
+                onClick={() => navigate(`/lesson/${plan.warmup!.holdId}/${plan.warmup!.missionId}/warmup`)}
+              >
+                {plan.warmup.doneAt ? '✅' : '🔁'} Warm-up · {plan.warmup.title} · 1 min
+              </button>
+            )}
+            {plan.mission && (
+              <button
+                type="button"
+                className="cc-btn cc-btn-primary"
+                style={{ justifyContent: 'flex-start', minHeight: 56, textAlign: 'left' }}
+                onClick={() => navigate(`/lesson/${plan.mission!.holdId}/${plan.mission!.missionId}`)}
+              >
+                ⭐ New · {plan.mission.title}
+                {planMissionMeta ? ` · ~${planMissionMeta.estimatedMinutes} min` : ''}
+              </button>
+            )}
+          </>
+        )}
+      </div>
 
       <div className="cc-card" style={{ padding: '1rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 800 }}>
@@ -124,7 +150,7 @@ export function Wall() {
       </div>
 
       <div className="cc-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Today&apos;s climb</h2>
+        <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Climbing timer</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
           <RingTimer
             progress={timer.elapsedSec / (sessionMinutes * 60)}

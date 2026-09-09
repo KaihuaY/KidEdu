@@ -119,6 +119,24 @@ colour), then "turn the whole cube until yellow is on top and green faces
 you" - the one frame every mission's pictures assume. She confirms
 ("Yellow is on top, green faces me ✅") and moves straight into the mission.
 
+### Every day
+
+The Wall's daily card (`src/store/dailyPlan.ts`) plans exactly one warm-up
+plus one new mission per local day, frozen once computed so it can't shift
+under her mid-session: a one-minute **🔁 Warm-up** replay of whichever
+mission she most recently finished before today (skipped entirely on day
+one, or once she's replayed everything there is), then **⭐ New** - the next
+mission in curriculum order. Warming up gives +5 XP and no token (she
+already earned one the first time); it moves straight into today's new
+mission once she confirms "Still got it? ✅". Finishing today's new mission
+shows a "Tomorrow: {next mission}" teaser with a small preview of its Look
+picture instead of the usual "Next mission ▶" button, and the Wall settles
+into "That's today's climb, {name}! 🎉 Come back tomorrow." - with a smaller
+**Climb one more ▶** underneath for a kid who wants to keep going anyway
+(never locked out). Home's Cube card mirrors the same plan
+(`cubeStatusText`), and every mission celebration offers **📤 Show someone**
+to share (or copy) a one-line brag about what she just finished.
+
 ### Free "get ready" help vs. mission help
 
 Tapping **✅ Yes, I did it!** with no help at all earns the best medal. If

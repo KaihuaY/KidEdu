@@ -143,7 +143,7 @@ export function PracticePanel({
         <TwistyCube setupAlg="z2" alg={runner.alg} tempoScale={tempoScale} controls="none" />
       </div>
       {runner.nextExpected && (
-        <div className="cc-card" style={{ padding: '0.75rem 1rem', background: 'var(--cc-bg)' }}>
+        <div className="cc-card" data-expected-move={runner.nextExpected} style={{ padding: '0.75rem 1rem', background: 'var(--cc-bg)' }}>
           Next move: <strong><MoveLabel move={runner.nextExpected} showLetters={showLetters} /></strong>
         </div>
       )}

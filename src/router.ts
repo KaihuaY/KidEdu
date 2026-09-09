@@ -10,6 +10,7 @@ const ROUTE_PATTERNS = [
   '/wall',
   '/lesson/:id',
   '/lesson/:id/:missionId',
+  '/lesson/:id/:missionId/warmup',
   '/help',
   '/solves',
   '/piano',

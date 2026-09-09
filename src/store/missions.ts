@@ -6,6 +6,7 @@
 
 import { useEffect } from 'react'
 import { update, type HelpKind, type HoldProgress, type MissionProgress } from './progress'
+import { localDay } from './sessions'
 import { starsForTier, xpForTier, type Tier } from './rewards'
 
 type ProfileId = 'kid' | 'parent'
@@ -89,6 +90,7 @@ export function completeMission(
   tries: number,
 ): Tier {
   const tier = tierForHelp(help)
+  const today = localDay()
   let recordedTier: Tier = tier
   update('profiles', (profiles) => {
     const profile = profiles[profileId]
@@ -105,6 +107,7 @@ export function completeMission(
       tries,
       help,
       minutes: prev?.minutes ?? 0,
+      lastDoneDay: today,
     }
 
     return {
@@ -120,7 +123,67 @@ export function completeMission(
       },
     }
   })
+  markDailyMissionDone(profileId, holdId, missionId)
   return recordedTier
+}
+
+/**
+ * Stamps `cubeDay.mission.doneAt` when this completion is today's planned
+ * mission (a plain "Yes, I did it!" on the mission the daily plan already
+ * pointed at). A no-op otherwise - e.g. replaying an older mission, or a
+ * mission that isn't today's plan (nothing to stamp), or one already
+ * stamped (idempotent, never moves `doneAt` forward on a later replay).
+ */
+export function markDailyMissionDone(profileId: ProfileId, holdId: string, missionId: string): void {
+  update('profiles', (profiles) => {
+    const profile = profiles[profileId]
+    const cubeDay = profile.cubeDay
+    const plannedMission = cubeDay?.mission
+    if (!plannedMission || plannedMission.holdId !== holdId || plannedMission.missionId !== missionId) return profiles
+    if (plannedMission.doneAt) return profiles
+    return {
+      ...profiles,
+      [profileId]: {
+        ...profile,
+        cubeDay: { ...cubeDay!, mission: { ...plannedMission, doneAt: Date.now() } },
+      },
+    }
+  })
+}
+
+/**
+ * Replays a mission she already knows, as today's one-minute warm-up: +5 XP
+ * for the practice, no token (she already earned one the first time), and no
+ * change to the mission's recorded tier - only `lastDoneDay` moves, which is
+ * exactly what keeps it eligible as tomorrow's warm-up too. Stamps
+ * `cubeDay.warmup.doneAt` when this is today's planned warm-up.
+ */
+export function completeWarmup(profileId: ProfileId, holdId: string, missionId: string): void {
+  const today = localDay()
+  update('profiles', (profiles) => {
+    const profile = profiles[profileId]
+    const hold = profile.holds[holdId] ?? emptyHold()
+    const missions = hold.missions ?? {}
+    const prev: MissionProgress = missions[missionId] ?? { tries: 0, help: 'none', minutes: 0 }
+    const cubeDay = profile.cubeDay
+    const plannedWarmup = cubeDay?.warmup
+    const stampWarmup = Boolean(
+      plannedWarmup && plannedWarmup.holdId === holdId && plannedWarmup.missionId === missionId && !plannedWarmup.doneAt,
+    )
+
+    return {
+      ...profiles,
+      [profileId]: {
+        ...profile,
+        holds: {
+          ...profile.holds,
+          [holdId]: { ...hold, missions: { ...missions, [missionId]: { ...prev, lastDoneDay: today } } },
+        },
+        xp: profile.xp + 5,
+        cubeDay: stampWarmup ? { ...cubeDay!, warmup: { ...plannedWarmup!, doneAt: Date.now() } } : cubeDay,
+      },
+    }
+  })
 }
 
 /**
