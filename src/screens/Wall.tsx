@@ -4,13 +4,14 @@ import { useProgress, type HoldProgress, type ProfileProgress } from '../store/p
 import { lastNDays, logCubeSession, formatClock } from '../store/sessions'
 import { estimateDaysToSummit, estimateMinutesRemaining, useSessionTimer, type HoldMissionsSpec } from '../store/planner'
 import { firstOpenMission, missionsDoneCount, missionStars } from '../store/missions'
-import { ensureTodaysPlan } from '../store/dailyPlan'
+import { ensureTodaysPlan, readTodaysPlan } from '../store/dailyPlan'
 import { HOLD_ORDER, LESSON_LIST, missionById, type Lesson } from '../content/lessons'
 import { fireConfetti } from '../components/Confetti'
 import { CubeTabs } from '../components/CubeTabs'
 import { RingTimer } from '../components/RingTimer'
 import { WeekDots } from '../components/WeekDots'
 import { TokenPill } from '../components/TokenPill'
+import { BadgeToast } from '../components/BadgeToast'
 
 type HoldState = 'locked' | 'open' | 'mastered'
 
@@ -69,12 +70,18 @@ export function Wall() {
   const sessionDays = useMemo(() => new Set(profile.sessions.map((s) => s.day)), [profile.sessions])
 
   const wallOrder = HOLD_ORDER.map((_id, i) => i).reverse() // summit at top
-  const plan = ensureTodaysPlan()
+  // Persist today's plan once from an effect; render from the read-only copy
+  // so no store write happens mid-render.
+  useEffect(() => {
+    ensureTodaysPlan()
+  }, [])
+  const plan = readTodaysPlan()
   const planMissionMeta = plan.mission ? missionById(plan.mission.holdId, plan.mission.missionId) : undefined
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '2rem' }}>
       <CubeTabs />
+      <BadgeToast />
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '0 1rem' }}>
       <div className="cc-card" style={{ padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
         <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Today&apos;s climb</h2>

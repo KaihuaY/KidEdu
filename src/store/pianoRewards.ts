@@ -16,9 +16,9 @@ export function tokenForParentStars(stars: ParentStars): Tier | null {
 /** The token tier awarded for reaching the daily piano goal. */
 export const PIANO_GOAL_TIER: Tier = 'bronze'
 
-/** All takes recorded on a given local day. */
+/** All *practice* takes recorded on a given local day - a grown-up's voice note (`isNote`) is never one of them. */
 export function takesForDay(takes: PianoTake[], day: string): PianoTake[] {
-  return takes.filter((t) => t.day === day)
+  return takes.filter((t) => t.day === day && !t.isNote)
 }
 
 /** Total "real playing" seconds (mic-active time, not wall time) for a given local day. */
@@ -47,6 +47,7 @@ export function daysNeedingParentRating(piano: PianoSection, today: string, wind
   const cutoff = dayOffset(today, -(windowDays - 1))
   const daysWithTakes = new Set<string>()
   for (const take of piano.takes) {
+    if (take.isNote) continue
     if (take.day < cutoff || take.day > today) continue
     daysWithTakes.add(take.day)
   }

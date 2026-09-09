@@ -164,6 +164,18 @@ let currentPieceId: string | null = null
 let currentStartedAt = 0
 let currentTakeId: string | null = null
 let hiddenListenersAttached = false
+// Set for a grown-up's voice note (see startTake's `opts.isNote`): flags the
+// saved take so it's excluded from goal/active-minutes counting and from
+// Piano home's take list, but still uploads to Drive like any other take.
+let currentIsNote = false
+let autoStopTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearAutoStopTimer(): void {
+  if (autoStopTimer) {
+    clearTimeout(autoStopTimer)
+    autoStopTimer = null
+  }
+}
 
 // --- Live spectrum fan-out ---------------------------------------------
 //
@@ -236,8 +248,15 @@ async function persistPartialChunk(
   }
 }
 
-/** Must be invoked directly from a tap handler (Safari requires the mic prompt inside a user gesture). */
-export async function startTake(pieceId: string | null): Promise<void> {
+/**
+ * Must be invoked directly from a tap handler (Safari requires the mic
+ * prompt inside a user gesture). `opts.isNote` flags the resulting take as a
+ * grown-up's voice note rather than practice (see currentIsNote's comment);
+ * `opts.maxSeconds`, when set, stops the recording automatically once that
+ * many seconds have elapsed (used for the 15s "Say it" voice note - no need
+ * for a kid-facing recording to ever run that long).
+ */
+export async function startTake(pieceId: string | null, opts?: { isNote?: boolean; maxSeconds?: number }): Promise<void> {
   if (isRecordingActive(state)) return
 
   // Best-effort and fire-and-forget: browsers that condition the grant on a
@@ -246,6 +265,7 @@ export async function startTake(pieceId: string | null): Promise<void> {
   void requestPersistentStorage()
 
   currentPieceId = pieceId
+  currentIsNote = opts?.isNote ?? false
   const takeId = randomId()
   currentTakeId = takeId
   setState({ status: 'starting', pieceId })
@@ -270,6 +290,10 @@ export async function startTake(pieceId: string | null): Promise<void> {
       wakeLock: wakeLockOn,
       hearing: false,
     })
+
+    if (opts?.maxSeconds) {
+      autoStopTimer = setTimeout(() => void stopTake('user'), opts.maxSeconds * 1000)
+    }
 
     if (session.onChunk) {
       unsubscribeChunk = session.onChunk((blob, seq) => {
@@ -319,6 +343,8 @@ export async function startTake(pieceId: string | null): Promise<void> {
   } catch (err) {
     const kind = err instanceof MicStartError ? err.kind : 'unknown'
     currentTakeId = null
+    currentIsNote = false
+    clearAutoStopTimer()
     resetTrackingState()
     setState({ status: 'error', error: kind })
   }
@@ -333,6 +359,9 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
   const session = currentSession
   const meter = currentMeter
   const takeId = currentTakeId
+  const isNote = currentIsNote
+  currentIsNote = false
+  clearAutoStopTimer()
 
   detachHiddenListeners()
   if (unsubscribeLevel) {
@@ -371,6 +400,7 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
     id: takeId ?? randomId(),
     day,
     pieceId,
+    ...(isNote ? { isNote: true } : {}),
     startedAt,
     durationSec,
     activeSec,

@@ -5,10 +5,16 @@ import { markAudioPruned, setParentStars, usePiano } from '../../store/piano'
 import { activeSecondsForDay, daysNeedingParentRating, takesForDay } from '../../store/pianoRewards'
 import { dayOffset, formatClock, localDay } from '../../store/sessions'
 import { formatBytes, getRecordingStore } from '../../store/recordings'
+import { addNote } from '../../store/notes'
+import { dismiss, isRecordingActive, startTake, stopTake, useRecordingSession } from '../../audio/recordingSession'
 import { PinGate } from '../../components/PinGate'
 import { TakePlayer } from '../../components/TakePlayer'
 import { UploadChip } from '../../components/UploadChip'
+import { BadgeToast } from '../../components/BadgeToast'
 import { fireConfetti } from '../../components/Confetti'
+
+const NOTE_MAX_LENGTH = 140
+const VOICE_NOTE_MAX_SECONDS = 15
 
 const SELF_RATING_EMOJI: Record<SelfRating, string> = { 1: '😕', 2: '🙂', 3: '🤩' }
 
@@ -43,6 +49,102 @@ function TakeRow({ take, piece }: { take: PianoTake; piece: PianoPiece | undefin
       )}
       <TakePlayer take={take} />
       <UploadChip take={take} />
+    </div>
+  )
+}
+
+/**
+ * Lets a grown-up leave a note for one day's practice: a short typed text,
+ * or a 15s voice note recorded through the same take pipeline as practice
+ * (flagged `isNote` in startTake so it never counts toward goals or shows up
+ * in Nora's own take list - see src/store/pianoRewards.ts / PianoHome.tsx).
+ * `recordingNote` tracks whether *this* card is the one that started the
+ * current global recording session, so two DayCards rendered at once never
+ * both react to the same in-flight recording.
+ */
+function DayNoteComposer({ day, kidName }: { day: string; kidName: string }) {
+  const session = useRecordingSession()
+  const [text, setText] = useState('')
+  const [sent, setSent] = useState(false)
+  const [recordingNote, setRecordingNote] = useState(false)
+
+  useEffect(() => {
+    if (!recordingNote) return
+    if (session.status === 'done') {
+      if (!session.discarded) {
+        addNote({ about: 'piano', day, audioTakeId: session.take.id })
+        setSent(true)
+      }
+      setRecordingNote(false)
+      dismiss()
+    } else if (session.status === 'error') {
+      setRecordingNote(false)
+      dismiss()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, recordingNote])
+
+  function sendTextNote() {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    addNote({ about: 'piano', day, text: trimmed })
+    setText('')
+    setSent(true)
+  }
+
+  function startVoiceNote() {
+    setRecordingNote(true)
+    void startTake('note', { isNote: true, maxSeconds: VOICE_NOTE_MAX_SECONDS })
+  }
+
+  const isRecordingNow = recordingNote && isRecordingActive(session)
+  const busyElsewhere = !recordingNote && isRecordingActive(session)
+
+  if (sent) {
+    return (
+      <div style={{ borderTop: '1px solid var(--cc-border)', paddingTop: '0.75rem' }}>
+        <span style={{ color: 'var(--cc-success)', fontWeight: 700 }}>Note sent 💌</span>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', borderTop: '1px solid var(--cc-border)', paddingTop: '0.75rem' }}>
+      <strong style={{ fontSize: '0.9rem' }}>💬 Add a note</strong>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value.slice(0, NOTE_MAX_LENGTH))}
+        maxLength={NOTE_MAX_LENGTH}
+        rows={2}
+        placeholder={`A little note for ${kidName}…`}
+        disabled={isRecordingNow}
+        style={{ width: '100%', resize: 'vertical' }}
+      />
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          className="cc-btn cc-btn-primary"
+          disabled={!text.trim() || isRecordingNow}
+          onClick={sendTextNote}
+        >
+          Send 💌
+        </button>
+        {isRecordingNow ? (
+          <button
+            type="button"
+            className="cc-btn"
+            style={{ background: 'var(--cc-danger)', color: '#fff' }}
+            disabled={session.status !== 'recording'}
+            onClick={() => void stopTake('user')}
+          >
+            {session.status === 'recording' ? '⏹ Stop' : session.status === 'starting' ? 'Getting ready…' : 'Saving…'}
+          </button>
+        ) : (
+          <button type="button" className="cc-btn cc-btn-surface" disabled={busyElsewhere} onClick={startVoiceNote}>
+            🎙️ Say it ({VOICE_NOTE_MAX_SECONDS} s)
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -98,6 +200,7 @@ function DayCard({
           </button>
         ))}
       </div>
+      <DayNoteComposer day={day} kidName={kidName} />
     </div>
   )
 }
@@ -160,6 +263,7 @@ function ParentReviewContent() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1rem 1rem 2rem' }}>
+      <BadgeToast />
       <h1 style={{ margin: 0, fontSize: '1.3rem' }}>Listen to {kidName}&apos;s playing</h1>
       <p style={{ margin: 0, color: 'var(--cc-ink-soft)' }}>
         Give each day 1–3 stars. 2 stars = a silver token, 3 stars = a gold token.

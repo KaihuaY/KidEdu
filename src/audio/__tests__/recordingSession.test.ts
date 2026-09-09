@@ -158,6 +158,61 @@ describe('recordingSession', () => {
   }, 8000)
 })
 
+describe('startTake opts - grown-up voice notes', () => {
+  it('flags the saved take isNote and auto-stops at maxSeconds without needing an explicit stopTake', async () => {
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    const beforeCount = getDoc().piano.takes.length
+
+    // maxSeconds is comfortably past the meter's 1s warm-up so the take
+    // isn't discarded as too-short-and-silent (LOUD_SCRIPT is quiet for its
+    // first 200ms).
+    await startTake('note', { isNote: true, maxSeconds: 2 })
+    expect(getSessionState().status).toBe('recording')
+
+    await wait(2400) // past the 2s auto-stop
+
+    const state = getSessionState()
+    expect(state.status).toBe('done')
+    if (state.status === 'done') {
+      expect(state.discarded).toBe(false)
+      expect(state.take.isNote).toBe(true)
+      expect(state.take.pieceId).toBe('note')
+    }
+    expect(getDoc().piano.takes.length).toBe(beforeCount + 1)
+    expect(getDoc().piano.takes.at(-1)?.isNote).toBe(true)
+  }, 8000)
+
+  it('never sets isNote on an ordinary take', async () => {
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    await startTake('piece-1')
+    await wait(1200)
+    await stopTake('user')
+
+    const state = getSessionState()
+    expect(state.status).toBe('done')
+    if (state.status === 'done') {
+      expect(state.take.isNote).toBeUndefined()
+    }
+  }, 8000)
+
+  it('an explicit stopTake before maxSeconds elapses cancels the pending auto-stop', async () => {
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    await startTake('note', { isNote: true, maxSeconds: 5 })
+    await wait(300)
+    await stopTake('user')
+    expect(getSessionState().status).toBe('done')
+
+    // If the earlier maxSeconds timer had survived, it would fire ~5s after
+    // the first startTake and call stopTake() again mid this next
+    // recording - waiting past that point and checking we're still cleanly
+    // recording (not bounced back to 'done') proves it was cancelled.
+    await startTake('piece-2')
+    await wait(5200)
+    expect(getSessionState().status).toBe('recording')
+    await stopTake('user')
+  }, 10000)
+})
+
 describe('partial chunk persistence during recording', () => {
   it('writes chunks to the partials store while recording and clears them on a normal stop', async () => {
     setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))

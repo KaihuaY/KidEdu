@@ -254,6 +254,26 @@ an iPad propped on the music stand, microphone only - no MIDI, no teaching.
   audio is stitched back together into a normal take automatically (see
   "Your data is safe" below).
 
+### Notes and badges
+
+- **Grown-up notes.** From **👀 Grown-up review**, rating a day also offers
+  "💬 Add a note" (a short typed message, ≤140 characters) and "🎙️ Say it
+  (15 s)" - a voice note recorded through the same take pipeline as
+  practice, so it uploads to Drive and plays back anywhere just like a real
+  take, but is flagged internally so it never counts toward Nora's practice
+  minutes, goals, or take list. **Settings → 💌 Leave a note** offers a
+  typed note not tied to any particular day. Notes show up on Nora's Home
+  screen until she taps "Got it 💛".
+- **Badges.** A small badge shelf ("🏅 Badges", on the Box screen's sticker
+  tab) tracks milestones across both activities: cube firsts (finishing the
+  daisy, the white cross, all four corners, the middle layer, the yellow
+  cross, and the summit), cube and piano streaks (3/7/14/30 days), and piano
+  milestones (first recording, 10 recordings, 100 minutes of playing total,
+  and a first 3-star day from the parent). Earning one pops a small "🏅 New
+  badge!" toast for a few seconds; the shelf itself shows earned badges in
+  colour with the date, and unearned ones greyed out with a hint for how to
+  get them.
+
 ### Google Drive upload
 
 So the parent can listen and rate from a phone or laptop, not just on

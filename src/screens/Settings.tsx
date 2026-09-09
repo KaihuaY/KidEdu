@@ -23,6 +23,7 @@ import {
   type DriveConfig,
 } from '../store/driveUpload'
 import { markAudioPruned } from '../store/piano'
+import { addNote } from '../store/notes'
 import { APP_BUILD } from '../buildInfo'
 
 // Re-exported so BlindBox.tsx's `import { PinGate } from './Settings'` keeps working.
@@ -197,6 +198,46 @@ function PrizePoolEditor({ tier }: { tier: (typeof TIERS)[number] }) {
         + Add prize
       </button>
     </div>
+  )
+}
+
+function LeaveNoteSection({ kidName }: { kidName: string }) {
+  const [text, setText] = useState('')
+  const [sent, setSent] = useState(false)
+
+  function send() {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    addNote({ about: 'general', text: trimmed })
+    setText('')
+    setSent(true)
+  }
+
+  return (
+    <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+      <h2 style={{ margin: 0, fontSize: '1.05rem' }}>💌 Leave a note for {kidName}</h2>
+      <textarea
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value.slice(0, 140))
+          setSent(false)
+        }}
+        maxLength={140}
+        rows={2}
+        placeholder={`Something nice for ${kidName}…`}
+        style={{ width: '100%', resize: 'vertical' }}
+      />
+      <button
+        type="button"
+        className="cc-btn cc-btn-primary"
+        style={{ alignSelf: 'flex-start' }}
+        disabled={!text.trim()}
+        onClick={send}
+      >
+        Send 💌
+      </button>
+      {sent && <span style={{ color: 'var(--cc-success)', fontWeight: 700 }}>Sent 💛</span>}
+    </section>
   )
 }
 
@@ -409,6 +450,8 @@ export function Settings() {
           />
         </label>
       </section>
+
+      <LeaveNoteSection kidName={settings.kidName} />
 
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Daily goals</h2>

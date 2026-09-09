@@ -3,6 +3,7 @@ import { useRoute, navigate } from '../router'
 import { TwistyCube, type TwistyCubeProps } from '../components/TwistyCube'
 import { SayIt } from '../components/SayIt'
 import { fireConfetti } from '../components/Confetti'
+import { BadgeToast } from '../components/BadgeToast'
 import { OrientationRitual, hasAckedRitual } from '../components/OrientationRitual'
 import { MissionPlayer } from '../components/MissionPlayer'
 import {
@@ -365,6 +366,7 @@ export function Lesson() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1rem 1rem 2rem' }}>
+      <BadgeToast />
       {!mission && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>

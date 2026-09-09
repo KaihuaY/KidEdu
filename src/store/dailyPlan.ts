@@ -26,6 +26,23 @@ export interface DailyPlan {
   allDone: boolean
 }
 
+/**
+ * Render-safe read of today's plan: never writes. Screens render with this
+ * and call ensureTodaysPlan() from an effect, so persisting the day's plan
+ * never happens as a store write in the middle of a render.
+ */
+export function readTodaysPlan(today: string = localDay()): DailyPlan {
+  const profile = getDoc().profiles.kid
+  const cubeDay = profile.cubeDay
+  if (!cubeDay || cubeDay.day !== today) return computePlan(profile, LESSON_LIST, today)
+  const warmup = enrichEntry(cubeDay.warmup)
+  let mission = enrichEntry(cubeDay.mission)
+  if (mission && !mission.doneAt && isMissionDone(profile.holds[mission.holdId], mission.missionId)) {
+    mission = findFirstOpenMission(profile, LESSON_LIST)
+  }
+  return { day: today, warmup, mission, allDone: !mission }
+}
+
 /** The very next open mission, in wall order - the same rule Wall.tsx's `findNextUp` uses. */
 function findFirstOpenMission(profile: ProfileProgress, lessons: Lesson[]): DailyPlanEntry | undefined {
   for (const lesson of lessons) {

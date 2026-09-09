@@ -1,12 +1,15 @@
+import { useEffect } from 'react'
 import { navigate } from '../router'
 import { useProgress } from '../store/progress'
 import { localDay } from '../store/sessions'
 import { activeSecondsForDay, goalProgress } from '../store/pianoRewards'
-import { cubeStatusText, ensureTodaysPlan, tomorrowsMission } from '../store/dailyPlan'
+import { cubeStatusText, ensureTodaysPlan, readTodaysPlan, tomorrowsMission } from '../store/dailyPlan'
 import { LESSON_LIST } from '../content/lessons'
 import { SayIt } from '../components/SayIt'
 import { ActivityCard } from '../components/ActivityCard'
 import { TokenPill } from '../components/TokenPill'
+import { NoteCard } from '../components/NoteCard'
+import { BadgeToast } from '../components/BadgeToast'
 
 export function Home() {
   const progress = useProgress()
@@ -15,7 +18,11 @@ export function Home() {
   const greeting = `Hi ${kidName}! What do you want to practice today?`
   const today = localDay()
   const cubeDoneToday = profile.sessions.some((s) => s.day === today)
-  const cubePlan = ensureTodaysPlan(today)
+  // Persist today's plan once (a store write), but render from the read-only copy.
+  useEffect(() => {
+    ensureTodaysPlan(today)
+  }, [today])
+  const cubePlan = readTodaysPlan(today)
   const tomorrow = cubePlan.mission?.doneAt ? tomorrowsMission(cubePlan, LESSON_LIST) : undefined
   const cubeStatus = tomorrow
     ? `Done today ✅ · Tomorrow: ${tomorrow.title}`
@@ -33,6 +40,8 @@ export function Home() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1rem 1rem 2rem' }}>
+      <BadgeToast />
+      <NoteCard />
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0, fontSize: '1.4rem' }}>{greeting}</h1>
         <SayIt text={greeting} />

@@ -66,6 +66,15 @@ describe('takesForDay / activeSecondsForDay', () => {
     expect(activeSecondsForDay(takes, '2026-09-07')).toBe(250)
     expect(activeSecondsForDay(takes, '2026-09-08')).toBe(0)
   })
+
+  it('excludes a grown-up voice note (isNote) from both the list and the active-seconds sum', () => {
+    const takes = [
+      take({ id: 'real', day: '2026-09-07', activeSec: 200 }),
+      take({ id: 'note', day: '2026-09-07', activeSec: 500, isNote: true }),
+    ]
+    expect(takesForDay(takes, '2026-09-07').map((t) => t.id)).toEqual(['real'])
+    expect(activeSecondsForDay(takes, '2026-09-07')).toBe(200)
+  })
 })
 
 describe('goalReached', () => {
@@ -125,6 +134,11 @@ describe('daysNeedingParentRating', () => {
       takes: [take({ id: 'old', day: '2026-08-01' }), take({ id: 'new', day: '2026-09-07' })],
     })
     expect(daysNeedingParentRating(section, '2026-09-07')).toEqual(['2026-09-07'])
+  })
+
+  it('never surfaces a day whose only take is a grown-up voice note', () => {
+    const section = piano({ takes: [take({ day: '2026-09-07', isNote: true })] })
+    expect(daysNeedingParentRating(section, '2026-09-07', 14)).toEqual([])
   })
 })
 

@@ -3,6 +3,8 @@ import { useProgress, update, type Sticker, type Ticket } from '../store/progres
 import { COMMON_WEIGHT, STICKERS } from '../content/stickers'
 import { formatCents, pickWeighted, rollCashCents, rollTicket, type Tier } from '../store/rewards'
 import { fireConfetti } from '../components/Confetti'
+import { BadgeShelf } from '../components/BadgeShelf'
+import { BadgeToast } from '../components/BadgeToast'
 import { PinGate } from './Settings'
 
 const TIER_META: Record<Tier, { label: string; emoji: string; color: string }> = {
@@ -117,6 +119,7 @@ export function BlindBox() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1rem 1rem 2rem' }}>
+      <BadgeToast />
       <h1 style={{ margin: 0, fontSize: '1.4rem' }}>Blind Box</h1>
 
       <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
@@ -240,6 +243,8 @@ export function BlindBox() {
           })}
         </div>
       )}
+
+      {tab === 'stickers' && <BadgeShelf />}
 
       {tab === 'tickets' && redeemMsg && (
         <div className="cc-card" style={{ padding: '1rem', background: 'var(--cc-bg)', fontWeight: 700 }}>{redeemMsg}</div>

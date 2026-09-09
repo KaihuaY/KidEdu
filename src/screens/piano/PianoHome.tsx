@@ -11,6 +11,7 @@ import { buildFileName, processUploadQueue } from '../../store/driveUpload'
 import { extensionFor } from '../../audio/mime'
 import { RingTimer } from '../../components/RingTimer'
 import { WeekDots } from '../../components/WeekDots'
+import { BadgeToast } from '../../components/BadgeToast'
 import { SayIt } from '../../components/SayIt'
 import { SelfRatingButtons } from '../../components/SelfRatingButtons'
 import { TakePlayer } from '../../components/TakePlayer'
@@ -150,7 +151,16 @@ export function PianoHome() {
   const goalMin = goalMinutes.piano
   const week = lastNDays(7, today)
   const daysDone = useMemo(() => pianoDaysDone(piano), [piano])
-  const todayTakes = useMemo(() => piano.takes.filter((t) => t.day === today).slice().reverse(), [piano.takes, today])
+  // A grown-up's voice note is recorded through the same take pipeline but
+  // is never one of Nora's own takes - see src/store/notes.ts.
+  const todayTakes = useMemo(
+    () =>
+      piano.takes
+        .filter((t) => t.day === today && !t.isNote)
+        .slice()
+        .reverse(),
+    [piano.takes, today],
+  )
   const todayParentStars = piano.days[today]?.parentStars
   const supported = getAudioBackend().isSupported()
   const recoveredCount = useRecoveredTakeNotice()
@@ -169,6 +179,7 @@ export function PianoHome() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1rem 1rem 2rem' }}>
+      <BadgeToast />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
         <h1 style={{ margin: 0, fontSize: '1.3rem' }}>Piano time, {kidName}! 🎹</h1>
         <SayIt text={`Piano time, ${kidName}!`} />

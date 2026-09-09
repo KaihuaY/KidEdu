@@ -127,7 +127,10 @@ export function Record() {
         <p style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>Nice playing, {kidName}! 🎶</p>
         <p style={{ margin: 0 }}>You played for {formatClock(take.activeSec)}</p>
         {session.goalJustReached && (
-          <p style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>You filled the ring! 🟤 +1 token</p>
+          <>
+            <p style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>You filled the ring! 🟤 +1 token</p>
+            <p style={{ margin: 0, fontWeight: 700 }}>See you tomorrow! 🎹</p>
+          </>
         )}
         <SelfRatingButtons value={liveSelfRating} onChange={(rating) => setSelfRating(take.id, rating)} />
         {take.hasAudio && <TakePlayer take={take} />}

@@ -12,7 +12,9 @@ import { isRecordingActive, stopTake, useRecordingSession } from '../audio/recor
  */
 export function RecordingBanner({ path }: { path: string }) {
   const session = useRecordingSession()
-  if (!isRecordingActive(session) || path === '/piano/record') return null
+  // The grown-up review records voice notes with its own Stop button, so the
+  // banner would just be a duplicate there.
+  if (!isRecordingActive(session) || path === '/piano/record' || path === '/piano/review') return null
 
   function handleStop() {
     void stopTake('user').then(() => navigate('/piano/record'))
