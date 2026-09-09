@@ -122,8 +122,8 @@ describe('cubeStatusText', () => {
         { day: 'd', warmup: { holdId: 'h', missionId: 'm', title: 't' }, mission: { holdId: 'h2', missionId: 'm2', title: 't2' }, allDone: false },
         'Nora',
       ),
-    ).toBe('Warm-up + 1 mission')
-    expect(cubeStatusText({ day: 'd', mission: { holdId: 'h', missionId: 'm', title: 't' }, allDone: false }, 'Nora')).toBe('1 mission')
+    ).toBe('▶ Warm-up + 1 new mission')
+    expect(cubeStatusText({ day: 'd', mission: { holdId: 'h', missionId: 'm', title: 't' }, allDone: false }, 'Nora')).toBe('▶ 1 new mission')
   })
 })
 

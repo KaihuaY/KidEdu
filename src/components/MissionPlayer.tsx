@@ -100,6 +100,32 @@ function moveCountOf(display: { setupAlg: string; alg: string } | undefined): nu
   return parseAlg(display.alg).length
 }
 
+/**
+ * A follow-along walks her through one move at a time with "Show me" / "Did
+ * it" buttons - fine for a short recipe, tedious past this many moves (three
+ * Elevator rides, the L case, four Bottom Elevators, ...). Longer displays
+ * fall back to a plain watch-only animation instead.
+ */
+export const MAX_FOLLOW_ALONG_MOVES = 8
+
+/**
+ * When `display` is an exact repetition of `unit` (e.g. three Elevator
+ * rides), how many times it repeats - so a watch-only card can say "Do the
+ * trick 3 times" instead of just playing a long, unexplained animation.
+ * Returns undefined when it isn't a clean repetition (or repeats only once).
+ */
+function repeatCountOf(display: string, unit: string): number | undefined {
+  const unitMoves = parseAlg(unit)
+  if (unitMoves.length === 0) return undefined
+  const displayMoves = parseAlg(display)
+  if (displayMoves.length === 0 || displayMoves.length % unitMoves.length !== 0) return undefined
+  const times = displayMoves.length / unitMoves.length
+  if (times <= 1) return undefined
+  const unitStr = unitMoves.join(' ')
+  const repeated = Array.from({ length: times }, () => unitStr).join(' ')
+  return repeated === displayMoves.join(' ') ? times : undefined
+}
+
 /** One mission's Look -> Do -> Check -> (Show me my cube) flow. */
 export function MissionPlayer({ lesson, mission, tempoScale, onDone, onExit, warmup = false }: MissionPlayerProps) {
   const saved = readSpot(lesson.id, mission.id)
@@ -226,7 +252,7 @@ export function MissionPlayer({ lesson, mission, tempoScale, onDone, onExit, war
           {step.kind === 'do' &&
             (() => {
               const moves = moveCountOf(step.display)
-              const useFollowAlong = step.followAlong !== false && moves > 0
+              const useFollowAlong = step.followAlong !== false && moves > 0 && moves <= MAX_FOLLOW_ALONG_MOVES
               return (
                 <>
                   {!useFollowAlong && step.display && (
@@ -289,6 +315,12 @@ export function MissionPlayer({ lesson, mission, tempoScale, onDone, onExit, war
                                 </span>
                               ))}
                           </div>
+                          {!useFollowAlong &&
+                            (() => {
+                              const times = repeatCountOf(step.display?.alg ?? '', named.alg)
+                              if (!times) return null
+                              return <p style={{ margin: 0, fontWeight: 700 }}>Do the trick {times} times</p>
+                            })()}
                           {named.why && (
                             <details>
                               <summary

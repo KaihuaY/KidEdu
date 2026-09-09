@@ -4,7 +4,7 @@ import { MoveArrows } from './MoveArrows'
 import { SayIt } from './SayIt'
 import { VirtualCubeInput } from '../input/CubeInput'
 import { SOLVED, parseAlg } from '../engine/cube'
-import { describeMove } from '../engine/notation'
+import { describeMove } from '../content/moveNames'
 
 /** "U2" -> ["U","U"] so a sequence can be tapped with only quarter-turn buttons. */
 function expandDoubles(alg: string): string[] {
@@ -21,9 +21,11 @@ function expandDoubles(alg: string): string[] {
 }
 
 export function MoveLabel({ move, showLetters }: { move: string; showLetters: boolean }) {
+  const described = describeMove(move)
   return (
     <span>
-      {describeMove(move)}
+      {described.name}
+      {described.detail ? ` (${described.detail})` : ''}
       {showLetters ? <span style={{ opacity: 0.6, fontWeight: 700 }}> ({move})</span> : null}
     </span>
   )

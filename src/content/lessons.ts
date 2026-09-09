@@ -738,9 +738,9 @@ const daisy: Lesson = {
         {
           kind: 'do',
           title: 'Count as you go',
-          text: 'After each petal, count how many are standing. One... two! Keep your eyes on the ones you already made.',
-          say: 'Count your petals as you go: one, two.',
-          display: forwardDisplay('F2 B2'),
+          text: 'One petal is up. See the white edge at the bottom on the RIGHT? Turn the RIGHT side twice. Now count: one… two!',
+          say: 'One petal is up. Turn the right side twice to bring up the second. Now count: one, two.',
+          display: learnDisplay('F2', 'R2'),
           stickering: 'Daisy',
         },
       ],
@@ -961,7 +961,17 @@ const cornerFind: Lesson = {
           title: 'Where is home?',
           text: "A white corner's home is the gap between its OTHER two colours - the spot where those two centres meet. Find the gap first, then match the corner to it.",
           say: "A white corner's home is the gap between its other two colours, where those two centres meet.",
-          display: caseDisplay(ELEVATOR),
+          display: learnDisplay(invertAlg(ELEVATOR), ''),
+          followAlong: false,
+        },
+        {
+          kind: 'do',
+          title: 'The corner is right above its home',
+          text: 'See? The corner is sitting right above the gap where its home is. That is exactly what you are looking for.',
+          say: 'The corner is sitting right above the gap where its home is.',
+          display: learnDisplay(invertAlg(ELEVATOR), ''),
+          backView: true,
+          followAlong: false,
         },
       ],
       check: {
@@ -988,7 +998,7 @@ const cornerFind: Lesson = {
           title: 'Hold home at the front-right',
           text: 'Once it is parked above home, hold that gap at the FRONT-RIGHT of the cube. That is exactly where the next wall expects it.',
           say: 'Hold the home gap at the front-right of the cube.',
-          display: caseDisplay(ELEVATOR),
+          display: learnDisplay(`${invertAlg(ELEVATOR)} U`, "U'"),
         },
         {
           kind: 'practice',
@@ -1044,11 +1054,20 @@ const corners: Lesson = {
       steps: [
         {
           kind: 'do',
+          title: 'One Elevator ride',
+          text: 'Right side UP, top LEFT, right side DOWN, top RIGHT. That is one ride. Watch the white corner!',
+          say: 'Right side up, top left, right side down, top right. That is one ride. Watch the white corner.',
+          display: caseDisplay(ELEVATOR),
+          namedAlgId: 'elevator',
+        },
+        {
+          kind: 'do',
           title: 'Sometimes it takes three rides',
-          text: 'Same corner, same trick, but this one needs three rides. Keep doing The Elevator until the white sticker points DOWN. Do not turn the whole cube around in the middle!',
-          say: 'Keep doing the Elevator until the white sticker points down. Sometimes that takes three rides.',
+          text: 'Not down yet? Ride again. Sometimes it takes three rides. Do not turn the whole cube around in the middle!',
+          say: 'Not down yet? Ride again. Sometimes that takes three rides.',
           display: caseDisplay(repeatAlg(ELEVATOR, 3)),
           namedAlgId: 'elevator',
+          followAlong: false,
         },
       ],
       check: {
@@ -1073,10 +1092,10 @@ const corners: Lesson = {
       steps: [
         {
           kind: 'do',
-          title: 'A white corner stuck downstairs',
-          text: 'This white corner is already in the bottom, but it is twisted the wrong way. Hold it at the front-right and do ONE Elevator to pop it back up top. Now it is the easy case again. Nice!',
-          say: 'If a white corner is in the bottom but twisted, do one Elevator to pop it up, then bring it down properly.',
-          display: learnDisplay(CORNER_CASE_STUCK, ELEVATOR),
+          title: 'Same trick, new corner',
+          text: 'Park the next white corner above ITS home, hold it front-right, and ride the Elevator until white points down.',
+          say: 'Park the next white corner above its home, hold it front-right, and ride the Elevator until white points down.',
+          display: caseDisplay(ELEVATOR),
           namedAlgId: 'elevator',
         },
       ],
@@ -1117,6 +1136,7 @@ const corners: Lesson = {
                   say: 'Keep doing the Elevator until the white sticker points down.',
                   display: caseDisplay(repeatAlg(ELEVATOR, 3)),
                   namedAlgId: 'elevator',
+                  followAlong: false,
                 },
               ],
             },
@@ -1212,10 +1232,10 @@ const middle: Lesson = {
       steps: [
         {
           kind: 'do',
-          title: 'A middle spot with the wrong edge in it',
-          text: 'Uh oh, a yellow edge is jammed into this middle spot. Put any top edge above it, hold the spot at the front-right, and do Send it Right. The wrong edge pops back up on top!',
-          say: 'If a middle spot has the wrong edge in it, do Send it Right to pop it up, then send it home properly.',
-          display: learnDisplay(MIDDLE_CASE_STUCK, GO_RIGHT),
+          title: 'Send it Right',
+          text: 'Line it up so the front colours match, then Send it Right. Eight moves - follow along!',
+          say: 'Line it up so the front colours match, then send it right.',
+          display: caseDisplay(GO_RIGHT),
           namedAlgId: 'goRight',
         },
       ],
@@ -1242,10 +1262,11 @@ const middle: Lesson = {
       steps: [
         {
           kind: 'do',
-          title: 'Keep going - left or right',
-          text: 'Every top edge with no yellow: line it up, check its top colour, then Send it Right or Send it Left.',
-          say: 'Line it up, check the top colour, then send it right or left.',
+          title: 'Send it Left',
+          text: 'Line it up so the front colours match - this time the top colour lives on the LEFT, so Send it Left - the mirror of Send it Right.',
+          say: 'Line it up so the front colours match, then send it left - the mirror of send it right.',
           display: caseDisplay(GO_LEFT),
+          namedAlgId: 'goLeft',
         },
       ],
       check: {
@@ -1386,6 +1407,7 @@ const yellowCross: Lesson = {
                   display: caseDisplay(YC_L_FIX),
                   stickering: 'EOLL',
                   namedAlgId: 'yellowCross',
+                  followAlong: false,
                 },
               ],
             },
@@ -1431,7 +1453,7 @@ const yellowCross: Lesson = {
           'Dot, L, or line?',
           'L: turn the top so it points back and left',
           'Line: hold it going left to right',
-          "Do F R U R' U' F' and then look again",
+          'Do the Yellow Cross trick and then look again',
         ],
       },
       steps: [
@@ -1699,7 +1721,7 @@ const cornerOrient: Lesson = {
         {
           kind: 'do',
           title: 'Two rides of the Bottom Elevator',
-          text: "Do R' D' R D twice. Count them out loud: one, two! Look, yellow comes up on that front-right corner.",
+          text: 'Do the Bottom Elevator twice. Count out loud: one, two! Look, yellow comes up on that front-right corner.',
           say: 'Do the Bottom Elevator two times and watch yellow come up on the front right corner.',
           display: learnDisplay(SUMMIT_SETUP, repeatAlg(BOTTOM_ELEVATOR, 2)),
           namedAlgId: 'cornerTwist',
@@ -1718,6 +1740,7 @@ const cornerOrient: Lesson = {
           say: 'This corner needs the Bottom Elevator four times. Count in twos: two, four.',
           display: learnDisplay(SUMMIT_SETUP + ' ' + repeatAlg(BOTTOM_ELEVATOR, 2) + ' U', repeatAlg(BOTTOM_ELEVATOR, 4)),
           namedAlgId: 'cornerTwist',
+          followAlong: false,
         },
       ],
       check: {
@@ -1753,7 +1776,7 @@ const cornerOrient: Lesson = {
           checklist: [
             'On your cube: find a top corner that is not yellow on top',
             'Hold it at the front-right',
-            "Do R' D' R D two times, or four times, until yellow is up",
+            'Do the Bottom Elevator two times, or four, until yellow is up',
             'Turn ONLY the top to bring the next corner to the front-right',
             'Repeat until every corner shows yellow',
             'One last turn of the top - SOLVED!',

@@ -20,7 +20,7 @@ export const BADGES: Badge[] = [
   { id: 'first-corners', title: 'All four corners', emoji: '📦', how: 'Finish "All four corners" (E3) on the cube.' },
   { id: 'first-middle', title: 'Middle layer done', emoji: '🎯', how: 'Finish "All four, no yellow but the top" (M4) on the cube.' },
   { id: 'first-yellow-cross', title: 'Yellow cross', emoji: '🌟', how: 'Finish "Finish the yellow cross" (Y2) on the cube.' },
-  { id: 'summit', title: 'Summit!', emoji: '🏔️', how: 'Solve the whole cube - reach the summit (S2).' },
+  { id: 'summit', title: 'Summit', emoji: '🏔️', how: 'Solve the whole cube - reach the summit (S2).' },
   { id: 'cube-streak-3', title: '3-day cube streak', emoji: '🔥', how: 'Practice the cube 3 days in a row.' },
   { id: 'cube-streak-7', title: '7-day cube streak', emoji: '🔥', how: 'Practice the cube 7 days in a row.' },
   { id: 'cube-streak-14', title: '14-day cube streak', emoji: '🔥', how: 'Practice the cube 14 days in a row.' },

@@ -137,8 +137,8 @@ export function ensureTodaysPlan(today: string = localDay()): DailyPlan {
 export function cubeStatusText(plan: DailyPlan, kidName: string): string {
   if (plan.allDone) return `All holds mastered, ${kidName}! 🏔️`
   if (plan.mission?.doneAt) return 'Done today ✅'
-  if (plan.warmup && !plan.warmup.doneAt) return 'Warm-up + 1 mission'
-  return '1 mission'
+  if (plan.warmup && !plan.warmup.doneAt) return '▶ Warm-up + 1 new mission'
+  return '▶ 1 new mission'
 }
 
 /** The mission right after today's planned one - the next mission in the same hold, or the first of the next hold. */

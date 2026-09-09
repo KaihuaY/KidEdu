@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { SOLVED, applyAlg, isSolved } from '../../engine/cube'
+import { SOLVED, applyAlg, invertAlg, isSolved, parseAlg } from '../../engine/cube'
 import { CENTER_INDICES, CORNER_FACELETS, EDGE_FACELETS } from '../../engine/pieces'
 import { NAMED_ALGS, namedAlg } from '../../engine/notation'
 import { isPhaseDone } from '../../engine/solver'
 import { yellowCrossShape } from '../../engine/progress'
+
+// Mirrors MissionPlayer's MAX_FOLLOW_ALONG_MOVES (kept as a plain number
+// here rather than imported, since this test runs under vitest's 'node'
+// environment and MissionPlayer.tsx pulls in DOM-dependent components).
+const MAX_FOLLOW_ALONG_MOVES = 8
 import {
   ALL_MISSION_IDS,
   HOLD_ORDER,
@@ -241,6 +246,20 @@ describe('mission structure', () => {
               expect(MOVE_ARROWS_MOVES.has(base), `${where}: ${token}`).toBe(true)
             }
           }
+        })
+      }
+    }
+  })
+
+  it('a do-step longer than MAX_FOLLOW_ALONG_MOVES is always explicitly marked followAlong: false - MissionPlayer renders anything over that watch-only, so content must own the call, not lean on the fallback', () => {
+    for (const lesson of LESSON_LIST) {
+      for (const mission of lesson.missions) {
+        const where = `${lesson.id}/${mission.id}`
+        walkSteps(mission.steps, (step) => {
+          if (step.kind !== 'do' || !step.display) return
+          const moves = parseAlg(step.display.alg).length
+          const ok = moves <= MAX_FOLLOW_ALONG_MOVES || step.followAlong === false
+          expect(ok, `${where}: "${step.title}" has ${moves} moves but followAlong isn't false`).toBe(true)
         })
       }
     }
@@ -545,6 +564,15 @@ describe('The Daisy Ledge Learn cases', () => {
     const c = card('daisy', 'Count your petals')
     expect(petalCount(learnCardState(c))).toBe(4)
   })
+
+  it('D3\'s "Count as you go" shows one real petal at the front, then turns the RIGHT side to bring up a second - not the invisible back', () => {
+    const c = card('daisy', 'Count as you go')
+    const before = learnCardState(c)
+    expect(petalCount(before)).toBe(1)
+    expect(c.display?.alg).toBe('R2')
+    const after = learnCardEndState(c)
+    expect(petalCount(after)).toBe(2)
+  })
 })
 
 describe('The White Cross Bridge Learn cases', () => {
@@ -604,6 +632,21 @@ describe('Corner Lookout Learn cases', () => {
     const after = learnCardEndState(c)
     expect(isSolved(applyAlg(after, ELEVATOR))).toBe(true)
   })
+
+  it('"Where is home?" is a still (no animation, no follow-along) - she has not learned the Elevator yet', () => {
+    const ELEVATOR = namedAlg('elevator')?.alg ?? "R U R' U'"
+    const c = card('cornerFind', 'Where is home?')
+    expect(c.display?.alg).toBe('')
+    expect((c as { followAlong?: boolean }).followAlong).toBe(false)
+    expect(isSolved(applyAlg(learnCardState(c), ELEVATOR))).toBe(true)
+  })
+
+  it('K2\'s "Hold home at the front-right" step animates one top turn that parks the corner right above its home', () => {
+    const ELEVATOR = namedAlg('elevator')?.alg ?? "R U R' U'"
+    const c = card('cornerFind', 'Hold home at the front-right')
+    const after = learnCardEndState(c)
+    expect(after).toBe(applyAlg(SOLVED, invertAlg(ELEVATOR)))
+  })
 })
 
 describe('Corner Crack Learn cases', () => {
@@ -623,13 +666,31 @@ describe('Corner Crack Learn cases', () => {
     expect(isSolved(applyAlg(state, ELEVATOR))).toBe(true)
   })
 
-  it('case (b): a white corner in the bottom, twisted, that one ride pops back on top', () => {
-    const c = card('corners', 'A white corner stuck downstairs')
+  it('case (b), offered in E3\'s picker: a white corner in the bottom, twisted, that one ride pops back on top', () => {
+    const c = card('corners', 'Pop it back up first')
     const state = learnCardState(c)
     expect(sameSet(cornerPiece(state, DFR), ['D', 'F', 'R'])).toBe(true)
     expect(state[CORNER_FACELETS[DFR][0]]).not.toBe('D')
     const after = learnCardEndState(c)
     expect(sameSet(cornerPiece(after, URF), ['D', 'F', 'R'])).toBe(true)
+  })
+
+  it('E1 opens with a single, followed-along Elevator ride (4 moves), then a watch-only "sometimes three rides" card', () => {
+    const oneRide = card('corners', 'One Elevator ride')
+    expect(parseAlg(oneRide.display?.alg ?? '')).toHaveLength(4)
+    expect((oneRide as { followAlong?: boolean }).followAlong).not.toBe(false)
+
+    const threeRides = card('corners', 'Sometimes it takes three rides')
+    expect(parseAlg(threeRides.display?.alg ?? '').length).toBeGreaterThan(MAX_FOLLOW_ALONG_MOVES)
+    expect((threeRides as { followAlong?: boolean }).followAlong).toBe(false)
+  })
+
+  it('E2 rides the plain Elevator again on a fresh corner, held front-right', () => {
+    const c = card('corners', 'Same trick, new corner')
+    const state = learnCardState(c)
+    expect(sameSet(cornerPiece(state, URF), ['D', 'F', 'R'])).toBe(true)
+    expect(state[CORNER_FACELETS[URF][0]]).not.toBe('D')
+    expect(isSolved(applyAlg(state, ELEVATOR))).toBe(true)
   })
 })
 
@@ -665,6 +726,18 @@ describe('Middle Traverse', () => {
     expect(state[EDGE_FACELETS[UF][1]]).toBe(state[22])
     expect(state[EDGE_FACELETS[UF][0]]).toBe(state[40]) // left centre
     expect(isSolved(learnCardEndState(c))).toBe(true)
+  })
+
+  it('M2/M3 do-steps are the plain Send it Right / Send it Left cases, named and within follow-along range (8 moves)', () => {
+    const right = card('middle', 'Send it Right')
+    expect((right as { namedAlgId?: string }).namedAlgId).toBe('goRight')
+    expect(parseAlg(right.display?.alg ?? '').length).toBeLessThanOrEqual(MAX_FOLLOW_ALONG_MOVES)
+    expect(isSolved(learnCardEndState(right))).toBe(true)
+
+    const left = card('middle', 'Send it Left')
+    expect((left as { namedAlgId?: string }).namedAlgId).toBe('goLeft')
+    expect(parseAlg(left.display?.alg ?? '').length).toBeLessThanOrEqual(MAX_FOLLOW_ALONG_MOVES)
+    expect(isSolved(learnCardEndState(left))).toBe(true)
   })
 })
 
@@ -757,13 +830,15 @@ describe('THE SUMMIT', () => {
     expect(learnCardEndState(c)[URF_TOP]).toBe('U')
   })
 
-  it('the four-ride card needs exactly four - two is not enough', () => {
+  it('the four-ride card needs exactly four - two is not enough - and, at 16 moves, is watch-only', () => {
     const c = card('cornerOrient', 'Sometimes it takes four rides')
     const state = learnCardState(c)
     expect(state[URF_TOP]).not.toBe('U')
     expect(ride(state, 2)[URF_TOP]).not.toBe('U')
     expect(ride(state, 4)[URF_TOP]).toBe('U')
     expect(learnCardEndState(c)[URF_TOP]).toBe('U')
+    expect(parseAlg(c.display?.alg ?? '').length).toBeGreaterThan(MAX_FOLLOW_ALONG_MOVES)
+    expect((c as { followAlong?: boolean }).followAlong).toBe(false)
   })
 
   it('the last card is one top turn away from a fully solved cube', () => {
