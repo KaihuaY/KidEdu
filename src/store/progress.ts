@@ -70,6 +70,15 @@ export interface MissionProgress {
   tries: number
   help: HelpKind
   minutes: number
+  /** Local YYYY-MM-DD of the most recent completion, replays included (drives the daily warm-up). */
+  lastDoneDay?: string
+}
+
+/** Today's cube plan, fixed once per local day so it doesn't shift under her mid-session. */
+export interface CubeDay {
+  day: string
+  warmup?: { holdId: string; missionId: string; doneAt?: number }
+  mission?: { holdId: string; missionId: string; doneAt?: number }
 }
 
 export interface HoldProgress {
@@ -97,6 +106,7 @@ export interface ProfileProgress {
   tokens: { gold: number; silver: number; bronze: number }
   sessions: Session[]
   streak: Streak
+  cubeDay?: CubeDay
 }
 
 export interface Profiles {
@@ -137,11 +147,35 @@ export interface BoxHistoryEntry {
   result: string
 }
 
+export interface EarnedBadge {
+  id: string
+  earnedAt: number
+}
+
 export interface Rewards {
   stickers: Sticker[]
   customStickers: CustomSticker[]
   tickets: Ticket[]
   boxHistory: BoxHistoryEntry[]
+  badges?: EarnedBadge[]
+  updatedAt: number
+}
+
+/** A message from the grown-up, shown on Nora's Home until she taps "Got it". */
+export interface Note {
+  id: string
+  /** Local YYYY-MM-DD it was written. */
+  day: string
+  about: 'piano' | 'cube' | 'general'
+  text?: string
+  /** A short voice note recorded as a piano take flagged `isNote`. */
+  audioTakeId?: string
+  createdAt: number
+  seenAt?: number
+}
+
+export interface NotesSection {
+  items: Note[]
   updatedAt: number
 }
 
@@ -163,6 +197,8 @@ export interface PianoTake {
   id: string
   day: string // local YYYY-MM-DD
   pieceId: string | null
+  /** A grown-up's voice note, not practice: never counts toward goals or the takes list. */
+  isNote?: boolean
   startedAt: number
   durationSec: number
   activeSec: number
@@ -202,9 +238,10 @@ export interface ProgressDoc {
   rewards: Rewards
   solveLog: SolveLog
   piano: PianoSection
+  notes: NotesSection
 }
 
-export type SectionKey = 'settings' | 'profiles' | 'rewards' | 'solveLog' | 'piano'
+export type SectionKey = 'settings' | 'profiles' | 'rewards' | 'solveLog' | 'piano' | 'notes'
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -241,6 +278,18 @@ export function emptyPiano(updatedAt: number): PianoSection {
     days: {},
     streak: { current: 0, best: 0, lastDay: '' },
     updatedAt,
+  }
+}
+
+export function emptyNotes(updatedAt: number): NotesSection {
+  return { items: [], updatedAt }
+}
+
+function normalizeNotes(parsed: Partial<NotesSection> | undefined): NotesSection {
+  if (!parsed) return emptyNotes(0)
+  return {
+    items: Array.isArray(parsed.items) ? parsed.items : [],
+    updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : 0,
   }
 }
 
@@ -287,6 +336,7 @@ export function defaultDoc(): ProgressDoc {
       customStickers: [],
       tickets: [],
       boxHistory: [],
+      badges: [],
       updatedAt: now,
     },
     solveLog: {
@@ -294,6 +344,7 @@ export function defaultDoc(): ProgressDoc {
       updatedAt: now,
     },
     piano: emptyPiano(now),
+    notes: emptyNotes(now),
   }
 }
 
@@ -438,9 +489,14 @@ function normalizeDoc(parsed: Partial<ProgressDoc>): ProgressDoc {
       kid: normalizeProfile(fallback.profiles.kid, parsed.profiles?.kid),
       parent: normalizeProfile(fallback.profiles.parent, parsed.profiles?.parent),
     },
-    rewards: { ...fallback.rewards, ...parsed.rewards },
+    rewards: {
+      ...fallback.rewards,
+      ...parsed.rewards,
+      badges: Array.isArray(parsed.rewards?.badges) ? parsed.rewards.badges : [],
+    },
     solveLog: { ...fallback.solveLog, ...parsed.solveLog },
     piano: normalizePiano(parsed.piano),
+    notes: normalizeNotes(parsed.notes),
   }
 }
 
@@ -462,6 +518,7 @@ function neverEditedDoc(): ProgressDoc {
     rewards: { ...fresh.rewards, updatedAt: 0 },
     solveLog: { ...fresh.solveLog, updatedAt: 0 },
     piano: emptyPiano(0),
+    notes: emptyNotes(0),
   }
 }
 
@@ -677,6 +734,7 @@ export function mergeDocs(local: ProgressDoc, remote: ProgressDoc): ProgressDoc 
     rewards: newer(local.rewards, remote.rewards),
     solveLog: newer(local.solveLog, remote.solveLog),
     piano: newer(local.piano ?? emptyPiano(0), remote.piano),
+    notes: newer(local.notes ?? emptyNotes(0), remote.notes),
   }
 }
 
