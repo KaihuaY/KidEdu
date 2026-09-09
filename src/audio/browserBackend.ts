@@ -5,6 +5,7 @@
 // FakeAudioBackend there instead).
 
 import { pickRecordingMime } from './mime'
+import { bandsFromSpectrum } from './spectrum'
 import { MicStartError, type AudioBackend, type MicSession, type RecordingResult } from './types'
 
 const LEVEL_INTERVAL_MS = 100
@@ -36,7 +37,9 @@ class BrowserMicSession implements MicSession {
   private readonly recorder: MediaRecorder
   private readonly chunks: BlobPart[] = []
   private readonly buffer: Float32Array<ArrayBuffer>
+  private readonly spectrumBytes: Uint8Array<ArrayBuffer>
   private readonly listeners = new Set<(rms: number, t: number) => void>()
+  private readonly spectrumListeners = new Set<(bands: Float32Array, t: number) => void>()
   private readonly chunkListeners = new Set<(blob: Blob, seq: number) => void>()
   private readonly createdAt: number
   private levelTimer: ReturnType<typeof setInterval> | null
@@ -50,6 +53,7 @@ class BrowserMicSession implements MicSession {
     this.recorder = recorder
     this.mimeType = mimeType
     this.buffer = new Float32Array(new ArrayBuffer(analyser.fftSize * Float32Array.BYTES_PER_ELEMENT))
+    this.spectrumBytes = new Uint8Array(analyser.frequencyBinCount)
     this.createdAt = performance.now()
 
     this.recorder.ondataavailable = (e: BlobEvent) => {
@@ -70,11 +74,22 @@ class BrowserMicSession implements MicSession {
     const rms = Math.sqrt(sumSquares / this.buffer.length)
     const t = performance.now()
     for (const listener of this.listeners) listener(rms, t)
+
+    if (this.spectrumListeners.size > 0) {
+      this.analyser.getByteFrequencyData(this.spectrumBytes)
+      const bands = bandsFromSpectrum(this.spectrumBytes, this.ctx.sampleRate, this.analyser.fftSize)
+      for (const listener of this.spectrumListeners) listener(bands, t)
+    }
   }
 
   onLevel(cb: (rms: number, t: number) => void): () => void {
     this.listeners.add(cb)
     return () => this.listeners.delete(cb)
+  }
+
+  onSpectrum(cb: (bands: Float32Array, t: number) => void): () => void {
+    this.spectrumListeners.add(cb)
+    return () => this.spectrumListeners.delete(cb)
   }
 
   onChunk(cb: (blob: Blob, seq: number) => void): () => void {

@@ -260,6 +260,19 @@ button {
   animation: cc-pulse 1.1s ease-in-out infinite;
 }
 
+/* A note bubble drifting up and fading out - used by the piano Aurora
+   visualizer's onset "note" spawns on the Record screen. */
+@keyframes cc-float {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-120px);
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.01ms !important;

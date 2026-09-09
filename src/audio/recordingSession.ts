@@ -158,11 +158,30 @@ let currentSession: MicSession | null = null
 let currentMeter: ActivityMeter | null = null
 let unsubscribeLevel: (() => void) | null = null
 let unsubscribeChunk: (() => void) | null = null
+let unsubscribeSpectrum: (() => void) | null = null
 let currentWakeLock: WakeLockHandle | null = null
 let currentPieceId: string | null = null
 let currentStartedAt = 0
 let currentTakeId: string | null = null
 let hiddenListenersAttached = false
+
+// --- Live spectrum fan-out ---------------------------------------------
+//
+// A module-level listener set (rather than React state) so the Aurora
+// visualizer can subscribe/unsubscribe cheaply at ~10 Hz without pushing
+// every band frame through a re-render. Each recording session's own
+// onSpectrum (when the backend provides one) is wired, for its lifetime, to
+// fan out to whatever is in this set - including listeners that subscribe
+// after the session already started, and future sessions after this one
+// stops.
+
+const spectrumListeners = new Set<(bands: Float32Array, t: number) => void>()
+
+/** Subscribe to the live mic spectrum (if a session is recording) and to any future session's. Returns an unsubscribe. */
+export function subscribeSpectrum(cb: (bands: Float32Array, t: number) => void): () => void {
+  spectrumListeners.add(cb)
+  return () => spectrumListeners.delete(cb)
+}
 
 function onVisibilityChange(): void {
   if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
@@ -193,6 +212,7 @@ function resetTrackingState(): void {
   currentMeter = null
   unsubscribeLevel = null
   unsubscribeChunk = null
+  unsubscribeSpectrum = null
   if (currentWakeLock) {
     currentWakeLock.release()
     currentWakeLock = null
@@ -257,22 +277,38 @@ export async function startTake(pieceId: string | null): Promise<void> {
       })
     }
 
+    if (session.onSpectrum) {
+      unsubscribeSpectrum = session.onSpectrum((bands, t) => {
+        for (const listener of spectrumListeners) listener(bands, t)
+      })
+    }
+
     let lastCheckpointAt = 0
+    let lastEmittedAt = 0
+    let lastEmittedHearing = false
     unsubscribeLevel = session.onLevel((rms, t) => {
       const frame = meter.push(rms, t)
       if (state.status !== 'recording') return
-      setState({
-        status: 'recording',
-        pieceId,
-        startedAt: currentStartedAt,
-        wallSec: (Date.now() - currentStartedAt) / 1000,
-        activeSec: Math.round(frame.activeMs / 1000),
-        level: frame.level,
-        silentSec: Math.round(frame.silentMs / 1000),
-        wakeLock: wakeLockOn,
-        hearing: frame.active,
-      })
       const nowMs = Date.now()
+      // Throttled to ~5 Hz so the Record screen stays cheap on the iPad -
+      // except a hearing flip (the chip's text/color changing), which
+      // always emits immediately so that feedback never feels laggy.
+      const hearingChanged = frame.active !== lastEmittedHearing
+      if (hearingChanged || nowMs - lastEmittedAt >= 200) {
+        lastEmittedAt = nowMs
+        lastEmittedHearing = frame.active
+        setState({
+          status: 'recording',
+          pieceId,
+          startedAt: currentStartedAt,
+          wallSec: (nowMs - currentStartedAt) / 1000,
+          activeSec: Math.round(frame.activeMs / 1000),
+          level: frame.level,
+          silentSec: Math.round(frame.silentMs / 1000),
+          wakeLock: wakeLockOn,
+          hearing: frame.active,
+        })
+      }
       if (nowMs - lastCheckpointAt >= CHECKPOINT_INTERVAL_MS) {
         lastCheckpointAt = nowMs
         writeInflightCheckpoint({ id: takeId, activeMs: frame.activeMs, startedAt: currentStartedAt, pieceId })
@@ -306,6 +342,10 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
   if (unsubscribeChunk) {
     unsubscribeChunk()
     unsubscribeChunk = null
+  }
+  if (unsubscribeSpectrum) {
+    unsubscribeSpectrum()
+    unsubscribeSpectrum = null
   }
 
   setState({ status: 'saving' })

@@ -7,6 +7,27 @@ import type { AudioBackend, MicSession, RecordingResult } from './types'
 
 export type FakeScript = Array<{ rms: number; ms: number }> | ((elapsedMs: number) => number)
 
+const SPECTRUM_BAND_COUNT = 24
+
+/**
+ * A synthetic 24-band "spectrum" for the fake backend, so the aurora has
+ * something lively to draw during laptop development / headless tests: a
+ * Gaussian hump whose centre band wanders slowly over time and whose height
+ * tracks the scripted RMS, plus a little noise so it never looks static.
+ */
+function fakeBands(rms: number, elapsedMs: number): Float32Array {
+  const bands = new Float32Array(SPECTRUM_BAND_COUNT)
+  const center = 6 + 8 * Math.sin(elapsedMs / 900)
+  const height = Math.min(1, rms * 3)
+  for (let i = 0; i < SPECTRUM_BAND_COUNT; i++) {
+    const d = i - center
+    const hump = Math.exp(-(d * d) / (2 * 3 * 3)) * height
+    const noise = Math.random() * 0.04
+    bands[i] = Math.max(0, Math.min(1, hump + noise))
+  }
+  return bands
+}
+
 export interface FakeAudioBackendOptions {
   tickMs?: number
   mimeType?: string
@@ -36,6 +57,7 @@ class FakeMicSession implements MicSession {
   private readonly script: FakeScript
   private readonly startedAt: number
   private readonly listeners = new Set<(rms: number, t: number) => void>()
+  private readonly spectrumListeners = new Set<(bands: Float32Array, t: number) => void>()
   private readonly chunkListeners = new Set<(blob: Blob, seq: number) => void>()
   private timer: ReturnType<typeof setInterval> | null
   private chunkSeq = 0
@@ -49,8 +71,13 @@ class FakeMicSession implements MicSession {
 
   private tick(): void {
     const t = now()
-    const rms = rmsForElapsed(this.script, t - this.startedAt)
+    const elapsed = t - this.startedAt
+    const rms = rmsForElapsed(this.script, elapsed)
     for (const listener of this.listeners) listener(rms, t)
+    if (this.spectrumListeners.size > 0) {
+      const bands = fakeBands(rms, elapsed)
+      for (const listener of this.spectrumListeners) listener(bands, t)
+    }
     // A tiny fake chunk per tick, same shape as the real backend's
     // ondataavailable slices - lets tests exercise the partial-recording
     // pipeline (recordingSession.ts) without a real MediaRecorder.
@@ -64,6 +91,11 @@ class FakeMicSession implements MicSession {
   onLevel(cb: (rms: number, t: number) => void): () => void {
     this.listeners.add(cb)
     return () => this.listeners.delete(cb)
+  }
+
+  onSpectrum(cb: (bands: Float32Array, t: number) => void): () => void {
+    this.spectrumListeners.add(cb)
+    return () => this.spectrumListeners.delete(cb)
   }
 
   onChunk(cb: (blob: Blob, seq: number) => void): () => void {

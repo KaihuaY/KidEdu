@@ -6,7 +6,7 @@ import { activeSecondsForDay, goalProgress } from '../../store/pianoRewards'
 import { formatClock, localDay } from '../../store/sessions'
 import { dismiss, stopTake, useRecordingSession } from '../../audio/recordingSession'
 import { RingTimer } from '../../components/RingTimer'
-import { LevelMeter } from '../../components/LevelMeter'
+import { Aurora } from '../../components/Aurora'
 import { SelfRatingButtons } from '../../components/SelfRatingButtons'
 import { TakePlayer } from '../../components/TakePlayer'
 
@@ -77,7 +77,7 @@ export function Record() {
         }}
       >
         <RingTimer size={180} progress={progressRatio} label={formatClock(totalActive)} sublabel={`of ${goalMin} min`} />
-        <LevelMeter level={session.level} />
+        <Aurora />
         <span style={{ fontWeight: 800, color: chip.color }}>{chip.text}</span>
         <span style={{ color: 'var(--cc-ink-soft)', fontSize: '0.85rem' }}>
           Recording for {formatClock(Math.round(session.wallSec))}

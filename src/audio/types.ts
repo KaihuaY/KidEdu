@@ -14,6 +14,13 @@ export interface MicSession {
   /** ~10 Hz RMS level 0..1 with a monotonic timestamp in ms. Returns an unsubscribe. */
   onLevel(cb: (rms: number, t: number) => void): () => void
   /**
+   * Optional: ~10 Hz snapshot of 24 log-spaced loudness bands (0..1, 60 Hz-
+   * 6 kHz) for the piano "aurora" visualizer on the Record screen. Backends
+   * that can't produce a spectrum may omit this entirely. Returns an
+   * unsubscribe.
+   */
+  onSpectrum?(cb: (bands: Float32Array, t: number) => void): () => void
+  /**
    * Optional: fires with each raw recorded chunk as it becomes available
    * (MediaRecorder's ~1s `ondataavailable` slices), numbered from 0.
    * recordingSession.ts uses this to persist an in-progress take to
