@@ -82,6 +82,14 @@ export function setTakeWaveform(takeId: string, waveform: number[]): void {
   }))
 }
 
+/** Records whether she said she met her piece's goal for this take (see the Record.tsx done screen). */
+export function setTakeGoalHit(takeId: string, goalHit: boolean): void {
+  update('piano', (piano) => ({
+    ...piano,
+    takes: piano.takes.map((t) => (t.id === takeId ? { ...t, goalHit } : t)),
+  }))
+}
+
 /** Marks the given takes' audio as pruned from local storage (called after RecordingStore.pruneOlderThan). */
 export function markAudioPruned(takeIds: string[], at: number = Date.now()): void {
   if (takeIds.length === 0) return

@@ -299,9 +299,18 @@ export function MissionPlayer({ lesson, mission, tempoScale, onDone, onExit, war
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                     <h2 style={{ margin: 0, fontSize: '1.05rem' }}>{step.title}</h2>
-                    <SayIt text={step.say} />
+                    {/* The step text usually spells out the moves - keep it (and Say it) hidden while
+                        she is being asked to recall the trick, or trying it from memory. */}
+                    {!showRecall && !useMemoryMode && <SayIt text={step.say} />}
                   </div>
-                  <p style={{ margin: 0, fontWeight: 600, lineHeight: 1.5 }}>{step.text}</p>
+                  {!showRecall && !useMemoryMode && (
+                    <p style={{ margin: 0, fontWeight: 600, lineHeight: 1.5 }}>{step.text}</p>
+                  )}
+                  {useMemoryMode && !showRecall && (
+                    <p style={{ margin: 0, color: 'var(--cc-ink-soft)', fontWeight: 700 }}>
+                      Do the whole trick on your cube without peeking. Stuck? Tap Show me.
+                    </p>
+                  )}
 
                   {showRecall && named ? (
                     <RecallPrompt named={named} onRevealed={() => setRecallRevealed(true)} />

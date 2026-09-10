@@ -249,6 +249,24 @@ an iPad propped on the music stand, microphone only - no MIDI, no teaching.
   how evenly spaced her note attacks were, detected from the recording and
   hidden whenever there isn't enough playing to judge it fairly - and the
   same dots show up on each take card and in Grown-up review.
+- **This week's piece goal.** In **Settings → This week's piano pieces**,
+  each piece can carry a tiny goal ("Bars 1–8 three times without
+  stopping"). Piano home shows it under the piece chips once she picks that
+  piece ("🎯 This week: …"), and the done screen after a take asks "Did you
+  do it? ✅ Yes / Not yet" - her answer shows up as 🎯 ✅ / 🎯 ⬜ on that
+  take's card and in Grown-up review. Clearing the goal text in Settings
+  removes it everywhere it would otherwise show.
+- **Metronome.** A collapsible "🎵 Metronome" panel sits above the 🎙️ Record
+  button on Piano home: a big pulsing dot, the bpm number, quick tempo chips
+  (60/72/84/96/108) and ±4 buttons, a 🔔 click toggle (a short, quiet WebAudio
+  tick), and a ▶/⏹ button. Starting it before recording keeps it going
+  through the take as a compact strip (dot + bpm + ⏹) on the Record screen,
+  and it stops itself automatically once the take is done. Tempo is
+  remembered separately per piece (and for free play) for next time. When a
+  take comes back steady (steadiness ≥ 0.8) and the metronome was running,
+  the done screen offers "Steady! Try it a little faster next time: {bpm+4}
+  ▶" - tapping it just remembers that faster tempo for the piece, ready the
+  next time the metronome opens for it.
 - **Rating, three layers.**
   1. **Practice seconds** count toward the daily goal per the counting-mode
      setting above (recording time by default, mic-active "heard" time as

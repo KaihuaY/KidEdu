@@ -1,12 +1,14 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { navigate } from '../../router'
 import { useProgress } from '../../store/progress'
-import { setSelfRating, usePiano } from '../../store/piano'
+import { setSelfRating, setTakeGoalHit, usePiano } from '../../store/piano'
 import { goalProgress, practiceSecondsForDay, steadyBeatDots } from '../../store/pianoRewards'
 import { formatClock, localDay } from '../../store/sessions'
 import { dismiss, stopTake, useRecordingSession } from '../../audio/recordingSession'
+import { getLastTakeBpm, nudgeBpm, setRememberedBpm } from '../../audio/metronome'
 import { RingTimer } from '../../components/RingTimer'
 import { Aurora } from '../../components/Aurora'
+import { MetronomeStrip } from '../../components/Metronome'
 import { SelfRatingButtons } from '../../components/SelfRatingButtons'
 import { TakePlayer } from '../../components/TakePlayer'
 
@@ -32,6 +34,7 @@ export function Record() {
   const kidName = progress.settings.kidName
   const goalMin = progress.settings.goalMinutes.piano
   const countMode = progress.settings.pianoCountMode ?? 'recording'
+  const [fasterTempoSaved, setFasterTempoSaved] = useState(false)
 
   // The take in progress isn't saved to the doc yet, so "today's seconds so
   // far" only ever reflects takes already saved.
@@ -82,6 +85,7 @@ export function Record() {
       >
         <RingTimer size={180} progress={progressRatio} label={formatClock(Math.round(totalCounted))} sublabel={`of ${goalMin} min`} />
         <Aurora />
+        <MetronomeStrip />
         <span style={{ fontWeight: 800, color: chip.color }}>{chip.text}</span>
         <span style={{ color: 'var(--cc-ink-soft)', fontSize: '0.85rem' }}>
           Recording for {formatClock(Math.round(session.wallSec))}
@@ -129,6 +133,13 @@ export function Record() {
     // player picks it up as soon as it's ready.
     const take = piano.takes.find((t) => t.id === session.take.id) ?? session.take
     const liveSelfRating = take.selfRating
+    const piece = progress.settings.pianoPieces.find((p) => p.id === take.pieceId)
+    // Captured once when this take started (see src/audio/metronome.ts) -
+    // undefined if the metronome wasn't running, in which case there's no
+    // tempo to suggest going faster from.
+    const lastTakeBpm = getLastTakeBpm()
+    const showFasterNudge = !take.isNote && (take.steadiness ?? 0) >= 0.8 && lastTakeBpm !== undefined
+    const fasterBpm = lastTakeBpm !== undefined ? nudgeBpm(lastTakeBpm, 4) : undefined
 
     return (
       <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center' }}>
@@ -142,11 +153,57 @@ export function Record() {
             Steady beat: <span style={{ letterSpacing: '0.15em', color: 'var(--cc-primary)' }}>{steadyBeatDots(take.steadiness)}</span>
           </p>
         )}
+        {showFasterNudge && fasterBpm !== undefined && (
+          fasterTempoSaved ? (
+            <p style={{ margin: 0, fontWeight: 700, color: 'var(--cc-success)' }}>Saved {fasterBpm} bpm for next time 🎯</p>
+          ) : (
+            <button
+              type="button"
+              className="cc-btn cc-btn-surface"
+              style={{ minHeight: 56 }}
+              onClick={() => {
+                setRememberedBpm(take.pieceId, fasterBpm)
+                setFasterTempoSaved(true)
+              }}
+            >
+              Steady! Try it a little faster next time: {fasterBpm} ▶
+            </button>
+          )
+        )}
         {session.goalJustReached && (
           <>
             <p style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>You filled the ring! 🟤 +1 token</p>
             <p style={{ margin: 0, fontWeight: 700 }}>See you tomorrow! 🎹</p>
           </>
+        )}
+        {piece?.goal && !take.isNote && (
+          <div className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem', alignItems: 'center', width: '100%', maxWidth: 320 }}>
+            <strong style={{ textAlign: 'center' }}>🎯 {piece.goal} — Did you do it?</strong>
+            {take.goalHit === undefined ? (
+              <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+                <button
+                  type="button"
+                  className="cc-btn cc-btn-primary"
+                  style={{ minHeight: 56, flex: 1 }}
+                  onClick={() => setTakeGoalHit(take.id, true)}
+                >
+                  ✅ Yes
+                </button>
+                <button
+                  type="button"
+                  className="cc-btn cc-btn-surface"
+                  style={{ minHeight: 56, flex: 1 }}
+                  onClick={() => setTakeGoalHit(take.id, false)}
+                >
+                  Not yet
+                </button>
+              </div>
+            ) : (
+              <span style={{ fontWeight: 700, color: take.goalHit ? 'var(--cc-success)' : 'var(--cc-ink-soft)' }}>
+                {take.goalHit ? 'Goal done ✅' : 'Okay - next time! 💪'}
+              </span>
+            )}
+          </div>
         )}
         <SelfRatingButtons value={liveSelfRating} onChange={(rating) => setSelfRating(take.id, rating)} />
         {take.hasAudio && <TakePlayer take={take} />}

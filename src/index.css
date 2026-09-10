@@ -279,3 +279,24 @@ button {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* The metronome's beat dot (src/components/Metronome.tsx) - a CSS class
+   toggled off the beat counter's parity scales the dot up, then this
+   transition eases it back to resting size. cc-metro-dot-beat-reduced fades
+   opacity instead of scaling, chosen by the component under
+   prefers-reduced-motion. */
+.cc-metro-dot {
+  border-radius: 50%;
+  background: var(--cc-primary);
+  transform: scale(1);
+  opacity: 1;
+  transition: transform 0.15s ease-out, opacity 0.15s ease-out;
+}
+
+.cc-metro-dot-beat {
+  transform: scale(1.35);
+}
+
+.cc-metro-dot-beat-reduced {
+  opacity: 0.55;
+}

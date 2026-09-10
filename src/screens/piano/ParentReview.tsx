@@ -46,6 +46,7 @@ function TakeRow({ take, piece }: { take: PianoTake; piece: PianoPiece | undefin
           Steady beat: <span style={{ letterSpacing: '0.15em', color: 'var(--cc-primary)' }}>{steadyBeatDots(take.steadiness)}</span>
         </span>
       )}
+      {piece?.goal && <span style={{ color: 'var(--cc-ink-soft)' }}>{take.goalHit ? '🎯 ✅' : '🎯 ⬜'}</span>}
       {take.selfRating && (
         <span style={{ color: 'var(--cc-ink-soft)' }}>
           {'Nora felt: '}

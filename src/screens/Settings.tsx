@@ -11,6 +11,7 @@ import {
   type PianoPiece,
   type Prize,
 } from '../store/progress'
+import { localDay } from '../store/sessions'
 import { clearToken, getToken, setToken, start as startSync, stop as stopSync, useSyncStatus } from '../store/gistSync'
 import { PinGate } from '../components/PinGate'
 import { navigate } from '../router'
@@ -38,6 +39,8 @@ const TIER_LABEL: Record<(typeof TIERS)[number], string> = { gold: 'Gold', silve
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
+
+const PIECE_GOAL_MAX_LENGTH = 80
 
 function downscaleImage(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -253,32 +256,53 @@ function PianoPiecesEditor() {
     setPieces(pieces.map((p) => (p.id === id ? { ...p, ...patch } : p)))
   }
 
+  function updatePieceGoal(id: string, text: string) {
+    const trimmed = text.slice(0, PIECE_GOAL_MAX_LENGTH)
+    if (trimmed.trim() === '') {
+      updatePiece(id, { goal: undefined, goalSetOn: undefined })
+    } else {
+      updatePiece(id, { goal: trimmed, goalSetOn: localDay() })
+    }
+  }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
       {pieces.map((p) => (
-        <div key={p.id} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-          <input
-            value={p.emoji}
-            onChange={(e) => updatePiece(p.id, { emoji: e.target.value })}
-            style={{ width: '3ch', textAlign: 'center' }}
-            aria-label="Piece emoji"
-          />
-          <input
-            value={p.name}
-            onChange={(e) => updatePiece(p.id, { name: e.target.value })}
-            placeholder="Piece name"
-            style={{ flex: 1, minWidth: 0 }}
-            aria-label="Piece name"
-          />
-          <button
-            type="button"
-            className="cc-btn cc-btn-surface"
-            style={{ minHeight: 40, minWidth: 40, padding: '0.3rem' }}
-            onClick={() => setPieces(pieces.filter((x) => x.id !== p.id))}
-            aria-label={`Delete ${p.name || 'piece'}`}
-          >
-            🗑️
-          </button>
+        <div key={p.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+            <input
+              value={p.emoji}
+              onChange={(e) => updatePiece(p.id, { emoji: e.target.value })}
+              style={{ width: '3ch', textAlign: 'center' }}
+              aria-label="Piece emoji"
+            />
+            <input
+              value={p.name}
+              onChange={(e) => updatePiece(p.id, { name: e.target.value })}
+              placeholder="Piece name"
+              style={{ flex: 1, minWidth: 0 }}
+              aria-label="Piece name"
+            />
+            <button
+              type="button"
+              className="cc-btn cc-btn-surface"
+              style={{ minHeight: 40, minWidth: 40, padding: '0.3rem' }}
+              onClick={() => setPieces(pieces.filter((x) => x.id !== p.id))}
+              aria-label={`Delete ${p.name || 'piece'}`}
+            >
+              🗑️
+            </button>
+          </div>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.85rem', paddingLeft: '0.2rem' }}>
+            🎯 This week&apos;s goal
+            <input
+              value={p.goal ?? ''}
+              onChange={(e) => updatePieceGoal(p.id, e.target.value)}
+              placeholder="Bars 1–8 three times without stopping"
+              maxLength={PIECE_GOAL_MAX_LENGTH}
+              aria-label={`This week's goal for ${p.name || 'piece'}`}
+            />
+          </label>
         </div>
       ))}
       {pieces.length === 0 && <p style={{ margin: 0, color: 'var(--cc-ink-soft)' }}>No pieces added yet.</p>}

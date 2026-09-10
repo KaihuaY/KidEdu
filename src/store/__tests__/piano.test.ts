@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { awardGoalIfReached, markAudioPruned, saveTake, setParentStars, setSelfRating } from '../piano'
+import { awardGoalIfReached, markAudioPruned, saveTake, setParentStars, setSelfRating, setTakeGoalHit } from '../piano'
 import { getDoc, resetAll, update, type PianoTake } from '../progress'
 import { dayOffset } from '../sessions'
 
@@ -90,6 +90,30 @@ describe('setSelfRating', () => {
     const doc = getDoc()
     expect(doc.piano.takes.find((t) => t.id === 'a')?.selfRating).toBe(3)
     expect(doc.piano.takes.find((t) => t.id === 'b')?.selfRating).toBeUndefined()
+  })
+})
+
+describe('setTakeGoalHit', () => {
+  it('sets goalHit on the matching take only', () => {
+    saveTake(makeTake({ id: 'a' }))
+    saveTake(makeTake({ id: 'b' }))
+    setTakeGoalHit('a', true)
+    const doc = getDoc()
+    expect(doc.piano.takes.find((t) => t.id === 'a')?.goalHit).toBe(true)
+    expect(doc.piano.takes.find((t) => t.id === 'b')?.goalHit).toBeUndefined()
+  })
+
+  it('can be set to false (kid said "Not yet")', () => {
+    saveTake(makeTake({ id: 'a' }))
+    setTakeGoalHit('a', false)
+    expect(getDoc().piano.takes.find((t) => t.id === 'a')?.goalHit).toBe(false)
+  })
+
+  it('can be flipped back and forth', () => {
+    saveTake(makeTake({ id: 'a' }))
+    setTakeGoalHit('a', true)
+    setTakeGoalHit('a', false)
+    expect(getDoc().piano.takes.find((t) => t.id === 'a')?.goalHit).toBe(false)
   })
 })
 

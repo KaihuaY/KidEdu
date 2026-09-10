@@ -12,12 +12,30 @@ import { extensionFor } from '../../audio/mime'
 import { RingTimer } from '../../components/RingTimer'
 import { WeekDots } from '../../components/WeekDots'
 import { BadgeToast } from '../../components/BadgeToast'
+import { Metronome } from '../../components/Metronome'
 import { SayIt } from '../../components/SayIt'
 import { SelfRatingButtons } from '../../components/SelfRatingButtons'
 import { TakePlayer } from '../../components/TakePlayer'
 import { UploadChip } from '../../components/UploadChip'
 
 const PIECE_STORAGE_KEY = 'cubeclimb.piano.piece'
+const METRONOME_OPEN_KEY = 'cubeclimb.metronome.panelOpen'
+
+function readMetronomeOpen(): boolean {
+  try {
+    return sessionStorage.getItem(METRONOME_OPEN_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function storeMetronomeOpen(open: boolean): void {
+  try {
+    sessionStorage.setItem(METRONOME_OPEN_KEY, open ? '1' : '0')
+  } catch {
+    // ignore - just won't be remembered across a reload
+  }
+}
 
 function readStoredPieceId(): string | null {
   try {
@@ -123,6 +141,7 @@ function TakeCard({ take, piece }: { take: PianoTake; piece: PianoPiece | undefi
           Steady beat: <span style={{ letterSpacing: '0.15em', color: 'var(--cc-primary)' }}>{steadyBeatDots(take.steadiness)}</span>
         </span>
       )}
+      {piece?.goal && <span style={{ color: 'var(--cc-ink-soft)' }}>{take.goalHit ? '🎯 ✅' : '🎯 ⬜'}</span>}
       <SelfRatingButtons value={take.selfRating} onChange={(rating) => setSelfRating(take.id, rating)} />
       <TakePlayer take={take} />
       {isLocal && <ShareOrDownload take={take} piece={piece} />}
@@ -136,6 +155,7 @@ export function PianoHome() {
   const piano = usePiano()
   const { kidName, pianoPieces, goalMinutes, recordingKeepDays } = progress.settings
   const [selectedPieceId, setSelectedPieceId] = useState<string | null>(() => readStoredPieceId())
+  const [metronomeOpen, setMetronomeOpen] = useState<boolean>(() => readMetronomeOpen())
 
   useEffect(() => {
     void pruneRecordings(recordingKeepDays)
@@ -171,9 +191,17 @@ export function PianoHome() {
   const supported = getAudioBackend().isSupported()
   const recoveredCount = useRecoveredTakeNotice()
 
+  const selectedPiece = pianoPieces.find((p) => p.id === selectedPieceId)
+
   function pickPiece(id: string | null) {
     setSelectedPieceId(id)
     storePieceId(id)
+  }
+
+  function toggleMetronomeOpen() {
+    const next = !metronomeOpen
+    setMetronomeOpen(next)
+    storeMetronomeOpen(next)
   }
 
   function handleRecord() {
@@ -237,6 +265,23 @@ export function PianoHome() {
             Ask a grown-up to add your pieces in Settings.
           </span>
         )}
+        {selectedPiece?.goal && (
+          <p style={{ margin: 0, fontWeight: 700, color: 'var(--cc-primary)' }}>🎯 This week: {selectedPiece.goal}</p>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <button
+          type="button"
+          className="cc-btn cc-btn-surface"
+          style={{ minHeight: 56, justifyContent: 'space-between', display: 'flex' }}
+          onClick={toggleMetronomeOpen}
+          aria-expanded={metronomeOpen}
+        >
+          <span>🎵 Metronome</span>
+          <span aria-hidden>{metronomeOpen ? '▲' : '▼'}</span>
+        </button>
+        {metronomeOpen && <Metronome pieceId={selectedPieceId} />}
       </div>
 
       {supported ? (
