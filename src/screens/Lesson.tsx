@@ -300,12 +300,12 @@ export function Lesson() {
 
   const mission = missionId ? missionById(lesson.id, missionId) : undefined
 
-  function handleMissionDone(result: { help: HelpKind; tries: number; warmup?: boolean }) {
+  function handleMissionDone(result: { help: HelpKind; tries: number; warmup?: boolean; neededHelp?: boolean }) {
     if (!mission) return
     const who = progressDoc.settings.kidName
 
     if (result.warmup) {
-      completeWarmup('kid', lesson!.id, mission.id)
+      completeWarmup('kid', lesson!.id, mission.id, result.neededHelp ? 'needed-help' : 'easy')
       fireConfetti('small')
       const plan = ensureTodaysPlan()
       if (plan.mission && !plan.mission.doneAt) {

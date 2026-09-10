@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   addMissionMinutes,
   bumpMissionTries,
+  bumpTrickReps,
   completeMission,
   completeWarmup,
   firstOpenMission,
@@ -11,10 +12,13 @@ import {
   masterHold,
   missionStars,
   missionsDoneCount,
+  scaffoldMode,
+  scheduleAfterWarmup,
   tierForHelp,
+  trickCompletions,
 } from '../missions'
-import { getDoc, resetAll, update, type HoldProgress } from '../progress'
-import { localDay } from '../sessions'
+import { getDoc, resetAll, update, type HoldProgress, type MissionProgress, type ProfileProgress } from '../progress'
+import { dayOffset, localDay } from '../sessions'
 
 // Same in-memory localStorage mock used by store/__tests__/progress.test.ts.
 class MemoryStorage implements Storage {
@@ -74,6 +78,32 @@ describe('completeMission', () => {
     expect(mission?.help).toBe('none')
     expect(mission?.tries).toBe(1)
     expect(mission?.completedAt).toBeGreaterThan(0)
+    expect(mission?.reviewStage).toBe(0)
+    expect(mission?.nextReviewDay).toBe(dayOffset(localDay(), 1))
+  })
+
+  it('a replay keeps the reviewStage/nextReviewDay wherever the last warm-up left them', () => {
+    completeMission('kid', 'daisy', 'D1', 'none', 1)
+    update('profiles', (profiles) => ({
+      ...profiles,
+      kid: {
+        ...profiles.kid,
+        holds: {
+          ...profiles.kid.holds,
+          daisy: {
+            ...profiles.kid.holds.daisy,
+            missions: {
+              ...profiles.kid.holds.daisy.missions,
+              D1: { ...profiles.kid.holds.daisy.missions!.D1, reviewStage: 2, nextReviewDay: '2099-01-01' },
+            },
+          },
+        },
+      },
+    }))
+    completeMission('kid', 'daisy', 'D1', 'none', 1)
+    const mission = kidHold('daisy')?.missions?.D1
+    expect(mission?.reviewStage).toBe(2)
+    expect(mission?.nextReviewDay).toBe('2099-01-01')
   })
 
   it('help=scan -> silver, help=walkthrough -> bronze on first completion', () => {
@@ -275,6 +305,94 @@ describe('missionStars', () => {
   it('a legacy hold mastered with no per-mission tier data reads as a clean gold', () => {
     const hold: HoldProgress = { stages: {}, missions: {}, masteredAt: 1 }
     expect(missionStars(hold, ids)).toBe(3)
+  })
+})
+
+describe('scheduleAfterWarmup', () => {
+  function progressAt(reviewStage?: number): MissionProgress {
+    return { tries: 1, help: 'none', minutes: 0, completedAt: 1, lastDoneDay: '2026-01-01', reviewStage }
+  }
+
+  it("'easy' advances the stage by one and schedules the next interval out", () => {
+    const next = scheduleAfterWarmup(progressAt(0), '2026-02-01', 'easy')
+    expect(next.reviewStage).toBe(1)
+    expect(next.nextReviewDay).toBe(dayOffset('2026-02-01', 3)) // REVIEW_INTERVALS_DAYS[1]
+    expect(next.lastDoneDay).toBe('2026-02-01')
+  })
+
+  it("'easy' caps the stage at the last interval (30 days) instead of running off the end", () => {
+    const next = scheduleAfterWarmup(progressAt(4), '2026-02-01', 'easy')
+    expect(next.reviewStage).toBe(4)
+    expect(next.nextReviewDay).toBe(dayOffset('2026-02-01', 30))
+  })
+
+  it("'easy' on a record with no reviewStage yet treats it as stage 0", () => {
+    const next = scheduleAfterWarmup(progressAt(undefined), '2026-02-01', 'easy')
+    expect(next.reviewStage).toBe(1)
+    expect(next.nextReviewDay).toBe(dayOffset('2026-02-01', 3))
+  })
+
+  it("'needed-help' leaves the stage unchanged and brings the next review back to tomorrow", () => {
+    const next = scheduleAfterWarmup(progressAt(3), '2026-02-01', 'needed-help')
+    expect(next.reviewStage).toBe(3)
+    expect(next.nextReviewDay).toBe(dayOffset('2026-02-01', 1))
+    expect(next.lastDoneDay).toBe('2026-02-01')
+  })
+})
+
+describe('completeWarmup outcome', () => {
+  it("'easy' (the default) advances the review stage via scheduleAfterWarmup", () => {
+    completeMission('kid', 'daisy', 'D1', 'none', 1) // reviewStage 0
+    completeWarmup('kid', 'daisy', 'D1')
+    const mission = kidHold('daisy')?.missions?.D1
+    expect(mission?.reviewStage).toBe(1)
+    expect(mission?.nextReviewDay).toBe(dayOffset(localDay(), 3))
+  })
+
+  it("'needed-help' keeps the stage and schedules tomorrow", () => {
+    completeMission('kid', 'daisy', 'D1', 'none', 1) // reviewStage 0
+    completeWarmup('kid', 'daisy', 'D1', 'needed-help')
+    const mission = kidHold('daisy')?.missions?.D1
+    expect(mission?.reviewStage).toBe(0)
+    expect(mission?.nextReviewDay).toBe(dayOffset(localDay(), 1))
+  })
+})
+
+describe('trickCompletions / bumpTrickReps', () => {
+  function emptyProfile(): ProfileProgress {
+    return { holds: {}, xp: 0, tokens: { gold: 0, silver: 0, bronze: 0 }, sessions: [], streak: { current: 0, best: 0, lastDay: '' } }
+  }
+
+  it('trickCompletions reads 0 for an untouched trick', () => {
+    expect(trickCompletions(emptyProfile(), 'elevator')).toBe(0)
+  })
+
+  it('bumpTrickReps increments and persists the counter for that trick only', () => {
+    expect(bumpTrickReps('kid', 'elevator')).toBe(1)
+    expect(bumpTrickReps('kid', 'elevator')).toBe(2)
+    expect(bumpTrickReps('kid', 'goRight')).toBe(1)
+
+    const profile = getDoc().profiles.kid
+    expect(trickCompletions(profile, 'elevator')).toBe(2)
+    expect(trickCompletions(profile, 'goRight')).toBe(1)
+  })
+})
+
+describe('scaffoldMode', () => {
+  it('0-2 reps: follow-along only', () => {
+    expect(scaffoldMode(0)).toBe('followAlongOnly')
+    expect(scaffoldMode(1)).toBe('followAlongOnly')
+    expect(scaffoldMode(2)).toBe('followAlongOnly')
+  })
+
+  it('3-4 reps: a choice, defaulting to follow-along', () => {
+    expect(scaffoldMode(3)).toBe('choiceFollowAlong')
+    expect(scaffoldMode(4)).toBe('choiceFollowAlong')
+  })
+
+  it('5+ reps: a choice, defaulting to from-memory', () => {
+    expect(scaffoldMode(5)).toBe('choiceMemory')
+    expect(scaffoldMode(9)).toBe('choiceMemory')
   })
 })
 

@@ -52,18 +52,84 @@ describe('computePlan', () => {
     expect(plan.allDone).toBe(false)
   })
 
-  it('warm-up is the mission with the latest lastDoneDay before today, across holds', () => {
+  it('warm-up is the completed mission with the earliest due nextReviewDay <= today, across holds', () => {
     const profile = emptyProfile()
     profile.holds.basecamp = hold({}, 1) // mastered - out of the way
     profile.holds.daisy = hold({
-      D1: { tries: 1, help: 'none', tier: 'gold', minutes: 0, completedAt: 1, lastDoneDay: '2026-01-05' },
-      D2: { tries: 1, help: 'none', tier: 'gold', minutes: 0, completedAt: 2, lastDoneDay: '2026-01-07' },
+      D1: {
+        tries: 1,
+        help: 'none',
+        tier: 'gold',
+        minutes: 0,
+        completedAt: 1,
+        lastDoneDay: '2026-01-05',
+        reviewStage: 0,
+        nextReviewDay: '2026-01-06', // most overdue - due first
+      },
+      D2: {
+        tries: 1,
+        help: 'none',
+        tier: 'gold',
+        minutes: 0,
+        completedAt: 2,
+        lastDoneDay: '2026-01-07',
+        reviewStage: 0,
+        nextReviewDay: '2026-01-08', // due today, but later than D1
+      },
     })
 
     const plan = computePlan(profile, LESSON_LIST, '2026-01-08')
     expect(plan.warmup?.holdId).toBe('daisy')
-    expect(plan.warmup?.missionId).toBe('D2') // the latest of the two, not D1
+    expect(plan.warmup?.missionId).toBe('D1') // the earliest due date, not the most recently done
     expect(plan.mission?.missionId).toBe('D3') // first still-open daisy mission
+  })
+
+  it('ties in due date break on the oldest lastDoneDay', () => {
+    const profile = emptyProfile()
+    profile.holds.daisy = hold({
+      D1: { tries: 1, help: 'none', tier: 'gold', minutes: 0, completedAt: 1, lastDoneDay: '2026-01-02', nextReviewDay: '2026-01-05' },
+      D2: { tries: 1, help: 'none', tier: 'gold', minutes: 0, completedAt: 2, lastDoneDay: '2026-01-04', nextReviewDay: '2026-01-05' },
+    })
+    const plan = computePlan(profile, LESSON_LIST, '2026-01-08')
+    expect(plan.warmup?.missionId).toBe('D1') // same due date, but D1's lastDoneDay is older
+  })
+
+  it('expanding review intervals move a mission out of the warm-up slot once it is no longer due', () => {
+    const profile = emptyProfile()
+    profile.holds.daisy = hold({
+      D1: {
+        tries: 1,
+        help: 'none',
+        tier: 'gold',
+        minutes: 0,
+        completedAt: 1,
+        lastDoneDay: '2026-01-01',
+        reviewStage: 3, // last warm-up pushed this out to the 14-day interval
+        nextReviewDay: '2026-01-15',
+      },
+    })
+    const plan = computePlan(profile, LESSON_LIST, '2026-01-08')
+    expect(plan.warmup).toBeUndefined() // 2026-01-15 is still in the future
+  })
+
+  it('no warm-up when nothing is due yet', () => {
+    const profile = emptyProfile()
+    profile.holds.daisy = hold({
+      D1: { tries: 1, help: 'none', tier: 'gold', minutes: 0, completedAt: 1, lastDoneDay: '2026-01-07', reviewStage: 0, nextReviewDay: '2026-01-10' },
+    })
+    const plan = computePlan(profile, LESSON_LIST, '2026-01-08')
+    expect(plan.warmup).toBeUndefined()
+  })
+
+  it('a legacy record with no nextReviewDay is treated as due the day after its lastDoneDay', () => {
+    const profile = emptyProfile()
+    profile.holds.daisy = hold({
+      D1: { tries: 1, help: 'none', tier: 'gold', minutes: 0, completedAt: 1, lastDoneDay: '2026-01-07' }, // no reviewStage/nextReviewDay at all
+    })
+    // Due the day right after lastDoneDay: not yet due on 01-07 itself...
+    expect(computePlan(profile, LESSON_LIST, '2026-01-07').warmup).toBeUndefined()
+    // ...but due from 01-08 onward.
+    expect(computePlan(profile, LESSON_LIST, '2026-01-08').warmup?.missionId).toBe('D1')
   })
 
   it("a mission completed earlier today never doubles as the warm-up (it's excluded because its lastDoneDay isn't before today, not because it happens to be today's new mission)", () => {

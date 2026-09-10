@@ -5,8 +5,8 @@
 // (`masterHold`, moved here from the old Watch/Try/Spot/Climb Lesson screen).
 
 import { useEffect } from 'react'
-import { update, type HelpKind, type HoldProgress, type MissionProgress } from './progress'
-import { localDay } from './sessions'
+import { update, type HelpKind, type HoldProgress, type MissionProgress, type ProfileProgress } from './progress'
+import { dayOffset, localDay } from './sessions'
 import { starsForTier, xpForTier, type Tier } from './rewards'
 
 type ProfileId = 'kid' | 'parent'
@@ -108,6 +108,10 @@ export function completeMission(
       help,
       minutes: prev?.minutes ?? 0,
       lastDoneDay: today,
+      // First completion starts the spaced-review clock; a replay leaves it
+      // exactly where completeWarmup last put it.
+      reviewStage: isFirst ? 0 : prev?.reviewStage,
+      nextReviewDay: isFirst ? dayOffset(today, 1) : prev?.nextReviewDay,
     }
 
     return {
@@ -151,20 +155,56 @@ export function markDailyMissionDone(profileId: ProfileId, holdId: string, missi
   })
 }
 
+/** Spaced-review intervals in days, by stage 0..4 (index = current stage after a successful warm-up). */
+export const REVIEW_INTERVALS_DAYS = [1, 3, 7, 14, 30]
+
+/**
+ * Pure: the mission record after one warm-up outcome. 'easy' advances the
+ * review stage (capped at the last interval) and pushes the next review out
+ * to `today + REVIEW_INTERVALS_DAYS[newStage]`; 'needed-help' leaves the
+ * stage alone and brings the next review back to tomorrow, so a shaky trick
+ * gets seen again sooner. A record with no `reviewStage` yet (e.g. a legacy
+ * save) is treated as stage 0, same as a mission's first completion.
+ */
+export function scheduleAfterWarmup(
+  progress: MissionProgress,
+  today: string,
+  outcome: 'easy' | 'needed-help',
+): MissionProgress {
+  if (outcome === 'needed-help') {
+    return { ...progress, lastDoneDay: today, nextReviewDay: dayOffset(today, 1) }
+  }
+  const stage = Math.min((progress.reviewStage ?? 0) + 1, REVIEW_INTERVALS_DAYS.length - 1)
+  return {
+    ...progress,
+    lastDoneDay: today,
+    reviewStage: stage,
+    nextReviewDay: dayOffset(today, REVIEW_INTERVALS_DAYS[stage]),
+  }
+}
+
 /**
  * Replays a mission she already knows, as today's one-minute warm-up: +5 XP
  * for the practice, no token (she already earned one the first time), and no
- * change to the mission's recorded tier - only `lastDoneDay` moves, which is
- * exactly what keeps it eligible as tomorrow's warm-up too. Stamps
+ * change to the mission's recorded tier. `outcome` drives the spaced-review
+ * schedule (see `scheduleAfterWarmup`) - 'easy' (the default, "Still got it
+ * ✅") pushes the next review further out, 'needed-help' ("🔁 Show me again",
+ * or any "Show me" in from-memory mode) brings it back to tomorrow. Stamps
  * `cubeDay.warmup.doneAt` when this is today's planned warm-up.
  */
-export function completeWarmup(profileId: ProfileId, holdId: string, missionId: string): void {
+export function completeWarmup(
+  profileId: ProfileId,
+  holdId: string,
+  missionId: string,
+  outcome: 'easy' | 'needed-help' = 'easy',
+): void {
   const today = localDay()
   update('profiles', (profiles) => {
     const profile = profiles[profileId]
     const hold = profile.holds[holdId] ?? emptyHold()
     const missions = hold.missions ?? {}
     const prev: MissionProgress = missions[missionId] ?? { tries: 0, help: 'none', minutes: 0 }
+    const nextMission = scheduleAfterWarmup(prev, today, outcome)
     const cubeDay = profile.cubeDay
     const plannedWarmup = cubeDay?.warmup
     const stampWarmup = Boolean(
@@ -177,13 +217,47 @@ export function completeWarmup(profileId: ProfileId, holdId: string, missionId: 
         ...profile,
         holds: {
           ...profile.holds,
-          [holdId]: { ...hold, missions: { ...missions, [missionId]: { ...prev, lastDoneDay: today } } },
+          [holdId]: { ...hold, missions: { ...missions, [missionId]: nextMission } },
         },
         xp: profile.xp + 5,
         cubeDay: stampWarmup ? { ...cubeDay!, warmup: { ...plannedWarmup!, doneAt: Date.now() } } : cubeDay,
       },
     }
   })
+}
+
+/** Number of prior completions of a named trick (`profile.trickReps[algId]`), from `MissionPlayer`'s follow-along finishes. */
+export function trickCompletions(profile: ProfileProgress, algId: string): number {
+  return profile.trickReps?.[algId] ?? 0
+}
+
+/** Bumps a named trick's completion counter by one (a follow-along finish, or "Did the whole trick" from memory). Returns the new count. */
+export function bumpTrickReps(profileId: ProfileId, algId: string): number {
+  let next = 0
+  update('profiles', (profiles) => {
+    const profile = profiles[profileId]
+    const trickReps = profile.trickReps ?? {}
+    next = (trickReps[algId] ?? 0) + 1
+    return {
+      ...profiles,
+      [profileId]: { ...profile, trickReps: { ...trickReps, [algId]: next } },
+    }
+  })
+  return next
+}
+
+/** How MissionPlayer offers the follow-along/from-memory choice for a named trick, by its rep count. */
+export type ScaffoldMode = 'followAlongOnly' | 'choiceFollowAlong' | 'choiceMemory'
+
+/**
+ * The fading-scaffolds rule: fewer than 3 reps, only follow-along is shown;
+ * 3-4 reps offers a choice, defaulting to follow-along; 5+ reps offers the
+ * same choice but now defaults to from-memory.
+ */
+export function scaffoldMode(reps: number): ScaffoldMode {
+  if (reps >= 5) return 'choiceMemory'
+  if (reps >= 3) return 'choiceFollowAlong'
+  return 'followAlongOnly'
 }
 
 /**

@@ -6,11 +6,12 @@ import { ScanHelp } from './ScanHelp'
 import { PracticePanel } from './PracticePanel'
 import { PickStep } from './PickStep'
 import { FollowAlong } from './FollowAlong'
+import { RecallPrompt } from './RecallPrompt'
 import { NAMED_ALGS } from '../engine/notation'
 import { parseAlg } from '../engine/cube'
 import type { HelpKind } from '../store/progress'
 import { useProgress } from '../store/progress'
-import { useMissionMinutesTracker } from '../store/missions'
+import { bumpTrickReps, scaffoldMode, trickCompletions, useMissionMinutesTracker } from '../store/missions'
 import type { Lesson, Mission } from '../content/lessons'
 import { expandSteps, type PickChoices } from '../content/missionSteps'
 
@@ -18,7 +19,7 @@ export interface MissionPlayerProps {
   lesson: Lesson
   mission: Mission
   tempoScale: number
-  onDone: (result: { help: HelpKind; tries: number; warmup?: boolean }) => void
+  onDone: (result: { help: HelpKind; tries: number; warmup?: boolean; neededHelp?: boolean }) => void
   onExit: () => void
   /** Skip Look, run the Do steps, then a light "still got it?" check instead of the full MissionCheck. */
   warmup?: boolean
@@ -41,6 +42,8 @@ interface SavedSpot {
   help: HelpKind
   tries: number
   pickChoices: PickChoices
+  /** Her remembered follow-along/from-memory preference for this mission, once she's picked one. */
+  scaffoldChoice?: 'memory' | 'followAlong'
 }
 
 function spotKey(holdId: string, missionId: string): string {
@@ -71,6 +74,7 @@ function readSpot(holdId: string, missionId: string): SavedSpot | null {
       help: parsed.help === 'scan' || parsed.help === 'walkthrough' ? parsed.help : 'none',
       tries: typeof parsed.tries === 'number' ? parsed.tries : 1,
       pickChoices: readPickChoices(parsed.pickChoices),
+      scaffoldChoice: parsed.scaffoldChoice === 'memory' || parsed.scaffoldChoice === 'followAlong' ? parsed.scaffoldChoice : undefined,
     }
   } catch {
     return null
@@ -130,6 +134,7 @@ function repeatCountOf(display: string, unit: string): number | undefined {
 export function MissionPlayer({ lesson, mission, tempoScale, onDone, onExit, warmup = false }: MissionPlayerProps) {
   const saved = readSpot(lesson.id, mission.id)
   const progressDoc = useProgress()
+  const profile = progressDoc.profiles.kid
   const showMoveLetters = Boolean(progressDoc.settings.showMoveLetters)
 
   const [phase, setPhase] = useState<Phase>(() => {
@@ -141,14 +146,35 @@ export function MissionPlayer({ lesson, mission, tempoScale, onDone, onExit, war
   const [stepIndex, setStepIndex] = useState(() => Math.min(saved?.stepIndex ?? 0, Math.max(0, expanded.length - 1)))
   const [help, setHelp] = useState<HelpKind>(saved?.help ?? 'none')
   const [tries, setTries] = useState(saved?.tries ?? 1)
+  // Whether she ever needed "Show me again" (warm-up check) or "Show me"
+  // (from-memory mode, warm-up only) this attempt - feeds the spaced-review
+  // schedule via completeWarmup's outcome.
+  const [neededHelp, setNeededHelp] = useState(false)
+  // Recall-before-show: has she answered this step's question yet? Resets per step.
+  const [recallRevealed, setRecallRevealed] = useState(false)
+  // Her remembered follow-along/from-memory choice for this mission (persisted).
+  const [scaffoldChoice, setScaffoldChoice] = useState<'memory' | 'followAlong' | null>(() => saved?.scaffoldChoice ?? null)
+  // A one-step-only override: "Show me" in from-memory mode drops back to follow-along just for this step.
+  const [stepShowMeOverride, setStepShowMeOverride] = useState(false)
+  const [trickDoneFlash, setTrickDoneFlash] = useState(false)
+  // Tracks the step this per-step UI state (above) belongs to, so a fresh
+  // step starts clean - adjusted during render (React's recommended pattern
+  // for "reset state when a value changes") rather than in an effect.
+  const [stepStateFor, setStepStateFor] = useState(stepIndex)
+  if (stepStateFor !== stepIndex) {
+    setStepStateFor(stepIndex)
+    setRecallRevealed(false)
+    setStepShowMeOverride(false)
+    setTrickDoneFlash(false)
+  }
 
   useMissionMinutesTracker('kid', lesson.id, mission.id)
 
   useEffect(() => {
-    writeSpot(lesson.id, mission.id, { phase, stepIndex, help, tries, pickChoices })
-  }, [lesson.id, mission.id, phase, stepIndex, help, tries, pickChoices])
+    writeSpot(lesson.id, mission.id, { phase, stepIndex, help, tries, pickChoices, scaffoldChoice: scaffoldChoice ?? undefined })
+  }, [lesson.id, mission.id, phase, stepIndex, help, tries, pickChoices, scaffoldChoice])
 
-  function finish(result: { help: HelpKind; tries: number; warmup?: boolean }) {
+  function finish(result: { help: HelpKind; tries: number; warmup?: boolean; neededHelp?: boolean }) {
     clearMissionSpot(lesson.id, mission.id)
     onDone(result)
   }
@@ -252,114 +278,215 @@ export function MissionPlayer({ lesson, mission, tempoScale, onDone, onExit, war
           {step.kind === 'do' &&
             (() => {
               const moves = moveCountOf(step.display)
-              const useFollowAlong = step.followAlong !== false && moves > 0 && moves <= MAX_FOLLOW_ALONG_MOVES
+              const followAlongEligible = step.followAlong !== false && moves > 0 && moves <= MAX_FOLLOW_ALONG_MOVES
+              const named = step.namedAlgId ? NAMED_ALGS.find((a) => a.id === step.namedAlgId) : undefined
+              const reps = named ? trickCompletions(profile, named.id) : 0
+              const showRecall = Boolean(named) && !recallRevealed && (warmup || reps >= 2)
+
+              const mode = scaffoldMode(reps)
+              const canOfferMemory = followAlongEligible && Boolean(named) && mode !== 'followAlongOnly'
+              const effectiveChoice: 'memory' | 'followAlong' = stepShowMeOverride
+                ? 'followAlong'
+                : scaffoldChoice ?? (mode === 'choiceMemory' ? 'memory' : 'followAlong')
+              const useMemoryMode = canOfferMemory && effectiveChoice === 'memory'
+              const useFollowAlong = followAlongEligible && !useMemoryMode
+
+              function bumpNamedReps() {
+                if (named) bumpTrickReps('kid', named.id)
+              }
+
               return (
                 <>
-                  {!useFollowAlong && step.display && (
-                    <div className="cc-card" style={{ height: 280, padding: '0.5rem' }}>
-                      <TwistyCube
-                        key={stepIndex}
-                        setupAlg={step.display.setupAlg}
-                        alg={step.display.alg}
-                        stickering={step.stickering as TwistyCubeProps['stickering']}
-                        backView={step.backView ? 'top-right' : 'none'}
-                        tempoScale={tempoScale}
-                        controls="bottom-row"
-                      />
-                    </div>
-                  )}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                     <h2 style={{ margin: 0, fontSize: '1.05rem' }}>{step.title}</h2>
                     <SayIt text={step.say} />
                   </div>
                   <p style={{ margin: 0, fontWeight: 600, lineHeight: 1.5 }}>{step.text}</p>
 
-                  {useFollowAlong && step.display && (
-                    <FollowAlong
-                      key={stepIndex}
-                      display={step.display}
-                      stickering={step.stickering}
-                      backView={step.backView}
-                      tempoScale={tempoScale}
-                      showLetters={showMoveLetters}
-                      onFinished={advanceStep}
-                    />
-                  )}
+                  {showRecall && named ? (
+                    <RecallPrompt named={named} onRevealed={() => setRecallRevealed(true)} />
+                  ) : (
+                    <>
+                      {canOfferMemory && (
+                        <div className="cc-card" style={{ padding: '0.6rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            className={effectiveChoice === 'memory' ? 'cc-btn cc-btn-primary' : 'cc-btn cc-btn-surface'}
+                            style={{ flex: 1, minWidth: 150, minHeight: 56 }}
+                            onClick={() => setScaffoldChoice('memory')}
+                          >
+                            🧠 Try it from memory
+                          </button>
+                          <button
+                            type="button"
+                            className={effectiveChoice === 'followAlong' ? 'cc-btn cc-btn-primary' : 'cc-btn cc-btn-surface'}
+                            style={{ flex: 1, minWidth: 150, minHeight: 56 }}
+                            onClick={() => setScaffoldChoice('followAlong')}
+                          >
+                            👀 Show me each move
+                          </button>
+                        </div>
+                      )}
 
-                  {step.namedAlgId &&
-                    (() => {
-                      const named = NAMED_ALGS.find((a) => a.id === step.namedAlgId)
-                      if (!named) return null
-                      return (
+                      {useMemoryMode && named && step.display ? (
                         <div
                           className="cc-card"
-                          style={{ padding: '0.75rem 1rem', background: 'var(--cc-bg)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}
+                          style={{
+                            padding: '1rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.75rem',
+                            alignItems: 'center',
+                            textAlign: 'center',
+                          }}
                         >
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center' }}>
-                            <strong>{named.kidName}</strong>
-                            {showMoveLetters &&
-                              named.alg.split(' ').map((m, i) => (
-                                <span
-                                  key={i}
-                                  style={{
-                                    fontFamily: 'ui-monospace, Consolas, monospace',
-                                    fontSize: '1.1rem',
-                                    fontWeight: 800,
-                                    padding: '0.25rem 0.55rem',
-                                    borderRadius: '0.6rem',
-                                    background: 'var(--cc-surface)',
-                                    border: '1px solid var(--cc-border)',
-                                  }}
-                                >
-                                  {m}
-                                </span>
-                              ))}
+                          <div style={{ width: '100%', height: 220 }}>
+                            <TwistyCube
+                              key={`memory-${stepIndex}`}
+                              setupAlg={step.display.setupAlg}
+                              alg=""
+                              stickering={step.stickering as TwistyCubeProps['stickering']}
+                              backView={step.backView ? 'top-right' : 'none'}
+                              controls="none"
+                            />
                           </div>
-                          {!useFollowAlong &&
-                            (() => {
-                              const times = repeatCountOf(step.display?.alg ?? '', named.alg)
-                              if (!times) return null
-                              return <p style={{ margin: 0, fontWeight: 700 }}>Do the trick {times} times</p>
-                            })()}
-                          {named.why && (
-                            <details>
-                              <summary
-                                style={{
-                                  cursor: 'pointer',
-                                  minHeight: 56,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  fontWeight: 700,
+                          <strong style={{ fontSize: '1.1rem' }}>{named.kidName}</strong>
+                          {trickDoneFlash ? (
+                            <p style={{ margin: 0, fontWeight: 800 }}>From memory! 🧠</p>
+                          ) : (
+                            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                              <button
+                                type="button"
+                                className="cc-btn cc-btn-primary"
+                                style={{ minHeight: 64, minWidth: 160 }}
+                                onClick={() => {
+                                  bumpNamedReps()
+                                  setTrickDoneFlash(true)
+                                  setTimeout(() => {
+                                    setTrickDoneFlash(false)
+                                    advanceStep()
+                                  }, 1000)
                                 }}
                               >
-                                🔍 Why does this work?
-                              </summary>
-                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', marginTop: '0.5rem' }}>
-                                <p style={{ margin: 0, fontWeight: 600, lineHeight: 1.5 }}>{named.why.text}</p>
-                                <SayIt text={named.why.say} />
-                              </div>
-                            </details>
-                          )
-                          }
+                                Did the whole trick ✅
+                              </button>
+                              <button
+                                type="button"
+                                className="cc-btn cc-btn-surface"
+                                style={{ minHeight: 64, minWidth: 160 }}
+                                onClick={() => {
+                                  if (warmup) setNeededHelp(true)
+                                  setStepShowMeOverride(true)
+                                }}
+                              >
+                                👀 Show me
+                              </button>
+                            </div>
+                          )}
                         </div>
-                      )
-                    })()}
+                      ) : (
+                        <>
+                          {!useFollowAlong && step.display && (
+                            <div className="cc-card" style={{ height: 280, padding: '0.5rem' }}>
+                              <TwistyCube
+                                key={stepIndex}
+                                setupAlg={step.display.setupAlg}
+                                alg={step.display.alg}
+                                stickering={step.stickering as TwistyCubeProps['stickering']}
+                                backView={step.backView ? 'top-right' : 'none'}
+                                tempoScale={tempoScale}
+                                controls="bottom-row"
+                              />
+                            </div>
+                          )}
 
-                  {step.checklist && step.checklist.length > 0 && (
-                    <div className="cc-card" style={{ padding: '0.9rem', background: 'var(--cc-bg)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      <strong>Do it on your cube</strong>
-                      {step.checklist.map((item, i) => (
-                        <p key={i} style={{ margin: 0, fontWeight: 700 }}>
-                          ⬜ {item}
-                        </p>
-                      ))}
-                    </div>
-                  )}
+                          {useFollowAlong && step.display && (
+                            <FollowAlong
+                              key={stepIndex}
+                              display={step.display}
+                              stickering={step.stickering}
+                              backView={step.backView}
+                              tempoScale={tempoScale}
+                              showLetters={showMoveLetters}
+                              onFinished={() => {
+                                bumpNamedReps()
+                                advanceStep()
+                              }}
+                            />
+                          )}
 
-                  {!useFollowAlong && (
-                    <button type="button" className="cc-btn cc-btn-primary" style={{ minHeight: 64 }} onClick={advanceStep}>
-                      {isLastStep ? 'Check it ▶' : 'Next ▶'}
-                    </button>
+                          {named && (
+                            <div
+                              className="cc-card"
+                              style={{ padding: '0.75rem 1rem', background: 'var(--cc-bg)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}
+                            >
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center' }}>
+                                <strong>{named.kidName}</strong>
+                                {showMoveLetters &&
+                                  named.alg.split(' ').map((m, i) => (
+                                    <span
+                                      key={i}
+                                      style={{
+                                        fontFamily: 'ui-monospace, Consolas, monospace',
+                                        fontSize: '1.1rem',
+                                        fontWeight: 800,
+                                        padding: '0.25rem 0.55rem',
+                                        borderRadius: '0.6rem',
+                                        background: 'var(--cc-surface)',
+                                        border: '1px solid var(--cc-border)',
+                                      }}
+                                    >
+                                      {m}
+                                    </span>
+                                  ))}
+                              </div>
+                              {!useFollowAlong &&
+                                (() => {
+                                  const times = repeatCountOf(step.display?.alg ?? '', named.alg)
+                                  if (!times) return null
+                                  return <p style={{ margin: 0, fontWeight: 700 }}>Do the trick {times} times</p>
+                                })()}
+                              {named.why && (
+                                <details>
+                                  <summary
+                                    style={{
+                                      cursor: 'pointer',
+                                      minHeight: 56,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      fontWeight: 700,
+                                    }}
+                                  >
+                                    🔍 Why does this work?
+                                  </summary>
+                                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                    <p style={{ margin: 0, fontWeight: 600, lineHeight: 1.5 }}>{named.why.text}</p>
+                                    <SayIt text={named.why.say} />
+                                  </div>
+                                </details>
+                              )}
+                            </div>
+                          )}
+
+                          {step.checklist && step.checklist.length > 0 && (
+                            <div className="cc-card" style={{ padding: '0.9rem', background: 'var(--cc-bg)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                              <strong>Do it on your cube</strong>
+                              {step.checklist.map((item, i) => (
+                                <p key={i} style={{ margin: 0, fontWeight: 700 }}>
+                                  ⬜ {item}
+                                </p>
+                              ))}
+                            </div>
+                          )}
+
+                          {!useFollowAlong && (
+                            <button type="button" className="cc-btn cc-btn-primary" style={{ minHeight: 64 }} onClick={advanceStep}>
+                              {isLastStep ? 'Check it ▶' : 'Next ▶'}
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </>
                   )}
                 </>
               )
@@ -376,7 +503,7 @@ export function MissionPlayer({ lesson, mission, tempoScale, onDone, onExit, war
                 type="button"
                 className="cc-btn cc-btn-primary"
                 style={{ flex: 1, minWidth: 160, minHeight: 64 }}
-                onClick={() => finish({ help: 'none', tries, warmup: true })}
+                onClick={() => finish({ help: 'none', tries, warmup: true, neededHelp })}
               >
                 ✅ Yes!
               </button>
@@ -384,7 +511,10 @@ export function MissionPlayer({ lesson, mission, tempoScale, onDone, onExit, war
                 type="button"
                 className="cc-btn cc-btn-surface"
                 style={{ flex: 1, minWidth: 160, minHeight: 64 }}
-                onClick={goToDo}
+                onClick={() => {
+                  setNeededHelp(true)
+                  goToDo()
+                }}
               >
                 🔁 Show me again
               </button>

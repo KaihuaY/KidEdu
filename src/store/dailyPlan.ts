@@ -7,8 +7,8 @@
 // `lastDoneDay` to today, which would otherwise make it stop qualifying as
 // "yesterday's mission" and silently swap the warm-up card out from under her.
 
-import { getDoc, update, type ProfileProgress } from './progress'
-import { localDay } from './sessions'
+import { getDoc, update, type MissionProgress, type ProfileProgress } from './progress'
+import { dayOffset, localDay } from './sessions'
 import { firstOpenMission, isMissionDone } from './missions'
 import { LESSON_LIST, missionById, nextHoldId, nextMissionId, type HoldId, type Lesson, type MissionCard } from '../content/lessons'
 
@@ -58,26 +58,45 @@ function findFirstOpenMission(profile: ProfileProgress, lessons: Lesson[]): Dail
 }
 
 /**
+ * A completed mission's spaced-review due date: its own `nextReviewDay` when
+ * set, otherwise (a legacy record from before spaced review existed) the day
+ * right after its `lastDoneDay` - so an old save is treated as due tomorrow,
+ * same as a fresh first completion. Undefined for a mission with neither
+ * (not actually completed, or completed but never locally dated).
+ */
+function dueDay(record: MissionProgress): string | undefined {
+  if (record.nextReviewDay) return record.nextReviewDay
+  if (record.lastDoneDay) return dayOffset(record.lastDoneDay, 1)
+  return undefined
+}
+
+/**
  * Pure: today's plan from scratch. `mission` is the first open mission;
- * `warmup` is whichever mission she most recently completed (any hold)
- * strictly before `today`, excluding today's new mission itself - undefined
- * on day one, or any day she has nothing yet to replay.
+ * `warmup` is the completed mission with the earliest spaced-review due date
+ * that is `<= today` (ties broken by the oldest `lastDoneDay`), excluding
+ * today's new mission and anything already done today - undefined on day
+ * one, or any day nothing is due yet.
  */
 export function computePlan(profile: ProfileProgress, lessons: Lesson[], today: string): DailyPlan {
   const mission = findFirstOpenMission(profile, lessons)
 
   let warmup: DailyPlanEntry | undefined
+  let warmupDue = ''
   let warmupLastDoneDay = ''
   for (const lesson of lessons) {
     const hold = profile.holds[lesson.id]
     if (!hold?.missions) continue
     for (const missionDef of lesson.missions) {
       const record = hold.missions[missionDef.id]
-      const lastDoneDay = record?.lastDoneDay
-      if (!lastDoneDay || lastDoneDay >= today) continue
+      if (!record?.completedAt) continue
+      const lastDoneDay = record.lastDoneDay ?? ''
+      if (lastDoneDay && lastDoneDay >= today) continue // already done today
       if (mission && lesson.id === mission.holdId && missionDef.id === mission.missionId) continue
-      if (!warmup || lastDoneDay > warmupLastDoneDay) {
+      const due = dueDay(record)
+      if (!due || due > today) continue // not due yet
+      if (!warmup || due < warmupDue || (due === warmupDue && lastDoneDay < warmupLastDoneDay)) {
         warmup = { holdId: lesson.id, missionId: missionDef.id, title: missionDef.title }
+        warmupDue = due
         warmupLastDoneDay = lastDoneDay
       }
     }

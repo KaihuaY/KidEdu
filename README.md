@@ -137,6 +137,31 @@ into "That's today's climb, {name}! 🎉 Come back tomorrow." - with a smaller
 (`cubeStatusText`), and every mission celebration offers **📤 Show someone**
 to share (or copy) a one-line brag about what she just finished.
 
+### How the app remembers
+
+The warm-up isn't just "yesterday's mission" - it's a spaced-review queue
+(`src/store/missions.ts`, `src/store/dailyPlan.ts`). Every mission she's
+completed carries a review stage (0-4) and a due date; tapping through a
+warm-up cleanly ("Still got it? ✅") pushes that mission's next review out
+along 1 → 3 → 7 → 14 → 30 days, while needing "🔁 Show me again" (or any
+"👀 Show me" in from-memory mode below) brings it straight back to tomorrow
+instead. Each day the Wall offers whichever completed mission is due
+earliest - so a trick she nailed weeks ago quietly stops showing up, and one
+she fumbled reappears fast.
+
+Before a familiar named trick's animation plays again - once she's done it
+at least twice, always during a warm-up - she gets a quick **recall
+question** first ("Which move comes first in The Elevator 🛗?", two big
+buttons, no picture) so she has to retrieve it from memory before seeing it
+shown. Either answer is fine; it always reveals the animation right after.
+
+Follow-along practice fades the same way: after 3 reps of a named trick she
+gets a choice above the move strip, **🧠 Try it from memory** vs. **👀 Show
+me each move** (still defaulting to step-by-step); past 5 reps the default
+flips to from-memory - a paused cube, the trick's name, and "Did the whole
+trick ✅" (or "👀 Show me" to drop back to follow-along just for that step).
+Her choice is remembered per mission.
+
 ### Free "get ready" help vs. mission help
 
 Tapping **✅ Yes, I did it!** with no help at all earns the best medal. If
