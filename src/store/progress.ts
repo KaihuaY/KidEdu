@@ -23,7 +23,14 @@ export interface PianoPiece {
   id: string
   name: string
   emoji: string
+  /** This week's tiny goal for the piece, written by the grown-up ("Bars 1-8 three times without stopping"). */
+  goal?: string
+  /** Local YYYY-MM-DD the goal was set. */
+  goalSetOn?: string
 }
+
+/** What counts toward the daily piano goal: the whole recording (default) or only seconds where playing was heard. */
+export type PianoCountMode = 'recording' | 'heard'
 
 export interface Settings {
   kidName: string
@@ -37,6 +44,8 @@ export interface Settings {
   recordingKeepDays: number
   /** Show raw notation letters (R, U, F...) in the cube missions. Default off - Nora reads the kid-friendly names first. */
   showMoveLetters?: boolean
+  /** Default 'recording': the goal ring counts the whole recording, not just "heard" seconds. */
+  pianoCountMode?: PianoCountMode
   /** Parent-entered once, synced via the private gist. Undefined = uploads off. */
   driveUpload?: { scriptUrl: string; secret: string; folderName: string }
   prizePools: {
@@ -72,6 +81,10 @@ export interface MissionProgress {
   minutes: number
   /** Local YYYY-MM-DD of the most recent completion, replays included (drives the daily warm-up). */
   lastDoneDay?: string
+  /** Spaced-review stage 0..4: the next warm-up of this mission is due after 1, 3, 7, 14, 30 days. */
+  reviewStage?: number
+  /** Local YYYY-MM-DD when this mission is next due as a warm-up. */
+  nextReviewDay?: string
 }
 
 /** Today's cube plan, fixed once per local day so it doesn't shift under her mid-session. */
@@ -107,6 +120,8 @@ export interface ProfileProgress {
   sessions: Session[]
   streak: Streak
   cubeDay?: CubeDay
+  /** How many times each named trick (by alg id) was completed move-by-move; drives the fading scaffolds. */
+  trickReps?: Record<string, number>
 }
 
 export interface Profiles {
@@ -203,6 +218,14 @@ export interface PianoTake {
   durationSec: number
   activeSec: number
   selfRating?: SelfRating
+  /** 160 peak-amplitude buckets 0-100, computed from the audio on save; drawn under the player. */
+  waveform?: number[]
+  /** Note-onset times in ms from the start of the take (capped), for the steady-beat readout. */
+  onsets?: number[]
+  /** 0-1 steadiness of the beat from `onsets`; undefined when too few onsets. */
+  steadiness?: number
+  /** Did she say she met the piece's goal for this take? */
+  goalHit?: boolean
   mimeType: string
   sizeBytes: number
   hasAudio: boolean
@@ -306,6 +329,7 @@ export function defaultDoc(): ProgressDoc {
       pianoPieces: [],
       recordingKeepDays: 14,
       showMoveLetters: false,
+      pianoCountMode: 'recording',
       prizePools: {
         gold: [
           goldCashPrize(),
