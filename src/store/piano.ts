@@ -7,7 +7,7 @@
 import { getDoc, useProgress, update, type ParentStars, type PianoSection, type PianoTake, type SelfRating } from './progress'
 import { bumpStreak, dayOffset } from './sessions'
 import { xpForTier, type Tier } from './rewards'
-import { activeSecondsForDay, goalReached, PIANO_GOAL_TIER, tokenForParentStars } from './pianoRewards'
+import { goalReached, PIANO_GOAL_TIER, practiceSecondsForDay, tokenForParentStars } from './pianoRewards'
 import { getRecordingStore } from './recordings'
 
 const DEVICE_ID_KEY = 'cubeclimb.deviceId'
@@ -74,6 +74,14 @@ export function setSelfRating(takeId: string, rating: SelfRating): void {
   }))
 }
 
+/** Writes a lazily-computed waveform back onto a saved take (see TakePlayer's one-time compute for old takes). */
+export function setTakeWaveform(takeId: string, waveform: number[]): void {
+  update('piano', (piano) => ({
+    ...piano,
+    takes: piano.takes.map((t) => (t.id === takeId ? { ...t, waveform } : t)),
+  }))
+}
+
 /** Marks the given takes' audio as pruned from local storage (called after RecordingStore.pruneOlderThan). */
 export function markAudioPruned(takeIds: string[], at: number = Date.now()): void {
   if (takeIds.length === 0) return
@@ -95,7 +103,8 @@ export function awardGoalIfReached(day: string, goalMinutes: number): boolean {
   // would needlessly out-rank another device's edits during a sync merge.
   const current = getDoc().piano
   if (current.days[day]?.goalReachedAt) return false
-  if (!goalReached(activeSecondsForDay(current.takes, day), goalMinutes)) return false
+  const mode = getDoc().settings.pianoCountMode ?? 'recording'
+  if (!goalReached(practiceSecondsForDay(current.takes, day, mode), goalMinutes)) return false
 
   update('piano', (piano) => ({
     ...piano,

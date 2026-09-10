@@ -47,7 +47,7 @@ function drawRoundedTopRect(ctx: CanvasRenderingContext2D, x: number, y: number,
   ctx.closePath()
 }
 
-export function Aurora() {
+export function Aurora({ source, height = 170 }: { source?: () => Float32Array | null; height?: number } = {}) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const barsRef = useRef<Float32Array>(new Float32Array(BAND_COUNT))
@@ -76,7 +76,7 @@ export function Aurora() {
     const reducedMotion = prefersReducedMotion()
     lastLoudAtRef.current = performance.now()
 
-    const unsubscribe = subscribeSpectrum((bands) => {
+    function processBands(bands: Float32Array): void {
       latestBandsRef.current = bands
 
       let energy = 0
@@ -103,7 +103,13 @@ export function Aurora() {
           }
         }
       }
-    })
+    }
+
+    // When a `source` is given (replay: read the analyser each frame),
+    // there's nothing to subscribe to - the rAF loop below pulls bands
+    // itself instead. Otherwise, subscribe to the live mic spectrum as
+    // before.
+    const unsubscribe = source ? undefined : subscribeSpectrum((bands) => processBands(bands))
 
     let raf = 0
     let running = true
@@ -131,6 +137,10 @@ export function Aurora() {
 
     function draw(): void {
       if (!running) return
+      if (source) {
+        const bands = source()
+        if (bands) processBands(bands)
+      }
       const canvas = canvasRef.current
       const ctx = canvas?.getContext('2d')
       if (canvas && ctx) {
@@ -190,12 +200,12 @@ export function Aurora() {
       window.cancelAnimationFrame(raf)
       if (ro) ro.disconnect()
       else window.removeEventListener('resize', resizeCanvas)
-      unsubscribe()
+      unsubscribe?.()
     }
-  }, [addBubble])
+  }, [addBubble, source])
 
   return (
-    <div ref={containerRef} aria-hidden style={{ position: 'relative', width: '100%', height: 170 }}>
+    <div ref={containerRef} aria-hidden style={{ position: 'relative', width: '100%', height }}>
       <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: '100%' }} />
       {bubbles.map((b) => (
         <span

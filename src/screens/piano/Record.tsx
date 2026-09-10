@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { navigate } from '../../router'
 import { useProgress } from '../../store/progress'
 import { setSelfRating, usePiano } from '../../store/piano'
-import { activeSecondsForDay, goalProgress } from '../../store/pianoRewards'
+import { goalProgress, practiceSecondsForDay, steadyBeatDots } from '../../store/pianoRewards'
 import { formatClock, localDay } from '../../store/sessions'
 import { dismiss, stopTake, useRecordingSession } from '../../audio/recordingSession'
 import { RingTimer } from '../../components/RingTimer'
@@ -31,10 +31,14 @@ export function Record() {
   const piano = usePiano()
   const kidName = progress.settings.kidName
   const goalMin = progress.settings.goalMinutes.piano
+  const countMode = progress.settings.pianoCountMode ?? 'recording'
 
-  // The take in progress isn't saved to the doc yet, so "today's active
-  // seconds so far" only ever reflects takes already saved.
-  const todayActiveBeforeThisTake = useMemo(() => activeSecondsForDay(piano.takes, localDay()), [piano.takes])
+  // The take in progress isn't saved to the doc yet, so "today's seconds so
+  // far" only ever reflects takes already saved.
+  const todayBeforeThisTake = useMemo(
+    () => practiceSecondsForDay(piano.takes, localDay(), countMode),
+    [piano.takes, countMode],
+  )
 
   if (session.status === 'idle') {
     return (
@@ -56,8 +60,8 @@ export function Record() {
   }
 
   if (session.status === 'recording') {
-    const totalActive = todayActiveBeforeThisTake + session.activeSec
-    const progressRatio = goalProgress(totalActive, goalMin)
+    const totalCounted = todayBeforeThisTake + (countMode === 'heard' ? session.activeSec : session.wallSec)
+    const progressRatio = goalProgress(totalCounted, goalMin)
     const chip = session.hearing
       ? { text: '🎵 I hear you!', color: 'var(--cc-success)' }
       : session.silentSec >= QUIET_HINT_SEC
@@ -76,7 +80,7 @@ export function Record() {
           padding: '1.5rem',
         }}
       >
-        <RingTimer size={180} progress={progressRatio} label={formatClock(totalActive)} sublabel={`of ${goalMin} min`} />
+        <RingTimer size={180} progress={progressRatio} label={formatClock(Math.round(totalCounted))} sublabel={`of ${goalMin} min`} />
         <Aurora />
         <span style={{ fontWeight: 800, color: chip.color }}>{chip.text}</span>
         <span style={{ color: 'var(--cc-ink-soft)', fontSize: '0.85rem' }}>
@@ -119,13 +123,25 @@ export function Record() {
       )
     }
 
-    const take = session.take
-    const liveSelfRating = piano.takes.find((t) => t.id === take.id)?.selfRating ?? take.selfRating
+    // session.take is a snapshot from the moment recording stopped, before
+    // the waveform (computed async) is written back onto the saved take
+    // (see recordingSession.ts) - read the live copy from the store so the
+    // player picks it up as soon as it's ready.
+    const take = piano.takes.find((t) => t.id === session.take.id) ?? session.take
+    const liveSelfRating = take.selfRating
 
     return (
       <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center' }}>
         <p style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>Nice playing, {kidName}! 🎶</p>
-        <p style={{ margin: 0 }}>You played for {formatClock(take.activeSec)}</p>
+        <p style={{ margin: 0, fontWeight: 700 }}>You practised for {formatClock(take.durationSec)}</p>
+        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+          I heard you playing for {formatClock(take.activeSec)}
+        </p>
+        {steadyBeatDots(take.steadiness) && (
+          <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--cc-ink-soft)' }}>
+            Steady beat: <span style={{ letterSpacing: '0.15em', color: 'var(--cc-primary)' }}>{steadyBeatDots(take.steadiness)}</span>
+          </p>
+        )}
         {session.goalJustReached && (
           <>
             <p style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>You filled the ring! 🟤 +1 token</p>

@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { navigate } from '../router'
 import { useProgress } from '../store/progress'
 import { localDay } from '../store/sessions'
-import { activeSecondsForDay, goalProgress } from '../store/pianoRewards'
+import { goalProgress, practiceSecondsForDay } from '../store/pianoRewards'
 import { cubeStatusText, ensureTodaysPlan, readTodaysPlan, tomorrowsMission } from '../store/dailyPlan'
 import { LESSON_LIST } from '../content/lessons'
 import { SayIt } from '../components/SayIt'
@@ -28,13 +28,14 @@ export function Home() {
     ? `Done today ✅ · Tomorrow: ${tomorrow.title}`
     : cubeStatusText(cubePlan, kidName)
   const pianoGoal = progress.settings.goalMinutes.piano
-  const pianoActiveSec = activeSecondsForDay(progress.piano.takes, today)
+  const pianoCountMode = progress.settings.pianoCountMode ?? 'recording'
+  const pianoCountedSec = practiceSecondsForDay(progress.piano.takes, today, pianoCountMode)
   const pianoDoneToday = Boolean(progress.piano.days[today]?.goalReachedAt)
-  const pianoProgress = pianoDoneToday ? 1 : goalProgress(pianoActiveSec, pianoGoal)
-  const pianoMinutesLeft = Math.max(1, Math.ceil(pianoGoal - pianoActiveSec / 60))
+  const pianoProgress = pianoDoneToday ? 1 : goalProgress(pianoCountedSec, pianoGoal)
+  const pianoMinutesLeft = Math.max(1, Math.ceil(pianoGoal - pianoCountedSec / 60))
   const pianoStatus = pianoDoneToday
     ? 'Done today ✅'
-    : pianoActiveSec > 0
+    : pianoCountedSec > 0
       ? `▶ ${pianoMinutesLeft} more min`
       : `▶ ${pianoGoal} min`
 

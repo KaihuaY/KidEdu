@@ -7,9 +7,12 @@ import { useSyncExternalStore } from 'react'
 import { ActivityMeter } from './activityMeter'
 import { BrowserAudioBackend } from './browserBackend'
 import { FakeAudioBackend, FAKE_PIANO_SCRIPT } from './fakeBackend'
+import { OnsetDetector } from './spectrum'
+import { steadinessScore } from './steadiness'
+import { computeWaveform } from './waveform'
 import { MicStartError, type AudioBackend, type MicError, type MicSession, type RecordingResult } from './types'
 import { acquireWakeLock, type WakeLockHandle } from './wakeLock'
-import { getDeviceId, awardGoalIfReached, saveTake } from '../store/piano'
+import { getDeviceId, awardGoalIfReached, saveTake, setTakeWaveform } from '../store/piano'
 import { getDoc, type PianoTake } from '../store/progress'
 import { getRecordingStore, requestPersistentStorage } from '../store/recordings'
 import { isDriveConfigured, processUploadQueue } from '../store/driveUpload'
@@ -170,6 +173,20 @@ let hiddenListenersAttached = false
 let currentIsNote = false
 let autoStopTimer: ReturnType<typeof setTimeout> | null = null
 
+// --- Onset tracking for the steady-beat readout ----------------------------
+//
+// Runs alongside the level meter for the lifetime of a take: an OnsetDetector
+// fed the mean band energy from the session's own onSpectrum (when the
+// backend provides one - see MicSession's doc comment), throttled to at
+// least 150ms apart (a real note attack never repeats faster than that; a
+// closer "onset" is the same attack re-triggering) and capped at 2000
+// entries so a very long take's take.onsets never grows unbounded.
+const MAX_ONSETS = 2000
+const MIN_ONSET_GAP_MS = 150
+let currentOnsetDetector: OnsetDetector | null = null
+let currentOnsets: number[] = []
+let lastOnsetAtMs = -Infinity
+
 function clearAutoStopTimer(): void {
   if (autoStopTimer) {
     clearTimeout(autoStopTimer)
@@ -225,6 +242,9 @@ function resetTrackingState(): void {
   unsubscribeLevel = null
   unsubscribeChunk = null
   unsubscribeSpectrum = null
+  currentOnsetDetector = null
+  currentOnsets = []
+  lastOnsetAtMs = -Infinity
   if (currentWakeLock) {
     currentWakeLock.release()
     currentWakeLock = null
@@ -301,9 +321,23 @@ export async function startTake(pieceId: string | null, opts?: { isNote?: boolea
       })
     }
 
+    currentOnsetDetector = new OnsetDetector()
+    currentOnsets = []
+    lastOnsetAtMs = -Infinity
+
     if (session.onSpectrum) {
       unsubscribeSpectrum = session.onSpectrum((bands, t) => {
         for (const listener of spectrumListeners) listener(bands, t)
+
+        if (!currentOnsetDetector || currentOnsets.length >= MAX_ONSETS) return
+        let energy = 0
+        for (let i = 0; i < bands.length; i++) energy += bands[i]
+        energy /= bands.length || 1
+        if (!currentOnsetDetector.push(energy)) return
+        const sinceStartMs = Date.now() - currentStartedAt
+        if (sinceStartMs - lastOnsetAtMs < MIN_ONSET_GAP_MS) return
+        lastOnsetAtMs = sinceStartMs
+        currentOnsets.push(sinceStartMs)
       })
     }
 
@@ -360,6 +394,7 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
   const meter = currentMeter
   const takeId = currentTakeId
   const isNote = currentIsNote
+  const onsets = currentOnsets
   currentIsNote = false
   clearAutoStopTimer()
 
@@ -395,6 +430,7 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
   const durationSec = Math.max(0, Math.round(result.durationMs / 1000))
   const day = localDay()
   const settings = getDoc().settings
+  const steadiness = steadinessScore(onsets)
 
   const take: PianoTake = {
     id: takeId ?? randomId(),
@@ -404,6 +440,8 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
     startedAt,
     durationSec,
     activeSec,
+    ...(onsets.length > 0 ? { onsets } : {}),
+    ...(steadiness !== undefined ? { steadiness } : {}),
     mimeType: result.mimeType,
     sizeBytes: result.blob?.size ?? 0,
     hasAudio: Boolean(result.blob && result.blob.size > 0),
@@ -411,7 +449,7 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
     upload: isDriveConfigured(settings) ? { status: 'pending', attempts: 0, updatedAt: Date.now() } : undefined,
   }
 
-  const discarded = durationSec < MIN_KEPT_DURATION_SEC && activeSec === 0
+  const discarded = durationSec < MIN_KEPT_DURATION_SEC
   let goalJustReached = false
 
   if (!discarded) {
@@ -427,6 +465,16 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
     if (goalJustReached) fireConfetti('big')
     // Kick the Drive upload right away; the worker also retries later.
     if (take.upload) void processUploadQueue()
+
+    // Fire-and-forget: the waveform is a nice-to-have for the player, never
+    // worth making Nora wait on the done screen for a decode that can be
+    // slow (or fail outright) on some recordings.
+    if (result.blob && take.hasAudio) {
+      const blobForWaveform = result.blob
+      void computeWaveform(blobForWaveform).then((waveform) => {
+        if (waveform) setTakeWaveform(take.id, waveform)
+      })
+    }
   }
 
   // The take is finalized one way or another now (saved, or deliberately

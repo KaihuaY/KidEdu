@@ -229,25 +229,42 @@ Piano practice lives at the 🎹 Piano tab. It's built for acoustic piano at
 an iPad propped on the music stand, microphone only - no MIDI, no teaching.
 
 - **Record.** From Piano home, Nora picks a piece (or "🎵 Free play") and
-  taps one big 🎙️ button to start. A ring fills only while the app hears
-  real playing, not just wall-clock time - "silence doesn't count" is shown,
-  not explained. If it goes quiet for 20 seconds she gets a gentle "I can't
-  hear the piano" nudge, never a buzzer. One giant ⏹ Stop ends the take;
-  closing the tab or backgrounding Safari mid-take also stops it cleanly and
-  keeps whatever was captured.
+  taps one big 🎙️ button to start. By default the ring fills with the whole
+  recording (wall-clock time) so a normal take always counts; a gentle chip
+  still says "🎵 I hear you!" / "👂 Listening…" and, after 20 quiet seconds,
+  "🤫 I can't hear the piano. Play something!" as encouragement, never a
+  penalty. **Settings → Daily goals → Piano goal counts** can switch this to
+  🎙️ the whole recording vs. 👂 only when playing is heard, for a family that
+  wants the stricter rule. One giant ⏹ Stop ends the take; closing the tab
+  or backgrounding Safari mid-take also stops it cleanly and keeps whatever
+  was captured, and only a take under 3 seconds is thrown away as too short
+  to be worth keeping.
+- **Replay.** Every take gets a coloured waveform strip (peak loudness per
+  slice, quiet blue → loud pink) instead of a plain seek bar - tap or drag
+  anywhere on it to jump around, or use the arrow keys. While a take
+  recorded on this device is playing, the same "aurora" visualizer from the
+  Record screen dances live above the waveform, reading the actual audio
+  through a Web Audio analyser (skipped for a Google Drive copy, which is
+  cross-origin). The done screen also shows "Steady beat" as 1-5 dots -
+  how evenly spaced her note attacks were, detected from the recording and
+  hidden whenever there isn't enough playing to judge it fairly - and the
+  same dots show up on each take card and in Grown-up review.
 - **Rating, three layers.**
-  1. **Active minutes** are measured automatically from microphone level -
-     only real playing counts toward the daily goal, not idle time with the
-     recorder running.
+  1. **Practice seconds** count toward the daily goal per the counting-mode
+     setting above (recording time by default, mic-active "heard" time as
+     the stricter option); active minutes are always measured automatically
+     from microphone level and always shown to the parent on the review
+     screen either way, even when the goal itself counts the whole
+     recording.
   2. **Nora self-rates** each take right after recording it (😕 🙂 🤩) - purely
      for her own reflection, it never affects tokens.
   3. **The parent listens later** (on any device, behind the grown-up PIN,
      under "👀 Grown-up review") and gives 1-3 stars. Two stars awards a
      silver token, three stars gold, mirroring the cube's reward economy;
      one rating per day.
-- **Tokens.** Reaching the daily active-minutes goal awards a bronze token
-  once per day and bumps Nora's piano streak, same shape as the cube's
-  streak. All tokens land in the same shared economy spent on blind boxes.
+- **Tokens.** Reaching the daily piano goal awards a bronze token once per
+  day and bumps Nora's piano streak, same shape as the cube's streak. All
+  tokens land in the same shared economy spent on blind boxes.
 - **Microphone permission on iPad.** Safari only grants microphone access on
   a secure origin (see `npm run dev:https` above) or the deployed HTTPS
   site. The first time Record is tapped, Safari asks to allow the

@@ -499,6 +499,34 @@ export function Settings() {
             ))}
           </div>
         </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <span style={{ fontWeight: 700, color: 'var(--cc-ink-soft)' }}>Piano goal counts</span>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {(
+              [
+                { mode: 'recording' as const, label: '🎙️ the whole recording' },
+                { mode: 'heard' as const, label: '👂 only when playing is heard' },
+              ]
+            ).map(({ mode, label }) => (
+              <button
+                key={mode}
+                type="button"
+                className="cc-btn"
+                style={{
+                  flex: 1,
+                  minHeight: 56,
+                  background: (settings.pianoCountMode ?? 'recording') === mode ? 'var(--cc-primary)' : 'var(--cc-surface)',
+                  color: (settings.pianoCountMode ?? 'recording') === mode ? '#fff' : 'var(--cc-ink)',
+                  border: (settings.pianoCountMode ?? 'recording') === mode ? 'none' : '2px solid var(--cc-border)',
+                  boxShadow: 'none',
+                }}
+                onClick={() => update('settings', (s) => ({ ...s, pianoCountMode: mode }))}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       </section>
 
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>

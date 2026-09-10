@@ -60,6 +60,18 @@ const LOUD_SCRIPT: FakeScript = [
 
 const SILENT_SCRIPT: FakeScript = [{ rms: 0.004, ms: 3000 }]
 
+// Alternating short loud/quiet segments, tuned to rack up several onsets
+// (one per loud-segment start - see fakeBands in fakeBackend.ts) within a
+// short test wait: the OnsetDetector's envelope needs several ticks of
+// quiet to decay back down before the next loud segment can register as a
+// fresh onset (its 0.92-per-tick decay is a function of tick *count*, not
+// wall time - hence the small tickMs below packing in enough ticks per
+// quiet segment without a long real-time wait).
+const REPEAT_SCRIPT: FakeScript = Array.from({ length: 10 }, () => [
+  { rms: 0.3, ms: 100 },
+  { rms: 0.02, ms: 300 },
+]).flat()
+
 beforeEach(() => {
   Object.defineProperty(globalThis, 'localStorage', {
     value: new MemoryStorage(),
@@ -94,7 +106,7 @@ describe('recordingSession', () => {
     setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
     await startTake('piece-1')
 
-    await wait(2400)
+    await wait(3200) // past the 3s wall-time floor, not just the activity meter's warm-up
 
     const beforeCount = getDoc().piano.takes.length
     await stopTake('user')
@@ -110,11 +122,46 @@ describe('recordingSession', () => {
     expect(getDoc().piano.takes.length).toBe(beforeCount + 1)
   }, 8000)
 
+  it('records onset timestamps from the spectrum and a steadiness score on a fairly regular take', async () => {
+    setAudioBackend(new FakeAudioBackend(REPEAT_SCRIPT, { tickMs: 20 }))
+    await startTake('piece-1')
+
+    await wait(4200)
+
+    await stopTake('user')
+
+    const state = getSessionState()
+    expect(state.status).toBe('done')
+    if (state.status === 'done') {
+      expect(state.discarded).toBe(false)
+      expect(state.take.onsets).toBeDefined()
+      expect((state.take.onsets ?? []).length).toBeGreaterThanOrEqual(8)
+      expect(state.take.steadiness).toBeGreaterThan(0)
+    }
+  }, 10000)
+
   it('discards a very short, silent take without saving it', async () => {
     setAudioBackend(new FakeAudioBackend(SILENT_SCRIPT, { tickMs: 100 }))
     await startTake(null)
 
     await wait(1200)
+
+    const beforeCount = getDoc().piano.takes.length
+    await stopTake('user')
+
+    const state = getSessionState()
+    expect(state.status).toBe('done')
+    if (state.status === 'done') {
+      expect(state.discarded).toBe(true)
+    }
+    expect(getDoc().piano.takes.length).toBe(beforeCount)
+  }, 8000)
+
+  it('discards a very short take even when loud playing was heard - only wall time under 3s counts now', async () => {
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    await startTake(null)
+
+    await wait(1200) // loud almost the whole time, but well under the 3s wall-time floor
 
     const beforeCount = getDoc().piano.takes.length
     await stopTake('user')
@@ -163,13 +210,12 @@ describe('startTake opts - grown-up voice notes', () => {
     setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
     const beforeCount = getDoc().piano.takes.length
 
-    // maxSeconds is comfortably past the meter's 1s warm-up so the take
-    // isn't discarded as too-short-and-silent (LOUD_SCRIPT is quiet for its
-    // first 200ms).
-    await startTake('note', { isNote: true, maxSeconds: 2 })
+    // maxSeconds is past the 3s wall-time floor so the take isn't discarded
+    // as too short.
+    await startTake('note', { isNote: true, maxSeconds: 3 })
     expect(getSessionState().status).toBe('recording')
 
-    await wait(2400) // past the 2s auto-stop
+    await wait(3400) // past the 3s auto-stop
 
     const state = getSessionState()
     expect(state.status).toBe('done')

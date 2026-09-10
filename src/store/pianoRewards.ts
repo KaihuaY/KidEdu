@@ -2,7 +2,7 @@
 // store's `update()` so they're trivial to unit test and so
 // src/store/piano.ts and every piano screen can share the exact same rules.
 
-import type { ParentStars, PianoSection, PianoTake } from './progress'
+import type { ParentStars, PianoCountMode, PianoSection, PianoTake } from './progress'
 import type { Tier } from './rewards'
 import { dayOffset } from './sessions'
 
@@ -21,9 +21,25 @@ export function takesForDay(takes: PianoTake[], day: string): PianoTake[] {
   return takes.filter((t) => t.day === day && !t.isNote)
 }
 
-/** Total "real playing" seconds (mic-active time, not wall time) for a given local day. */
-export function activeSecondsForDay(takes: PianoTake[], day: string): number {
+/** Total "real playing" (mic-active) seconds for a given local day - shown to the parent even when the goal counts the whole recording. */
+export function heardSecondsForDay(takes: PianoTake[], day: string): number {
   return takesForDay(takes, day).reduce((sum, t) => sum + t.activeSec, 0)
+}
+
+/** @deprecated Use `heardSecondsForDay` - kept as an alias while other code migrates off this name. */
+export const activeSecondsForDay = heardSecondsForDay
+
+/**
+ * Seconds counted toward the daily piano goal, per `settings.pianoCountMode`:
+ * `'recording'` (default) sums each take's whole wall-clock `durationSec`,
+ * `'heard'` sums only mic-active `activeSec` (the old, stricter rule). A
+ * grown-up's voice note is never counted either way (see `takesForDay`).
+ */
+export function practiceSecondsForDay(takes: PianoTake[], day: string, mode: PianoCountMode = 'recording'): number {
+  const dayTakes = takesForDay(takes, day)
+  return mode === 'heard'
+    ? dayTakes.reduce((sum, t) => sum + t.activeSec, 0)
+    : dayTakes.reduce((sum, t) => sum + t.durationSec, 0)
 }
 
 /** Whether `activeSec` of playing meets the daily goal. */
@@ -54,6 +70,13 @@ export function daysNeedingParentRating(piano: PianoSection, today: string, wind
   return Array.from(daysWithTakes)
     .filter((day) => !piano.days[day]?.parentStars)
     .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
+}
+
+/** "Steady beat" as 1-5 filled dots (●) out of 5, rest hollow (○) - `undefined` (too few onsets) renders nothing. */
+export function steadyBeatDots(steadiness: number | undefined): string | null {
+  if (steadiness === undefined) return null
+  const filled = Math.max(1, Math.min(5, Math.round(steadiness * 5)))
+  return '●'.repeat(filled) + '○'.repeat(5 - filled)
 }
 
 /** The set of local days on which the daily piano goal was reached. */

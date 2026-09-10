@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { awardGoalIfReached, markAudioPruned, saveTake, setParentStars, setSelfRating } from '../piano'
-import { getDoc, resetAll, type PianoTake } from '../progress'
+import { getDoc, resetAll, update, type PianoTake } from '../progress'
 import { dayOffset } from '../sessions'
 
 // Same in-memory localStorage mock as progress.test.ts / sessions.test.ts -
@@ -94,9 +94,11 @@ describe('setSelfRating', () => {
 })
 
 describe('awardGoalIfReached', () => {
-  it('awards bronze + xp once per day and bumps the streak', () => {
+  it('defaults to "recording" mode: awards from wall time (durationSec), not activeSec', () => {
     const day = '2026-09-07'
-    saveTake(makeTake({ id: 'a', day, activeSec: 900 }))
+    // Plenty of wall time, but well under the goal on activeSec alone -
+    // proves this is summing durationSec, not activeSec.
+    saveTake(makeTake({ id: 'a', day, durationSec: 900, activeSec: 100 }))
 
     expect(awardGoalIfReached(day, 15)).toBe(true)
 
@@ -115,10 +117,20 @@ describe('awardGoalIfReached', () => {
   })
 
   it('does not award before the goal is reached', () => {
-    saveTake(makeTake({ id: 'a', day: '2026-09-07', activeSec: 100 }))
+    saveTake(makeTake({ id: 'a', day: '2026-09-07', durationSec: 100, activeSec: 100 }))
     expect(awardGoalIfReached('2026-09-07', 15)).toBe(false)
     expect(getDoc().piano.days['2026-09-07']).toBeUndefined()
     expect(getDoc().profiles.kid.tokens.bronze).toBe(0)
+  })
+
+  it('"heard" mode awards from activeSec instead, once the setting is switched', () => {
+    update('settings', (s) => ({ ...s, pianoCountMode: 'heard' }))
+    const day = '2026-09-07'
+    // Plenty of wall time, but the goal is only reached on activeSec.
+    saveTake(makeTake({ id: 'a', day, durationSec: 100, activeSec: 900 }))
+
+    expect(awardGoalIfReached(day, 15)).toBe(true)
+    expect(getDoc().piano.days[day]?.goalReachedAt).toBeTruthy()
   })
 })
 

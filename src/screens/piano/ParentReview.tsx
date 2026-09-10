@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { navigate } from '../../router'
 import { useProgress, type ParentStars, type PianoPiece, type PianoSection, type PianoTake, type SelfRating } from '../../store/progress'
 import { markAudioPruned, setParentStars, usePiano } from '../../store/piano'
-import { activeSecondsForDay, daysNeedingParentRating, takesForDay } from '../../store/pianoRewards'
+import { daysNeedingParentRating, heardSecondsForDay, steadyBeatDots, takesForDay } from '../../store/pianoRewards'
 import { dayOffset, formatClock, localDay } from '../../store/sessions'
 import { formatBytes, getRecordingStore } from '../../store/recordings'
 import { addNote } from '../../store/notes'
@@ -41,6 +41,11 @@ function TakeRow({ take, piece }: { take: PianoTake; piece: PianoPiece | undefin
       <span>
         {formatClock(take.activeSec)} played of {formatClock(take.durationSec)}
       </span>
+      {steadyBeatDots(take.steadiness) && (
+        <span style={{ color: 'var(--cc-ink-soft)' }}>
+          Steady beat: <span style={{ letterSpacing: '0.15em', color: 'var(--cc-primary)' }}>{steadyBeatDots(take.steadiness)}</span>
+        </span>
+      )}
       {take.selfRating && (
         <span style={{ color: 'var(--cc-ink-soft)' }}>
           {'Nora felt: '}
@@ -165,7 +170,7 @@ function DayCard({
   onRated: (day: string, message: string) => void
 }) {
   const takes = useMemo(() => takesForDay(piano.takes, day), [piano.takes, day])
-  const activeSec = activeSecondsForDay(piano.takes, day)
+  const activeSec = heardSecondsForDay(piano.takes, day)
 
   function rate(stars: ParentStars) {
     const tier = setParentStars(day, stars)

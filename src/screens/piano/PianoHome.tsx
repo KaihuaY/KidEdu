@@ -3,7 +3,7 @@ import { useRecoveredTakeNotice } from '../../audio/recordingSession'
 import { navigate } from '../../router'
 import { useProgress, type PianoPiece, type PianoTake } from '../../store/progress'
 import { pruneRecordings, setSelfRating, usePiano } from '../../store/piano'
-import { activeSecondsForDay, goalProgress, pianoDaysDone } from '../../store/pianoRewards'
+import { goalProgress, pianoDaysDone, practiceSecondsForDay, steadyBeatDots } from '../../store/pianoRewards'
 import { formatClock, lastNDays, localDay } from '../../store/sessions'
 import { getAudioBackend, startTake } from '../../audio/recordingSession'
 import { getRecordingStore, useLocalAudioIds } from '../../store/recordings'
@@ -118,6 +118,11 @@ function TakeCard({ take, piece }: { take: PianoTake; piece: PianoPiece | undefi
         <span style={{ color: 'var(--cc-ink-soft)', fontSize: '0.8rem' }}>{wallTime}</span>
       </div>
       <span style={{ fontWeight: 700 }}>{formatClock(take.activeSec)} played</span>
+      {steadyBeatDots(take.steadiness) && (
+        <span style={{ fontSize: '0.9rem', color: 'var(--cc-ink-soft)' }}>
+          Steady beat: <span style={{ letterSpacing: '0.15em', color: 'var(--cc-primary)' }}>{steadyBeatDots(take.steadiness)}</span>
+        </span>
+      )}
       <SelfRatingButtons value={take.selfRating} onChange={(rating) => setSelfRating(take.id, rating)} />
       <TakePlayer take={take} />
       {isLocal && <ShareOrDownload take={take} piece={piece} />}
@@ -147,7 +152,8 @@ export function PianoHome() {
   }, [])
 
   const today = localDay()
-  const activeSec = activeSecondsForDay(piano.takes, today)
+  const countMode = progress.settings.pianoCountMode ?? 'recording'
+  const countedSec = practiceSecondsForDay(piano.takes, today, countMode)
   const goalMin = goalMinutes.piano
   const week = lastNDays(7, today)
   const daysDone = useMemo(() => pianoDaysDone(piano), [piano])
@@ -192,7 +198,7 @@ export function PianoHome() {
       )}
 
       <div className="cc-card" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-        <RingTimer size={120} progress={goalProgress(activeSec, goalMin)} label={formatClock(activeSec)} sublabel={`of ${goalMin} min`} />
+        <RingTimer size={120} progress={goalProgress(countedSec, goalMin)} label={formatClock(countedSec)} sublabel={`of ${goalMin} min`} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
           <WeekDots days={week} done={daysDone} />
           {todayParentStars && (

@@ -5,7 +5,10 @@ import {
   daysNeedingParentRating,
   goalProgress,
   goalReached,
+  heardSecondsForDay,
   pianoDaysDone,
+  practiceSecondsForDay,
+  steadyBeatDots,
   takesForDay,
   tokenForParentStars,
 } from '../pianoRewards'
@@ -74,6 +77,54 @@ describe('takesForDay / activeSecondsForDay', () => {
     ]
     expect(takesForDay(takes, '2026-09-07').map((t) => t.id)).toEqual(['real'])
     expect(activeSecondsForDay(takes, '2026-09-07')).toBe(200)
+  })
+})
+
+describe('practiceSecondsForDay', () => {
+  it('defaults to "recording" mode: sums durationSec (wall time), not activeSec', () => {
+    const takes = [
+      take({ id: 'a', day: '2026-09-07', durationSec: 120, activeSec: 40 }),
+      take({ id: 'b', day: '2026-09-07', durationSec: 60, activeSec: 10 }),
+    ]
+    expect(practiceSecondsForDay(takes, '2026-09-07')).toBe(180)
+  })
+
+  it('"heard" mode sums activeSec instead', () => {
+    const takes = [
+      take({ id: 'a', day: '2026-09-07', durationSec: 120, activeSec: 40 }),
+      take({ id: 'b', day: '2026-09-07', durationSec: 60, activeSec: 10 }),
+    ]
+    expect(practiceSecondsForDay(takes, '2026-09-07', 'heard')).toBe(50)
+  })
+
+  it('excludes a grown-up voice note either way', () => {
+    const takes = [
+      take({ id: 'real', day: '2026-09-07', durationSec: 100, activeSec: 50 }),
+      take({ id: 'note', day: '2026-09-07', durationSec: 500, activeSec: 500, isNote: true }),
+    ]
+    expect(practiceSecondsForDay(takes, '2026-09-07')).toBe(100)
+    expect(practiceSecondsForDay(takes, '2026-09-07', 'heard')).toBe(50)
+  })
+})
+
+describe('heardSecondsForDay', () => {
+  it('sums activeSec for the day, same as the deprecated activeSecondsForDay alias', () => {
+    const takes = [take({ id: 'a', day: '2026-09-07', activeSec: 30 }), take({ id: 'b', day: '2026-09-07', activeSec: 20 })]
+    expect(heardSecondsForDay(takes, '2026-09-07')).toBe(50)
+    expect(activeSecondsForDay(takes, '2026-09-07')).toBe(50)
+  })
+})
+
+describe('steadyBeatDots', () => {
+  it('renders 1-5 filled dots rounded from the 0-1 score', () => {
+    expect(steadyBeatDots(1)).toBe('●●●●●')
+    expect(steadyBeatDots(0)).toBe('●○○○○')
+    expect(steadyBeatDots(0.5)).toBe('●●●○○')
+    expect(steadyBeatDots(0.79)).toBe('●●●●○')
+  })
+
+  it('is null when steadiness is undefined (too few onsets)', () => {
+    expect(steadyBeatDots(undefined)).toBeNull()
   })
 })
 
