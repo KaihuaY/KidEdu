@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRecoveredTakeNotice } from '../../audio/recordingSession'
 import { navigate } from '../../router'
 import { useProgress, type PianoPiece, type PianoTake } from '../../store/progress'
-import { pruneRecordings, setSelfRating, usePiano } from '../../store/piano'
+import { allSongTargetsMet, pruneRecordings, setSelfRating, songTargetsForDay, usePiano } from '../../store/piano'
 import { goalProgress, pianoDaysDone, practiceSecondsForDay, steadyBeatDots } from '../../store/pianoRewards'
 import { formatClock, lastNDays, localDay } from '../../store/sessions'
 import { getAudioBackend, startTake } from '../../audio/recordingSession'
 import { getRecordingStore, useLocalAudioIds } from '../../store/recordings'
 import { buildFileName, processUploadQueue } from '../../store/driveUpload'
 import { extensionFor } from '../../audio/mime'
+import { kidKey } from '../../store/kid'
 import { RingTimer } from '../../components/RingTimer'
 import { WeekDots } from '../../components/WeekDots'
 import { BadgeToast } from '../../components/BadgeToast'
@@ -18,12 +19,18 @@ import { SelfRatingButtons } from '../../components/SelfRatingButtons'
 import { TakePlayer } from '../../components/TakePlayer'
 import { UploadChip } from '../../components/UploadChip'
 
-const PIECE_STORAGE_KEY = 'cubeclimb.piano.piece'
-const METRONOME_OPEN_KEY = 'cubeclimb.metronome.panelOpen'
+/** Resolved at call time (not module load) so tests can switch kids - see src/store/kid.ts. */
+function pieceStorageKey(): string {
+  return kidKey('cubeclimb.piano.piece')
+}
+
+function metronomeOpenKey(): string {
+  return kidKey('cubeclimb.metronome.panelOpen')
+}
 
 function readMetronomeOpen(): boolean {
   try {
-    return sessionStorage.getItem(METRONOME_OPEN_KEY) === '1'
+    return sessionStorage.getItem(metronomeOpenKey()) === '1'
   } catch {
     return false
   }
@@ -31,7 +38,7 @@ function readMetronomeOpen(): boolean {
 
 function storeMetronomeOpen(open: boolean): void {
   try {
-    sessionStorage.setItem(METRONOME_OPEN_KEY, open ? '1' : '0')
+    sessionStorage.setItem(metronomeOpenKey(), open ? '1' : '0')
   } catch {
     // ignore - just won't be remembered across a reload
   }
@@ -39,7 +46,7 @@ function storeMetronomeOpen(open: boolean): void {
 
 function readStoredPieceId(): string | null {
   try {
-    const raw = sessionStorage.getItem(PIECE_STORAGE_KEY)
+    const raw = sessionStorage.getItem(pieceStorageKey())
     return raw && raw !== 'free' ? raw : null
   } catch {
     return null
@@ -48,7 +55,7 @@ function readStoredPieceId(): string | null {
 
 function storePieceId(id: string | null): void {
   try {
-    sessionStorage.setItem(PIECE_STORAGE_KEY, id ?? 'free')
+    sessionStorage.setItem(pieceStorageKey(), id ?? 'free')
   } catch {
     // ignore - just won't be remembered across a reload
   }
@@ -177,6 +184,14 @@ export function PianoHome() {
   const goalMin = goalMinutes.piano
   const week = lastNDays(7, today)
   const daysDone = useMemo(() => pianoDaysDone(piano), [piano])
+  const songTargets = useMemo(
+    () => songTargetsForDay(pianoPieces, piano.takes, today),
+    [pianoPieces, piano.takes, today],
+  )
+  const songTargetsAllMet = useMemo(
+    () => allSongTargetsMet(pianoPieces, piano.takes, today),
+    [pianoPieces, piano.takes, today],
+  )
   // A grown-up's voice note is recorded through the same take pipeline but
   // is never one of Nora's own takes - see src/store/notes.ts.
   const todayTakes = useMemo(
@@ -267,6 +282,20 @@ export function PianoHome() {
         )}
         {selectedPiece?.goal && (
           <p style={{ margin: 0, fontWeight: 700, color: 'var(--cc-primary)' }}>🎯 This week: {selectedPiece.goal}</p>
+        )}
+        {songTargets.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+            {songTargets.map(({ piece, done, target }) => (
+              <span key={piece.id} data-testid="song-target-row" style={{ fontWeight: 700 }}>
+                🎯 {piece.name} · {Math.min(done, target)} of {target} today
+              </span>
+            ))}
+            {songTargetsAllMet && (
+              <span data-testid="songs-done" style={{ fontWeight: 800, color: 'var(--cc-success)' }}>
+                Songs done ✅
+              </span>
+            )}
+          </div>
         )}
       </div>
 

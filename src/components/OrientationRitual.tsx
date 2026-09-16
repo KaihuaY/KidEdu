@@ -3,6 +3,7 @@ import { TwistyCube } from './TwistyCube'
 import { SayIt } from './SayIt'
 import { ORIENTATION_RITUAL } from '../content/lessons'
 import { localDay } from '../store/sessions'
+import { kidKey } from '../store/kid'
 
 const RITUAL_ACK_PREFIX = 'cubeclimb.ritual.'
 
@@ -10,7 +11,7 @@ const RITUAL_ACK_PREFIX = 'cubeclimb.ritual.'
 export function hasAckedRitual(): boolean {
   try {
     if (typeof sessionStorage === 'undefined') return false
-    return sessionStorage.getItem(RITUAL_ACK_PREFIX + localDay()) === '1'
+    return sessionStorage.getItem(kidKey(RITUAL_ACK_PREFIX + localDay())) === '1'
   } catch {
     return false
   }
@@ -20,7 +21,7 @@ export function hasAckedRitual(): boolean {
 export function ackRitual(): void {
   try {
     if (typeof sessionStorage === 'undefined') return
-    sessionStorage.setItem(RITUAL_ACK_PREFIX + localDay(), '1')
+    sessionStorage.setItem(kidKey(RITUAL_ACK_PREFIX + localDay()), '1')
   } catch {
     // ignore - she'll just see the ritual again next mission, which is fine
   }

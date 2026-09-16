@@ -56,23 +56,45 @@ The production build is served from `/KidEdu/` (see `base` in
 > app** from the new URL above - an old cached install will keep pointing at
 > the old (now retired) URL and manifest.
 
-## Secret word
+## Two kids, two secret words
 
-Before using Practice, everyone must type a shared secret word once per
-device (a lightweight lock screen, not real security). The default word is
-`climb`.
+Practice serves two kids, Nora and Amelia. Each has her own secret word (a
+lightweight lock screen, not real security), typed once per device; the
+word she types decides **whose progress that device shows**, so a device
+is Nora's or Amelia's from then on. Defaults: Nora `climb`, Amelia `star`.
 
-To change it:
+Everything is separate per kid: daily goals, pieces and song targets, the
+PIN, prize pools, tokens, tickets, badges, the photo collection, beads and
+bracelets, notes and piano takes. Nora's data keeps exactly the storage
+keys, database name and gist file it always had (`cubeclimb.progress`,
+`cubeclimb.recordings`, `cubeclimb-progress.json`), so the update needs no
+migration on her iPad; Amelia's copies are the same names with `.amelia`
+appended (see `src/store/kid.ts`).
+
+To change a word:
 
 ```sh
 node scripts/hash-password.mjs <new word>
 ```
 
-Paste the printed hash into `FAMILY_PASSWORD_SHA256` in
+Paste the printed hash into that kid's line of `KIDS` in
 `src/content/access.ts`, then commit and push.
 
-A grown-up can also force a device to re-ask for the secret word from
-**Settings (grown-up PIN) → Secret word → Lock this device now**.
+A grown-up can force a device to re-ask for the secret word (forgetting
+which kid it belonged to) from **Settings (grown-up PIN) → Secret words →
+Lock this device now**, or move a device to the other kid without locking
+it from **Settings → This device belongs to** (the page reloads into her
+document; recordings stay with the device they were made on).
+
+### The family board
+
+Once a device has the sync token (below), Home shows a "👭 Nora & Amelia
+this week" card: piano minutes, cube missions, streaks, badges and
+collection cards side by side, a 🏅 on each row's leader, and a team
+total. Tapping it opens the full board (`#/family`) with when each kid
+last practised and one encouraging line ("Amelia is 2 missions ahead — go
+climb!"). It is deliberately cooperative: no "last place", and the numbers
+come straight from each kid's own synced file.
 
 ## Syncing progress across devices (parent setup)
 
@@ -89,6 +111,20 @@ private GitHub Gist from **Settings**:
    screen.
 5. Repeat on the second device with the *same* token so both devices sync to
    the same gist.
+
+Both kids share one gist and one token. Each device uploads only its own
+kid's file (`cubeclimb-progress.json` for Nora,
+`cubeclimb-progress.amelia.json` for Amelia) and reads the other's file
+purely to draw the family board - it is never merged or uploaded back, so
+the two can never overwrite each other. The fastest setup for a new device
+is the one-tap link, which stores the token, picks the kid and unlocks the
+gate in one go:
+
+```
+https://kaihuay.github.io/KidEdu/#/setup?token=<token>&kid=amelia
+```
+
+(`&kid=nora`, or no `kid` at all, keeps the device as Nora's.)
 
 Practice only ever touches gists - it can't read your repositories, issues,
 or anything else on your account. If you ever want to revoke access, delete
@@ -314,6 +350,19 @@ an iPad propped on the music stand, microphone only - no MIDI, no teaching.
   audio is stitched back together into a normal take automatically (see
   "Your data is safe" below).
 
+### Song repeat targets
+
+A grown-up can ask for a piece to be played a set number of times a day:
+**Settings → This week's piano pieces → Play it __ times a day** (off, or
+1–10). While recording that piece the screen shows "⭐ Twinkle · 1 of 3
+today" and a big **🎵 Played it! +1** button; she taps it each time she
+plays the song through (the count is checkpointed on every tap, so a crash
+mid-take keeps it). Reaching the target flashes "Target done! ✨" with a
+little confetti, and the done screen adds **+2 beads 📿** for her bracelet
+tray - once per piece per day. Piano home lists each targeted piece with
+its "2 of 3 today" and shows "Songs done ✅" when every target is met; the
+grown-up review shows "🎵 ×3" next to a take.
+
 ### Notes and badges
 
 - **Grown-up notes.** From **👀 Grown-up review**, rating a day also offers
@@ -380,6 +429,45 @@ curl -sL -X POST "<your web app URL>" -H "Content-Type: text/plain" \
 # -> {"ok":true,"pong":true}
 ```
 
+## Rewards: the photo collection and bracelets
+
+Tokens (gold from a first-try mission or a 3-star piano day, silver, bronze)
+are spent on the **Box** screen, which now has four tabs:
+
+- **🎁 Boxes.** Opening a box flips over a **collection card**: a real
+  photo of a gem, an animal or something in space, its name, a rarity
+  (★ common, ★★ uncommon, ★★★ rare, ★★★★ epic, ★★★★★ legendary), a
+  one-line "Found in / Lives in / Orbits" and a two-sentence fact she can
+  read or have read aloud. Rarity odds depend on the box: bronze
+  60/30/9/1/0 %, silver 40/35/18/6/1 %, gold 20/30/30/15/5 %. Every box also
+  drops beads (bronze 1, silver 1–2, gold 2–3), and a card she already owns
+  turns into extra beads instead (1/2/3/5/8 by rarity), so no box is ever a
+  dud. The prize-ticket roll is unchanged.
+- **📷 Cards.** The album: three sets (💎 Gems & minerals 24, 🦊 Animals
+  36, 🪐 Space 16) with a "12 / 24" count each. Cards she owns show the
+  photo; the rest are dark silhouettes with a "?" and their rarity colour,
+  so she can see what is still out there. Tapping an owned card opens it
+  big with the fact and a Say it button. Completing a set earns a badge
+  (Gem collector 💎, Animal expert 🦊, Space explorer 🪐); the first card,
+  the first legendary and the first finished bracelet have badges too. Old
+  emoji stickers stay visible in a collapsed "Old stickers" section.
+- **📿 Bracelets.** The bead tray shows every bead she has (round, star,
+  heart, flower, and letter beads that spell both girls' names). "New
+  bracelet" starts an 18-slot strand; tap a bead then a slot (or drag it
+  there) to place it, tap a placed bead to take it back, name it, and
+  "✨ Finish" once it has at least 6 beads. Finished bracelets sit in a
+  gallery, and the latest one shows on Home under "🃏 My cards".
+- **🎟️ Tickets.** As before.
+
+The 76 photos live in `public/collection/` and come from Wikimedia
+Commons under free licences (public domain, CC0, CC BY, CC BY-SA);
+`scripts/collection-sources.json` names the exact file for each card and
+`node scripts/fetch-collection.mjs [--force] [id ...]` downloads 480 px
+copies, refuses anything that is not freely licensed, and regenerates
+`src/content/collectionCredits.ts`. **Settings → Photo credits** (also
+`#/credits`) lists every photographer and licence. Facts and card text are
+in `src/content/collection.ts`; beads in `src/content/beads.ts`.
+
 ## Your data is safe
 
 Deploying a new build only ever replaces the app's own code - the progress
@@ -414,6 +502,11 @@ their own protection, and are handled automatically:
   most reliable way to get - and keep - that protection. **Settings →
   Recordings** shows "Storage: protected ✅" once it's confirmed, or a
   reminder to install it if not, plus how much storage is in use.
+- **Each kid's data is isolated.** Nora's storage keys, recordings
+  database and gist file kept their original names when Amelia was added,
+  and Amelia's are the same names with `.amelia` appended, so no data moved
+  and a device only ever writes its own kid's gist file (see "Two kids, two
+  secret words" above).
 - **Progress gets a second, independent backup.** Beyond the private-gist
   sync above, whenever Google Drive upload is configured the whole progress
   export is also uploaded to that same Drive folder once a day, as

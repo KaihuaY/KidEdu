@@ -9,6 +9,7 @@
 // ProgressDoc's `piano` section.
 
 import { useSyncExternalStore } from 'react'
+import { kidKey } from './kid'
 
 export interface RecordingMeta {
   id: string
@@ -101,7 +102,11 @@ class IndexedDbRecordingStore implements RecordingStore {
   private openDb(): Promise<IDBDatabase> {
     if (!this.dbPromise) {
       this.dbPromise = new Promise((resolve, reject) => {
-        const request = this.factory.open(RECORDINGS_DB, DB_VERSION)
+        // Resolved at open time (not module load) so this device's current
+        // kid decides which database it opens - Nora's database name is
+        // unchanged (RECORDINGS_DB) so her existing recordings need no
+        // migration; anyone else gets her own `.{kid}`-suffixed database.
+        const request = this.factory.open(kidKey(RECORDINGS_DB), DB_VERSION)
         // Only ever creates whatever store is missing - a v1 database
         // upgrading to v2 keeps its existing `takes` untouched and just
         // gains `partials`; this callback also runs (harmlessly, both

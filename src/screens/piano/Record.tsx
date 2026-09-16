@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { navigate } from '../../router'
 import { useProgress } from '../../store/progress'
-import { setSelfRating, setTakeGoalHit, usePiano } from '../../store/piano'
+import { repetitionsForPiece, setSelfRating, setTakeGoalHit, usePiano } from '../../store/piano'
 import { goalProgress, practiceSecondsForDay, steadyBeatDots } from '../../store/pianoRewards'
 import { formatClock, localDay } from '../../store/sessions'
-import { dismiss, stopTake, useRecordingSession } from '../../audio/recordingSession'
+import { bumpLiveRepetition, dismiss, stopTake, useRecordingSession } from '../../audio/recordingSession'
 import { getLastTakeBpm, nudgeBpm, setRememberedBpm } from '../../audio/metronome'
+import { fireConfetti } from '../../components/Confetti'
 import { RingTimer } from '../../components/RingTimer'
 import { Aurora } from '../../components/Aurora'
 import { MetronomeStrip } from '../../components/Metronome'
@@ -35,13 +36,37 @@ export function Record() {
   const goalMin = progress.settings.goalMinutes.piano
   const countMode = progress.settings.pianoCountMode ?? 'recording'
   const [fasterTempoSaved, setFasterTempoSaved] = useState(false)
+  const today = localDay()
 
   // The take in progress isn't saved to the doc yet, so "today's seconds so
   // far" only ever reflects takes already saved.
   const todayBeforeThisTake = useMemo(
-    () => practiceSecondsForDay(piano.takes, localDay(), countMode),
-    [piano.takes, countMode],
+    () => practiceSecondsForDay(piano.takes, today, countMode),
+    [piano.takes, today, countMode],
   )
+
+  // Song repeat target for the piece being recorded, if it has one - "today"
+  // adds this in-progress take's own live tally (session.repetitions) to
+  // whatever she already logged on other takes of the same piece today.
+  const recordingPieceId = session.status === 'recording' ? session.pieceId : null
+  const targetPiece = progress.settings.pianoPieces.find((p) => p.id === recordingPieceId)
+  const songTarget = targetPiece?.timesPerDay ?? 0
+  const hasSongTarget = songTarget >= 1
+  const otherRepsToday = useMemo(
+    () => (hasSongTarget && targetPiece ? repetitionsForPiece(piano.takes, targetPiece.id, today) : 0),
+    [hasSongTarget, targetPiece, piano.takes, today],
+  )
+  const liveReps = session.status === 'recording' ? session.repetitions : 0
+  const songRepsToday = otherRepsToday + liveReps
+  const songTargetReached = hasSongTarget && songRepsToday >= songTarget
+  const celebratedTargetRef = useRef(false)
+
+  useEffect(() => {
+    if (songTargetReached && !celebratedTargetRef.current) {
+      celebratedTargetRef.current = true
+      fireConfetti('small')
+    }
+  }, [songTargetReached])
 
   if (session.status === 'idle') {
     return (
@@ -84,7 +109,35 @@ export function Record() {
         }}
       >
         <RingTimer size={180} progress={progressRatio} label={formatClock(Math.round(totalCounted))} sublabel={`of ${goalMin} min`} />
-        <Aurora />
+        <Aurora height={hasSongTarget ? 90 : 170} />
+        {hasSongTarget && targetPiece && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.5rem',
+              alignItems: 'center',
+              width: '100%',
+              maxWidth: 320,
+            }}
+          >
+            <span data-testid="song-target" style={{ fontWeight: 700 }}>
+              {targetPiece.emoji} {targetPiece.name} · {Math.min(songRepsToday, songTarget)} of {songTarget} today
+            </span>
+            <button
+              type="button"
+              data-testid="rep-plus"
+              className="cc-btn cc-btn-primary"
+              style={{ minHeight: 96, width: '100%', fontSize: '1.2rem' }}
+              onClick={() => bumpLiveRepetition()}
+            >
+              🎵 Played it! +1
+            </button>
+            {songTargetReached && (
+              <span style={{ fontWeight: 800, color: 'var(--cc-success)' }}>Target done! ✨</span>
+            )}
+          </div>
+        )}
         <MetronomeStrip />
         <span style={{ fontWeight: 800, color: chip.color }}>{chip.text}</span>
         <span style={{ color: 'var(--cc-ink-soft)', fontSize: '0.85rem' }}>
@@ -175,6 +228,11 @@ export function Record() {
             <p style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>You filled the ring! 🟤 +1 token</p>
             <p style={{ margin: 0, fontWeight: 700 }}>See you tomorrow! 🎹</p>
           </>
+        )}
+        {session.songBeadIds && session.songBeadIds.length > 0 && (
+          <p data-testid="song-target-beads" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>
+            Target done! ✨ +2 beads 📿
+          </p>
         )}
         {piece?.goal && !take.isNote && (
           <div className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem', alignItems: 'center', width: '100%', maxWidth: 320 }}>

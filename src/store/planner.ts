@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ProfileProgress } from './progress'
 import { isMissionDone } from './missions'
+import { kidKey } from './kid'
 
 function daysFromMinutes(minutesRemaining: number, sessionMinutes: number): number {
   if (sessionMinutes <= 0) return Infinity
@@ -81,7 +82,7 @@ function hasSessionStorage(): boolean {
 function readStoredTimer(): StoredTimerState {
   if (hasSessionStorage()) {
     try {
-      const raw = sessionStorage.getItem(SESSION_STORAGE_KEY)
+      const raw = sessionStorage.getItem(kidKey(SESSION_STORAGE_KEY))
       if (raw) return JSON.parse(raw) as StoredTimerState
     } catch {
       // fall through to default
@@ -93,7 +94,7 @@ function readStoredTimer(): StoredTimerState {
 function writeStoredTimer(state: StoredTimerState): void {
   if (!hasSessionStorage()) return
   try {
-    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(state))
+    sessionStorage.setItem(kidKey(SESSION_STORAGE_KEY), JSON.stringify(state))
   } catch {
     // ignore - timer just won't survive a refresh
   }

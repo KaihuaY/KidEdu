@@ -51,6 +51,12 @@ export default defineConfig(({ command, mode }) => ({
       // update.
       registerType: 'prompt',
       includeAssets: ['favicon.svg'],
+      workbox: {
+        // Default is ['**/*.{js,wasm,css,html}'] - extended so the reward
+        // collection's photos (src/content/collection.ts, downloaded by
+        // scripts/fetch-collection.mjs) are precached for offline use too.
+        globPatterns: ['**/*.{js,wasm,css,html}', 'collection/**/*.jpg'],
+      },
       manifest: {
         name: 'Practice',
         short_name: 'Practice',

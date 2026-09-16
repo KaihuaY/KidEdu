@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { BADGES, earnedBadges } from '../badges'
-import { defaultDoc, resetAll, type MissionProgress, type PianoTake, type ProgressDoc } from '../../store/progress'
+import { itemsInSet } from '../collection'
+import { defaultDoc, resetAll, type Bracelet, type MissionProgress, type OwnedItem, type PianoTake, type ProgressDoc } from '../../store/progress'
 
 // Same in-memory localStorage mock used by src/store/__tests__/progress.test.ts,
 // since awardNewBadges() round-trips through the real progress store.
@@ -132,6 +133,56 @@ describe('earnedBadges - piano takes', () => {
     const doc: ProgressDoc = defaultDoc()
     doc.piano.days = { '2026-09-05': { parentStars: 2 }, '2026-09-07': { parentStars: 3 } }
     expect(earnedBadges(doc)).toContain('first-gold-stars')
+  })
+})
+
+function owned(id: string, count = 1): OwnedItem {
+  return { id, count, firstAt: 1 }
+}
+
+function bracelet(overrides: Partial<Bracelet> = {}): Bracelet {
+  return { id: 'b1', name: 'Test', beads: [], startedAt: 1, ...overrides }
+}
+
+describe('earnedBadges - collection', () => {
+  it('first-card fires as soon as any card is owned', () => {
+    const doc: ProgressDoc = defaultDoc()
+    expect(earnedBadges(doc)).not.toContain('first-card')
+    doc.collection.items = [owned('quartz')]
+    expect(earnedBadges(doc)).toContain('first-card')
+  })
+
+  it('a set badge only fires once every card in that set is owned', () => {
+    const doc: ProgressDoc = defaultDoc()
+    const gemCards = itemsInSet('gems')
+    expect(gemCards.length).toBeGreaterThan(0)
+
+    doc.collection.items = gemCards.slice(0, -1).map((c) => owned(c.id))
+    expect(earnedBadges(doc)).not.toContain('set-gems')
+
+    doc.collection.items = gemCards.map((c) => owned(c.id))
+    expect(earnedBadges(doc)).toContain('set-gems')
+    expect(earnedBadges(doc)).not.toContain('set-animals')
+    expect(earnedBadges(doc)).not.toContain('set-space')
+  })
+
+  it('first-legendary fires only once a legendary-rarity card is owned', () => {
+    const doc: ProgressDoc = defaultDoc()
+    doc.collection.items = [owned('quartz')] // common, not legendary
+    expect(earnedBadges(doc)).not.toContain('first-legendary')
+
+    // 'andromeda-galaxy' is the legendary space card in the catalogue.
+    doc.collection.items = [owned('quartz'), owned('andromeda-galaxy')]
+    expect(earnedBadges(doc)).toContain('first-legendary')
+  })
+
+  it('first-bracelet fires only once a bracelet has finishedAt set', () => {
+    const doc: ProgressDoc = defaultDoc()
+    doc.collection.bracelets = [bracelet()]
+    expect(earnedBadges(doc)).not.toContain('first-bracelet')
+
+    doc.collection.bracelets = [bracelet({ finishedAt: 5 })]
+    expect(earnedBadges(doc)).toContain('first-bracelet')
   })
 })
 

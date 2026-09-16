@@ -7,6 +7,7 @@
 
 import { useSyncExternalStore } from 'react'
 import { getSessionState, subscribeSession } from './recordingSession'
+import { kidKey } from '../store/kid'
 
 export interface MetronomeState {
   running: boolean
@@ -158,8 +159,6 @@ export function setClick(on: boolean): void {
 
 // --- Tempo remembered per piece -------------------------------------------
 
-const TEMPO_KEY_PREFIX = 'cubeclimb.metronome.'
-
 function hasSessionStorage(): boolean {
   try {
     return typeof sessionStorage !== 'undefined'
@@ -168,8 +167,9 @@ function hasSessionStorage(): boolean {
   }
 }
 
+/** Resolved at call time (not module load) so tests can switch kids - see src/store/kid.ts. */
 function tempoKey(pieceId: string | null): string {
-  return `${TEMPO_KEY_PREFIX}${pieceId ?? 'free'}`
+  return kidKey(`cubeclimb.metronome.${pieceId ?? 'free'}`)
 }
 
 /** The last tempo chosen for this piece (or free play), or DEFAULT_BPM if never set. */

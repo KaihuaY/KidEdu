@@ -1,16 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import {
+  BEAD_DROPS,
+  DUP_BEADS_BY_RARITY,
+  RARITY_WEIGHTS,
   formatCents,
   maxStars,
+  pickItem,
   pickWeighted,
+  rollBoxContents,
   rollCashCents,
+  rollRarity,
   rollTicket,
   starsForTier,
   tierForClimbTries,
   tierForStageTries,
   xpForTier,
+  type Tier,
 } from '../../store/rewards'
-import type { Prize } from '../../store/progress'
+import { COLLECTION, type CollectionItem } from '../../content/collection'
+import { RARITIES, type OwnedItem, type Prize, type Rarity } from '../../store/progress'
 
 describe('tierForStageTries', () => {
   it('1 try is gold', () => {
@@ -168,5 +176,137 @@ describe('rollTicket', () => {
   it('clamps out-of-range chances', () => {
     expect(rollTicket(5, () => 0.999999)).toBe(true)
     expect(rollTicket(-5, () => 0)).toBe(false)
+  })
+})
+
+// Deterministic pseudo-random sequence so the distribution tests below never flake.
+function seededRng(seed: number): () => number {
+  let s = seed
+  return () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff
+    return s / 0x7fffffff
+  }
+}
+
+describe('rollRarity', () => {
+  const TIERS: Tier[] = ['gold', 'silver', 'bronze']
+
+  it('only ever rolls a rarity with positive weight for the tier', () => {
+    for (const tier of TIERS) {
+      const rng = seededRng(tier.length * 17 + 3)
+      for (let i = 0; i < 2000; i++) {
+        const rarity = rollRarity(tier, rng)
+        expect(RARITY_WEIGHTS[tier][rarity]).toBeGreaterThan(0)
+      }
+    }
+  })
+
+  it('matches RARITY_WEIGHTS within +/-3 percentage points over 10k rolls, per tier', () => {
+    for (const tier of TIERS) {
+      const weights = RARITY_WEIGHTS[tier]
+      const total = RARITIES.reduce((sum, r) => sum + weights[r], 0)
+      const counts: Record<Rarity, number> = { common: 0, uncommon: 0, rare: 0, epic: 0, legendary: 0 }
+      const rng = seededRng(1000 + tier.length)
+      const trials = 10000
+      for (let i = 0; i < trials; i++) counts[rollRarity(tier, rng)]++
+
+      for (const r of RARITIES) {
+        const expectedPct = (weights[r] / total) * 100
+        const actualPct = (counts[r] / trials) * 100
+        expect(Math.abs(actualPct - expectedPct)).toBeLessThanOrEqual(3)
+      }
+    }
+  })
+})
+
+function fakeItem(id: string, rarity: Rarity): CollectionItem {
+  return { id, set: 'gems', name: id, rarity, emoji: '💎', fact: 'fact', where: 'where' }
+}
+
+describe('pickItem', () => {
+  const items = [fakeItem('a', 'common'), fakeItem('b', 'common'), fakeItem('c', 'rare')]
+
+  it('picks uniformly among items of the requested rarity', () => {
+    const counts = { a: 0, b: 0 }
+    const rng = seededRng(55)
+    for (let i = 0; i < 4000; i++) {
+      const picked = pickItem(items, 'common', [], rng)
+      expect(picked?.rarity).toBe('common')
+      if (picked?.id === 'a' || picked?.id === 'b') counts[picked.id]++
+    }
+    expect(counts.a / 4000).toBeGreaterThan(0.35)
+    expect(counts.a / 4000).toBeLessThan(0.65)
+  })
+
+  it('never returns an excluded id when an alternative of that rarity exists', () => {
+    const rng = seededRng(9)
+    for (let i = 0; i < 500; i++) {
+      expect(pickItem(items, 'common', ['a'], rng)?.id).toBe('b')
+    }
+  })
+
+  it('falls back to the nearest lower rarity when the requested one has no items', () => {
+    // 'epic' and 'legendary' have no items at all here - should fall back
+    // down to 'rare' (the nearest rarity below epic that has one).
+    expect(pickItem(items, 'epic')?.rarity).toBe('rare')
+    expect(pickItem(items, 'legendary')?.rarity).toBe('rare')
+  })
+
+  it('falls back to any item when the requested rarity and everything below it is excluded or empty', () => {
+    // Only 'rare' item is excluded, and there is nothing at/under 'rare'
+    // available - still returns something rather than undefined.
+    expect(pickItem([fakeItem('only-rare', 'rare')], 'rare', ['only-rare'])?.id).toBe('only-rare')
+  })
+
+  it('returns undefined for a genuinely empty item list', () => {
+    expect(pickItem([], 'common')).toBeUndefined()
+  })
+})
+
+describe('rollBoxContents', () => {
+  it('never drops the same card twice in a row across many rolls, for every tier', () => {
+    const TIERS_TO_CHECK: Tier[] = ['gold', 'silver', 'bronze']
+    for (const tier of TIERS_TO_CHECK) {
+      const rng = seededRng(tier.length * 31 + 7)
+      let lastId: string | undefined
+      for (let i = 0; i < 2000; i++) {
+        const result = rollBoxContents(tier, [], lastId, rng)
+        if (lastId !== undefined) expect(result.item.id).not.toBe(lastId)
+        lastId = result.item.id
+      }
+    }
+  })
+
+  it('drops a bead count within the tier range when the card is not a duplicate', () => {
+    const rng = seededRng(3)
+    const [min, max] = BEAD_DROPS.bronze
+    for (let i = 0; i < 200; i++) {
+      const result = rollBoxContents('bronze', [], undefined, rng)
+      if (result.duplicate) continue
+      expect(result.beadIds.length).toBeGreaterThanOrEqual(min)
+      expect(result.beadIds.length).toBeLessThanOrEqual(max)
+    }
+  })
+
+  it('adds DUP_BEADS_BY_RARITY[rarity] extra beads on top of the normal drop for a duplicate', () => {
+    const rng = seededRng(21)
+    let checkedADuplicate = false
+    for (let i = 0; i < 500; i++) {
+      // Force every roll to be a duplicate by pretending she already owns every card.
+      const owned: OwnedItem[] = COLLECTION.map((c) => ({ id: c.id, count: 1, firstAt: 0 }))
+      const result = rollBoxContents('gold', owned, undefined, rng)
+      expect(result.duplicate).toBe(true)
+      const [min, max] = BEAD_DROPS.gold
+      const extra = DUP_BEADS_BY_RARITY[result.rarity]
+      expect(result.beadIds.length).toBeGreaterThanOrEqual(min + extra)
+      expect(result.beadIds.length).toBeLessThanOrEqual(max + extra)
+      checkedADuplicate = true
+    }
+    expect(checkedADuplicate).toBe(true)
+  })
+
+  it('picks a real card from the collection catalogue', () => {
+    const result = rollBoxContents('silver', [], undefined, seededRng(4))
+    expect(COLLECTION.some((c) => c.id === result.item.id)).toBe(true)
   })
 })

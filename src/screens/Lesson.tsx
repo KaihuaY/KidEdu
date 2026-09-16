@@ -28,6 +28,7 @@ import {
 } from '../store/missions'
 import { ensureTodaysPlan, tomorrowsMission } from '../store/dailyPlan'
 import type { Tier } from '../store/rewards'
+import { kidKey } from '../store/kid'
 
 /** A page shared with someone else, or copied to the clipboard when the Web Share API isn't available. */
 type ShareNavigator = Navigator & {
@@ -44,7 +45,7 @@ const CHECKPOINT_ACK_PREFIX = 'cubeclimb.checkpoint.'
 function hasAckedCheckpoint(holdId: string): boolean {
   try {
     if (typeof sessionStorage === 'undefined') return false
-    return sessionStorage.getItem(CHECKPOINT_ACK_PREFIX + holdId) === '1'
+    return sessionStorage.getItem(kidKey(CHECKPOINT_ACK_PREFIX + holdId)) === '1'
   } catch {
     return false
   }
@@ -53,7 +54,7 @@ function hasAckedCheckpoint(holdId: string): boolean {
 function ackCheckpoint(holdId: string): void {
   try {
     if (typeof sessionStorage === 'undefined') return
-    sessionStorage.setItem(CHECKPOINT_ACK_PREFIX + holdId, '1')
+    sessionStorage.setItem(kidKey(CHECKPOINT_ACK_PREFIX + holdId), '1')
   } catch {
     // ignore - the Ready card will just ask again next time, which is fine
   }

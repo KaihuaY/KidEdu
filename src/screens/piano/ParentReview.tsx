@@ -47,6 +47,11 @@ function TakeRow({ take, piece }: { take: PianoTake; piece: PianoPiece | undefin
         </span>
       )}
       {piece?.goal && <span style={{ color: 'var(--cc-ink-soft)' }}>{take.goalHit ? '🎯 ✅' : '🎯 ⬜'}</span>}
+      {!!take.repetitions && (
+        <span data-testid="take-repetitions" style={{ color: 'var(--cc-ink-soft)', fontWeight: 700 }}>
+          🎵 ×{take.repetitions}
+        </span>
+      )}
       {take.selfRating && (
         <span style={{ color: 'var(--cc-ink-soft)' }}>
           {'Nora felt: '}

@@ -26,6 +26,8 @@ import {
 import { markAudioPruned } from '../store/piano'
 import { addNote } from '../store/notes'
 import { APP_BUILD } from '../buildInfo'
+import { DeviceOwner } from '../components/DeviceOwner'
+import { lockDevice } from '../store/kid'
 
 // Re-exported so BlindBox.tsx's `import { PinGate } from './Settings'` keeps working.
 export { PinGate } from '../components/PinGate'
@@ -41,6 +43,7 @@ function uid(): string {
 }
 
 const PIECE_GOAL_MAX_LENGTH = 80
+const MAX_TIMES_PER_DAY = 10
 
 function downscaleImage(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -265,6 +268,11 @@ function PianoPiecesEditor() {
     }
   }
 
+  function nudgeTimesPerDay(id: string, current: number, delta: number) {
+    const next = Math.max(0, Math.min(MAX_TIMES_PER_DAY, current + delta))
+    updatePiece(id, { timesPerDay: next })
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
       {pieces.map((p) => (
@@ -303,6 +311,32 @@ function PianoPiecesEditor() {
               aria-label={`This week's goal for ${p.name || 'piece'}`}
             />
           </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', paddingLeft: '0.2rem' }}>
+            <span style={{ fontSize: '0.85rem' }}>Play it __ times a day</span>
+            <button
+              type="button"
+              className="cc-btn cc-btn-surface"
+              style={{ minHeight: 56, minWidth: 56, padding: 0 }}
+              disabled={(p.timesPerDay ?? 0) <= 0}
+              onClick={() => nudgeTimesPerDay(p.id, p.timesPerDay ?? 0, -1)}
+              aria-label={`Fewer times a day for ${p.name || 'piece'}`}
+            >
+              −
+            </button>
+            <span style={{ minWidth: '2.5ch', textAlign: 'center', fontWeight: 700 }}>
+              {p.timesPerDay ? p.timesPerDay : 'off'}
+            </span>
+            <button
+              type="button"
+              className="cc-btn cc-btn-surface"
+              style={{ minHeight: 56, minWidth: 56, padding: 0 }}
+              disabled={(p.timesPerDay ?? 0) >= MAX_TIMES_PER_DAY}
+              onClick={() => nudgeTimesPerDay(p.id, p.timesPerDay ?? 0, 1)}
+              aria-label={`More times a day for ${p.name || 'piece'}`}
+            >
+              ＋
+            </button>
+          </div>
         </div>
       ))}
       {pieces.length === 0 && <p style={{ margin: 0, color: 'var(--cc-ink-soft)' }}>No pieces added yet.</p>}
@@ -824,22 +858,21 @@ export function Settings() {
         </div>
       </section>
 
+      <DeviceOwner />
+
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Secret word</h2>
+        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Secret words</h2>
         <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
-          Everyone must type the secret word once per device. Default: <strong>climb</strong>. To change it, run{' '}
-          <code>node scripts/hash-password.mjs &lt;new word&gt;</code> and paste the result into{' '}
+          Each kid types her own secret word once on her device, and that picks whose progress the device shows. Defaults:
+          Nora <strong>climb</strong>, Amelia <strong>star</strong>. To change one, run{' '}
+          <code>node scripts/hash-password.mjs &lt;new word&gt;</code> and paste the result into that kid&apos;s line in{' '}
           <code>src/content/access.ts</code>, then push.
         </p>
         <button
           type="button"
           className="cc-btn cc-btn-surface"
           onClick={() => {
-            try {
-              localStorage.removeItem('cubeclimb.unlocked')
-            } catch {
-              // Nothing to clean up if storage is unavailable.
-            }
+            lockDevice()
             window.location.reload()
           }}
         >
@@ -972,6 +1005,9 @@ export function Settings() {
         </div>
 
         <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--cc-ink-soft)' }}>Version: {APP_BUILD}</p>
+        <a href="#/credits" style={{ fontSize: '0.8rem', color: 'var(--cc-ink-soft)', minHeight: 44, display: 'inline-flex', alignItems: 'center' }}>
+          📷 Photo credits for the collection
+        </a>
       </section>
 
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', border: '2px solid var(--cc-danger)' }}>

@@ -1,6 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { checkSecret } from '../content/access'
 import { requestPersistentStorage } from '../store/recordings'
+import { getKid, setKid } from '../store/kid'
 
 const STORAGE_KEY = 'cubeclimb.unlocked'
 
@@ -36,10 +37,19 @@ export function Gate({ children }: { children: ReactNode }) {
     if (checking) return
     setChecking(true)
     setWrong(false)
-    const ok = await checkSecret(word)
+    const matchedKid = await checkSecret(word)
     setChecking(false)
-    if (ok) {
+    if (matchedKid) {
+      // The stores already booted with whichever kid this device belonged
+      // to before this tap (or the default, on a brand-new device) - only a
+      // reload makes them re-read every per-kid storage key.
+      const bootedKid = getKid()
+      setKid(matchedKid)
       writeUnlocked()
+      if (matchedKid !== bootedKid) {
+        window.location.reload()
+        return
+      }
       setUnlocked(true)
       // Best-effort: some browsers only grant persistent storage inside a
       // user gesture, and this tap is the earliest one in the app's life.

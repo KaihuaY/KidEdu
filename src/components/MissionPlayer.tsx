@@ -14,6 +14,7 @@ import { useProgress } from '../store/progress'
 import { bumpTrickReps, scaffoldMode, trickCompletions, useMissionMinutesTracker } from '../store/missions'
 import type { Lesson, Mission } from '../content/lessons'
 import { expandSteps, type PickChoices } from '../content/missionSteps'
+import { kidKey } from '../store/kid'
 
 export interface MissionPlayerProps {
   lesson: Lesson
@@ -47,7 +48,7 @@ interface SavedSpot {
 }
 
 function spotKey(holdId: string, missionId: string): string {
-  return `cubeclimb.mission.${holdId}.${missionId}`
+  return kidKey(`cubeclimb.mission.${holdId}.${missionId}`)
 }
 
 /** Defensively parses a saved pickChoices blob - drops anything that isn't a whole-number key with a number|'all' value. */

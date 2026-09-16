@@ -1,6 +1,18 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { awardGoalIfReached, markAudioPruned, saveTake, setParentStars, setSelfRating, setTakeGoalHit } from '../piano'
-import { getDoc, resetAll, update, type PianoTake } from '../progress'
+import {
+  allSongTargetsMet,
+  awardGoalIfReached,
+  awardSongTargetBeadsIfReached,
+  bumpRepetition,
+  markAudioPruned,
+  repetitionsForPiece,
+  saveTake,
+  setParentStars,
+  setSelfRating,
+  setTakeGoalHit,
+  songTargetsForDay,
+} from '../piano'
+import { getDoc, resetAll, update, type PianoPiece, type PianoTake } from '../progress'
 import { dayOffset } from '../sessions'
 
 // Same in-memory localStorage mock as progress.test.ts / sessions.test.ts -
@@ -191,6 +203,168 @@ describe('setParentStars', () => {
     expect(after.profiles.kid.tokens.silver).toBe(1)
     expect(after.piano).toEqual(before.piano)
     expect(after.profiles).toEqual(before.profiles)
+  })
+})
+
+function makePiece(overrides: Partial<PianoPiece> = {}): PianoPiece {
+  return { id: 'piece-1', name: 'Twinkle', emoji: '⭐', ...overrides }
+}
+
+function setPieces(pieces: PianoPiece[]): void {
+  update('settings', (s) => ({ ...s, pianoPieces: pieces }))
+}
+
+describe('bumpRepetition', () => {
+  it('increments a saved take from undefined and returns the new count', () => {
+    saveTake(makeTake({ id: 'a' }))
+    expect(bumpRepetition('a')).toBe(1)
+    expect(getDoc().piano.takes.find((t) => t.id === 'a')?.repetitions).toBe(1)
+  })
+
+  it('keeps incrementing on repeated calls', () => {
+    saveTake(makeTake({ id: 'a' }))
+    bumpRepetition('a')
+    bumpRepetition('a')
+    expect(bumpRepetition('a')).toBe(3)
+  })
+
+  it('only touches the matching take', () => {
+    saveTake(makeTake({ id: 'a' }))
+    saveTake(makeTake({ id: 'b' }))
+    bumpRepetition('a')
+    expect(getDoc().piano.takes.find((t) => t.id === 'b')?.repetitions).toBeUndefined()
+  })
+})
+
+describe('repetitionsForPiece', () => {
+  const day = '2026-09-07'
+
+  it('sums repetitions across non-note takes of the piece on that day', () => {
+    const takes: PianoTake[] = [
+      makeTake({ id: 'a', day, pieceId: 'piece-1', repetitions: 2 }),
+      makeTake({ id: 'b', day, pieceId: 'piece-1', repetitions: 1 }),
+    ]
+    expect(repetitionsForPiece(takes, 'piece-1', day)).toBe(3)
+  })
+
+  it('excludes other pieces, other days, notes, and takes with no repetitions', () => {
+    const takes: PianoTake[] = [
+      makeTake({ id: 'a', day, pieceId: 'piece-1', repetitions: 2 }),
+      makeTake({ id: 'b', day, pieceId: 'piece-2', repetitions: 5 }),
+      makeTake({ id: 'c', day: dayOffset(day, -1), pieceId: 'piece-1', repetitions: 5 }),
+      makeTake({ id: 'd', day, pieceId: 'piece-1', isNote: true, repetitions: 5 }),
+      makeTake({ id: 'e', day, pieceId: 'piece-1' }),
+    ]
+    expect(repetitionsForPiece(takes, 'piece-1', day)).toBe(2)
+  })
+
+  it('is 0 for a piece with no matching takes', () => {
+    expect(repetitionsForPiece([], 'piece-1', day)).toBe(0)
+  })
+})
+
+describe('songTargetsForDay', () => {
+  const day = '2026-09-07'
+
+  it('only includes pieces with a timesPerDay of at least 1', () => {
+    const pieces = [makePiece({ id: 'a', timesPerDay: 3 }), makePiece({ id: 'b', timesPerDay: 0 }), makePiece({ id: 'c' })]
+    const result = songTargetsForDay(pieces, [], day)
+    expect(result.map((r) => r.piece.id)).toEqual(['a'])
+    expect(result[0]).toEqual({ piece: pieces[0], done: 0, target: 3 })
+  })
+
+  it('reports done from that day\'s repetitions', () => {
+    const pieces = [makePiece({ id: 'a', timesPerDay: 3 })]
+    const takes = [makeTake({ id: 't', day, pieceId: 'a', repetitions: 2 })]
+    expect(songTargetsForDay(pieces, takes, day)).toEqual([{ piece: pieces[0], done: 2, target: 3 }])
+  })
+
+  it('is empty when no piece has a target', () => {
+    expect(songTargetsForDay([makePiece({ timesPerDay: 0 })], [], day)).toEqual([])
+  })
+})
+
+describe('allSongTargetsMet', () => {
+  const day = '2026-09-07'
+
+  it('is false when there are no targets at all', () => {
+    expect(allSongTargetsMet([makePiece({ timesPerDay: 0 })], [], day)).toBe(false)
+  })
+
+  it('is false when one target piece is short', () => {
+    const pieces = [makePiece({ id: 'a', timesPerDay: 2 }), makePiece({ id: 'b', timesPerDay: 1 })]
+    const takes = [
+      makeTake({ id: 't1', day, pieceId: 'a', repetitions: 2 }),
+      makeTake({ id: 't2', day, pieceId: 'b', repetitions: 0 }),
+    ]
+    expect(allSongTargetsMet(pieces, takes, day)).toBe(false)
+  })
+
+  it('is true once every target piece has met or passed its target', () => {
+    const pieces = [makePiece({ id: 'a', timesPerDay: 2 }), makePiece({ id: 'b', timesPerDay: 1 })]
+    const takes = [
+      makeTake({ id: 't1', day, pieceId: 'a', repetitions: 3 }),
+      makeTake({ id: 't2', day, pieceId: 'b', repetitions: 1 }),
+    ]
+    expect(allSongTargetsMet(pieces, takes, day)).toBe(true)
+  })
+})
+
+describe('awardSongTargetBeadsIfReached', () => {
+  const day = '2026-09-07'
+
+  it('returns null and writes nothing when the piece has no target', () => {
+    setPieces([makePiece({ id: 'piece-1' })])
+    saveTake(makeTake({ id: 'a', day, pieceId: 'piece-1', repetitions: 5 }))
+    const before = getDoc()
+    expect(awardSongTargetBeadsIfReached('piece-1', day)).toBeNull()
+    expect(getDoc().piano).toEqual(before.piano)
+    expect(getDoc().collection).toEqual(before.collection)
+  })
+
+  it('returns null and writes nothing when the target is not yet met', () => {
+    setPieces([makePiece({ id: 'piece-1', timesPerDay: 3 })])
+    saveTake(makeTake({ id: 'a', day, pieceId: 'piece-1', repetitions: 2 }))
+    const before = getDoc()
+    expect(awardSongTargetBeadsIfReached('piece-1', day)).toBeNull()
+    expect(getDoc().piano).toEqual(before.piano)
+    expect(getDoc().collection.beads).toEqual(before.collection.beads)
+  })
+
+  it('awards 2 beads and stamps the day once the target is met', () => {
+    setPieces([makePiece({ id: 'piece-1', timesPerDay: 3 })])
+    saveTake(makeTake({ id: 'a', day, pieceId: 'piece-1', repetitions: 3 }))
+
+    const beadIds = awardSongTargetBeadsIfReached('piece-1', day)
+
+    expect(beadIds).not.toBeNull()
+    expect(beadIds).toHaveLength(2)
+    expect(getDoc().piano.days[day]?.songBeadsAwarded).toEqual(['piece-1'])
+    const totalBeads = Object.values(getDoc().collection.beads).reduce((a, b) => a + b, 0)
+    expect(totalBeads).toBe(2)
+  })
+
+  it('only awards once per piece per day - a second call is a no-op', () => {
+    setPieces([makePiece({ id: 'piece-1', timesPerDay: 3 })])
+    saveTake(makeTake({ id: 'a', day, pieceId: 'piece-1', repetitions: 3 }))
+    awardSongTargetBeadsIfReached('piece-1', day)
+
+    const before = getDoc()
+    expect(awardSongTargetBeadsIfReached('piece-1', day)).toBeNull()
+    expect(getDoc().piano).toEqual(before.piano)
+    expect(getDoc().collection).toEqual(before.collection)
+  })
+
+  it('tracks each piece independently within the same day', () => {
+    setPieces([makePiece({ id: 'piece-1', timesPerDay: 1 }), makePiece({ id: 'piece-2', timesPerDay: 1 })])
+    saveTake(makeTake({ id: 'a', day, pieceId: 'piece-1', repetitions: 1 }))
+    saveTake(makeTake({ id: 'b', day, pieceId: 'piece-2', repetitions: 1 }))
+
+    expect(awardSongTargetBeadsIfReached('piece-1', day)).toHaveLength(2)
+    expect(awardSongTargetBeadsIfReached('piece-2', day)).toHaveLength(2)
+    expect(getDoc().piano.days[day]?.songBeadsAwarded?.sort()).toEqual(['piece-1', 'piece-2'])
+    const totalBeads = Object.values(getDoc().collection.beads).reduce((a, b) => a + b, 0)
+    expect(totalBeads).toBe(4)
   })
 })
 

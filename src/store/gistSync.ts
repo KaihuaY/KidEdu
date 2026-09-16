@@ -1,20 +1,43 @@
 import { useSyncExternalStore } from 'react'
 import { exportJson, getDoc, importJson, mergeDocs, subscribe, type ProgressDoc } from './progress'
+import { getKid, isKidId, kidKey, type KidId } from './kid'
+import { setRemoteKid } from './family'
 
 // ---------------------------------------------------------------------------
 // GitHub Gist sync: keeps ProgressDoc backed up to (and synced across
-// devices via) a single private gist containing one JSON file. This is a
-// deliberately simple "last-writer-wins per section" sync, not a CRDT - see
-// mergeDocs() in progress.ts for the exact merge semantics.
+// devices via) a single private gist. Both kids' documents live in the SAME
+// gist, as separate files - this device only ever reads/writes its own
+// kid's file (see fileNameForKid()); every other file it finds there is
+// treated as read-only "what the family board should show for her" data,
+// handed to family.ts's setRemoteKid() and never merged into the local doc
+// or uploaded back. This is a deliberately simple "last-writer-wins per
+// section" sync for one's own file, not a CRDT - see mergeDocs() in
+// progress.ts for the exact merge semantics.
 // ---------------------------------------------------------------------------
 
 const TOKEN_KEY = 'cubeclimb.gh.token'
 const GIST_ID_KEY = 'cubeclimb.gh.gistId'
-const GIST_FILENAME = 'cubeclimb-progress.json'
-const GIST_DESCRIPTION = 'CubeClimb progress (auto-synced - do not rename the file)'
+const FILE_STEM = 'cubeclimb-progress'
+/** Matches every kid's progress file: `cubeclimb-progress.json` (Nora, unchanged) or `cubeclimb-progress.<kid>.json`. */
+const FILE_PATTERN = /^cubeclimb-progress(?:\.([a-z]+))?\.json$/
+const GIST_DESCRIPTION = 'CubeClimb progress (auto-synced - do not rename the files)'
 const DEBOUNCE_MS = 2000
 const RETRY_MS = 30000
 const POLL_MS = 60000
+
+/** This device's own gist file name: `cubeclimb-progress.json` for Nora (unchanged), `cubeclimb-progress.<kid>.json` otherwise. */
+function fileNameForKid(): string {
+  return `${kidKey(FILE_STEM)}.json`
+}
+
+/** The kid a gist file name belongs to, or null if it doesn't match the pattern (or names an unknown kid). */
+function kidIdFromFileName(name: string): KidId | null {
+  const match = FILE_PATTERN.exec(name)
+  if (!match) return null
+  const suffix = match[1]
+  if (!suffix) return 'nora' // no suffix = Nora, per kidKey()'s rule
+  return isKidId(suffix) ? suffix : null
+}
 
 export type SyncStatus = 'off' | 'loading' | 'saved' | 'saving' | 'offline' | 'expired' | 'error'
 
@@ -142,6 +165,7 @@ async function githubFetch(path: string, init?: RequestInit): Promise<Response> 
   })
 }
 
+/** Finds a gist holding ANY kid's progress file, by name pattern - not just this device's own. */
 async function findOrCreateGist(): Promise<string> {
   const cached = getCachedGistId()
   if (cached) return cached
@@ -153,18 +177,19 @@ async function findOrCreateGist(): Promise<string> {
   }
   if (!listRes.ok) throw new Error(`CubeClimb: failed to list gists (${listRes.status})`)
   const gists = (await listRes.json()) as GistSummary[]
-  const existing = gists.find((g) => Object.prototype.hasOwnProperty.call(g.files, GIST_FILENAME))
+  const existing = gists.find((g) => Object.keys(g.files).some((name) => FILE_PATTERN.test(name)))
   if (existing) {
     setCachedGistId(existing.id)
     return existing.id
   }
 
+  // No gist has anyone's progress file yet - start one with just this kid's file.
   const createRes = await githubFetch('/gists', {
     method: 'POST',
     body: JSON.stringify({
       description: GIST_DESCRIPTION,
       public: false,
-      files: { [GIST_FILENAME]: { content: exportJson() } },
+      files: { [fileNameForKid()]: { content: exportJson() } },
     }),
   })
   if (createRes.status === 401) {
@@ -177,23 +202,46 @@ async function findOrCreateGist(): Promise<string> {
   return created.id
 }
 
-async function fetchGistContent(id: string): Promise<{ content: string; updatedAt: string }> {
+async function fetchGistDetail(id: string): Promise<GistDetail> {
   const res = await githubFetch(`/gists/${id}`)
   if (res.status === 401) {
     setStatus('expired')
     throw new Error('CubeClimb: GitHub token expired or invalid')
   }
   if (!res.ok) throw new Error(`CubeClimb: failed to fetch gist (${res.status})`)
-  const data = (await res.json()) as GistDetail
-  return { content: data.files[GIST_FILENAME]?.content ?? '', updatedAt: data.updated_at }
+  return (await res.json()) as GistDetail
 }
 
+/**
+ * Reads every OTHER kid's file out of a gist response and hands each one to
+ * family.ts's setRemoteKid() - never merged into the local doc, never
+ * uploaded anywhere. A file that isn't valid JSON, or doesn't look like a
+ * schema-1 progress doc, is silently skipped rather than crashing sync.
+ */
+function harvestOtherKids(detail: GistDetail): void {
+  const ownFile = fileNameForKid()
+  const updatedAt = Date.parse(detail.updated_at) || Date.now()
+  for (const [name, file] of Object.entries(detail.files)) {
+    if (name === ownFile) continue
+    const kid = kidIdFromFileName(name)
+    if (!kid || kid === getKid() || !file.content) continue
+    try {
+      const parsed: unknown = JSON.parse(file.content)
+      if (!parsed || typeof parsed !== 'object' || (parsed as { schemaVersion?: unknown }).schemaVersion !== 1) continue
+      setRemoteKid(kid, parsed as ProgressDoc, updatedAt)
+    } catch {
+      // Malformed remote file - ignore, the family board just won't show her yet.
+    }
+  }
+}
+
+/** PATCHes only this device's own file - another kid's file in the same gist is never touched. */
 async function pushToGist(content: string): Promise<void> {
   if (!gistId) return
   setStatus('saving')
   const res = await githubFetch(`/gists/${gistId}`, {
     method: 'PATCH',
-    body: JSON.stringify({ files: { [GIST_FILENAME]: { content } } }),
+    body: JSON.stringify({ files: { [fileNameForKid()]: { content } } }),
   })
   if (res.status === 401) {
     setStatus('expired')
@@ -204,6 +252,7 @@ async function pushToGist(content: string): Promise<void> {
   lastSyncedJson = content
   lastKnownRemoteUpdatedAt = data.updated_at
   setStatus('saved')
+  harvestOtherKids(data)
 }
 
 /**
@@ -276,9 +325,11 @@ function pushMergedResult(): void {
 async function trySync(): Promise<void> {
   try {
     if (!gistId) gistId = await findOrCreateGist()
-    const remote = await fetchGistContent(gistId)
-    lastKnownRemoteUpdatedAt = remote.updatedAt
-    const needsPush = applyRemoteContent(remote.content)
+    const detail = await fetchGistDetail(gistId)
+    lastKnownRemoteUpdatedAt = detail.updated_at
+    harvestOtherKids(detail)
+    const ownContent = detail.files[fileNameForKid()]?.content ?? ''
+    const needsPush = applyRemoteContent(ownContent)
     if (!unsubscribeStore) {
       unsubscribeStore = subscribe(scheduleUpload)
     }
@@ -286,7 +337,10 @@ async function trySync(): Promise<void> {
     // Important on a retry after a failed push: the edit that failed to
     // upload was just merged back into the local doc above, but merging
     // alone never re-sends it - without this it would silently never reach
-    // the gist until the user happened to make another edit.
+    // the gist until the user happened to make another edit. Also covers
+    // the gist existing (created by the other kid's device) but not yet
+    // having THIS kid's file - ownContent is '' so needsPush is true, and
+    // the push below adds this kid's file without touching anyone else's.
     if (needsPush) pushMergedResult()
   } catch {
     if (status !== 'expired') scheduleRetry()
@@ -296,17 +350,12 @@ async function trySync(): Promise<void> {
 async function pollForRemoteChanges(): Promise<void> {
   if (!gistId || document.visibilityState !== 'visible') return
   try {
-    const res = await githubFetch(`/gists/${gistId}`)
-    if (res.status === 401) {
-      setStatus('expired')
-      return
-    }
-    if (!res.ok) return
-    const data = (await res.json()) as GistDetail
-    if (data.updated_at !== lastKnownRemoteUpdatedAt) {
-      const remote = await fetchGistContent(gistId)
-      lastKnownRemoteUpdatedAt = remote.updatedAt
-      if (applyRemoteContent(remote.content)) pushMergedResult()
+    const detail = await fetchGistDetail(gistId)
+    if (detail.updated_at !== lastKnownRemoteUpdatedAt) {
+      lastKnownRemoteUpdatedAt = detail.updated_at
+      harvestOtherKids(detail)
+      const ownContent = detail.files[fileNameForKid()]?.content ?? ''
+      if (applyRemoteContent(ownContent)) pushMergedResult()
     }
   } catch {
     // A missed poll is harmless; the next 60s tick (or a local edit) tries again.

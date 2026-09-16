@@ -4,11 +4,13 @@
 // Mirrors the shape of src/store/sessions.ts: thin wrappers around
 // `update()` plus one React hook.
 
-import { getDoc, useProgress, update, type ParentStars, type PianoSection, type PianoTake, type SelfRating } from './progress'
+import { getDoc, useProgress, update, type ParentStars, type PianoPiece, type PianoSection, type PianoTake, type SelfRating } from './progress'
 import { bumpStreak, dayOffset } from './sessions'
 import { xpForTier, type Tier } from './rewards'
 import { goalReached, PIANO_GOAL_TIER, practiceSecondsForDay, tokenForParentStars } from './pianoRewards'
 import { getRecordingStore } from './recordings'
+import { awardBeads } from './collection'
+import { randomBeadIds } from '../content/beads'
 
 const DEVICE_ID_KEY = 'cubeclimb.deviceId'
 
@@ -88,6 +90,82 @@ export function setTakeGoalHit(takeId: string, goalHit: boolean): void {
     ...piano,
     takes: piano.takes.map((t) => (t.id === takeId ? { ...t, goalHit } : t)),
   }))
+}
+
+/**
+ * Increments the "Played it! +1" count on a saved take and returns the new
+ * total. Mirrors setSelfRating/setTakeGoalHit's shape - the live count kept
+ * while a take is still recording (see src/audio/recordingSession.ts, which
+ * owns that in-progress counter until the take is saved) is a separate,
+ * module-local thing; this is the store-level action for a take that
+ * already exists in `piano.takes`.
+ */
+export function bumpRepetition(takeId: string): number {
+  const current = getDoc().piano.takes.find((t) => t.id === takeId)
+  const next = (current?.repetitions ?? 0) + 1
+  update('piano', (piano) => ({
+    ...piano,
+    takes: piano.takes.map((t) => (t.id === takeId ? { ...t, repetitions: next } : t)),
+  }))
+  return next
+}
+
+/** Total "Played it!" repetitions logged for one piece on one local day, across every non-note take that day. */
+export function repetitionsForPiece(takes: PianoTake[], pieceId: string, day: string): number {
+  return takes
+    .filter((t) => t.day === day && t.pieceId === pieceId && !t.isNote)
+    .reduce((sum, t) => sum + (t.repetitions ?? 0), 0)
+}
+
+/** Every piece with a "play it N times a day" target, and how she's doing against it today. */
+export function songTargetsForDay(
+  pieces: PianoPiece[],
+  takes: PianoTake[],
+  day: string,
+): { piece: PianoPiece; done: number; target: number }[] {
+  return pieces
+    .filter((p) => (p.timesPerDay ?? 0) >= 1)
+    .map((piece) => ({
+      piece,
+      done: repetitionsForPiece(takes, piece.id, day),
+      target: piece.timesPerDay as number,
+    }))
+}
+
+/** True once every piece with a target has reached it today - false when there are no targets at all. */
+export function allSongTargetsMet(pieces: PianoPiece[], takes: PianoTake[], day: string): boolean {
+  const targets = songTargetsForDay(pieces, takes, day)
+  return targets.length > 0 && targets.every((t) => t.done >= t.target)
+}
+
+/**
+ * Awards 2 beads for reaching one piece's daily repeat target, exactly once
+ * per piece per local day. Returns the bead ids just awarded, or null
+ * (writing nothing) when the piece has no target, the target isn't met yet,
+ * or today's beads for this piece were already awarded - same "pre-check
+ * before update()" rule as awardGoalIfReached: a no-op must never bump
+ * piano.updatedAt.
+ */
+export function awardSongTargetBeadsIfReached(pieceId: string, day: string): string[] | null {
+  const current = getDoc()
+  const target = current.settings.pianoPieces.find((p) => p.id === pieceId)?.timesPerDay ?? 0
+  if (target < 1) return null
+  if (current.piano.days[day]?.songBeadsAwarded?.includes(pieceId)) return null
+  if (repetitionsForPiece(current.piano.takes, pieceId, day) < target) return null
+
+  const beadIds = randomBeadIds(2)
+  update('piano', (piano) => ({
+    ...piano,
+    days: {
+      ...piano.days,
+      [day]: {
+        ...piano.days[day],
+        songBeadsAwarded: [...(piano.days[day]?.songBeadsAwarded ?? []), pieceId],
+      },
+    },
+  }))
+  awardBeads(beadIds)
+  return beadIds
 }
 
 /** Marks the given takes' audio as pruned from local storage (called after RecordingStore.pruneOlderThan). */

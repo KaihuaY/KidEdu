@@ -14,6 +14,7 @@ import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { FakeAudioBackend, type FakeScript } from '../fakeBackend'
 import {
+  bumpLiveRepetition,
   dismiss,
   getSessionState,
   isRecordingActive,
@@ -22,7 +23,8 @@ import {
   startTake,
   stopTake,
 } from '../recordingSession'
-import { getDoc, resetAll } from '../../store/progress'
+import { getDoc, resetAll, update } from '../../store/progress'
+import { clearKid, setKid } from '../../store/kid'
 import { getRecordingStore } from '../../store/recordings'
 
 class MemoryStorage implements Storage {
@@ -78,7 +80,17 @@ beforeEach(() => {
     configurable: true,
     writable: true,
   })
+  // Only some tests below actually exercise the inflight checkpoint (most
+  // pre-existing tests never touch sessionStorage at all) - mocking it
+  // globally is harmless either way since writeInflightCheckpoint/
+  // clearInflightCheckpoint are just quietly exercised in the background.
+  Object.defineProperty(globalThis, 'sessionStorage', {
+    value: new MemoryStorage(),
+    configurable: true,
+    writable: true,
+  })
   resetAll()
+  clearKid()
   // Clean up any session left over from a previous test (only done/error/
   // idle can be dismissed - see the tests below, each of which drains its
   // own session before finishing).
@@ -319,4 +331,204 @@ describe('recoverUnfinishedTakes', () => {
     expect(await store.listPartialIds()).toEqual([])
     expect(await recoverUnfinishedTakes()).toBe(0) // nothing left to recover a second time
   })
+})
+
+function setPieceWithTarget(timesPerDay: number): void {
+  update('settings', (s) => ({ ...s, pianoPieces: [{ id: 'piece-1', name: 'Twinkle', emoji: '⭐', timesPerDay }] }))
+}
+
+describe('song repeat targets - the "Played it! +1" tap', () => {
+  it('is a no-op returning 0 when nothing is recording', () => {
+    expect(getSessionState().status).toBe('idle')
+    expect(bumpLiveRepetition()).toBe(0)
+  })
+
+  it('bumps the live count, reflected immediately in the recording state', async () => {
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    await startTake('piece-1')
+
+    expect(bumpLiveRepetition()).toBe(1)
+    expect(bumpLiveRepetition()).toBe(2)
+
+    const state = getSessionState()
+    expect(state.status).toBe('recording')
+    if (state.status === 'recording') expect(state.repetitions).toBe(2)
+
+    await wait(1200)
+    await stopTake('user')
+  }, 8000)
+
+  it('persists onto the saved take once recording stops', async () => {
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    await startTake('piece-1')
+    bumpLiveRepetition()
+    bumpLiveRepetition()
+    bumpLiveRepetition()
+
+    await wait(3200) // past the 3s wall-time floor so this take is actually saved
+    await stopTake('user')
+
+    const state = getSessionState()
+    expect(state.status).toBe('done')
+    if (state.status === 'done') expect(state.take.repetitions).toBe(3)
+    expect(getDoc().piano.takes.at(-1)?.repetitions).toBe(3)
+  }, 8000)
+
+  it('leaves repetitions unset on a take nobody tapped +1 on', async () => {
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    await startTake('piece-1')
+    await wait(3200)
+    await stopTake('user')
+
+    expect(getDoc().piano.takes.at(-1)?.repetitions).toBeUndefined()
+  }, 8000)
+
+  it('writes the tap into the inflight checkpoint immediately, not just on the next periodic write', async () => {
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    await startTake('piece-1')
+    bumpLiveRepetition()
+
+    const raw = sessionStorage.getItem('cubeclimb.piano.inflight')
+    expect(raw).toBeTruthy()
+    expect(JSON.parse(raw!).repetitions).toBe(1)
+
+    await wait(1200)
+    await stopTake('user')
+  }, 8000)
+
+  it('resets the live count for the next take', async () => {
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    await startTake('piece-1')
+    bumpLiveRepetition()
+    bumpLiveRepetition()
+    await wait(1200)
+    await stopTake('user')
+
+    await startTake('piece-1')
+    const state = getSessionState()
+    expect(state.status).toBe('recording')
+    if (state.status === 'recording') expect(state.repetitions).toBe(0)
+    await wait(1200)
+    await stopTake('user')
+  }, 10000)
+})
+
+describe('song repeat targets - awarding beads at stop', () => {
+  it('awards 2 beads and reports them on the done state once the daily target is met', async () => {
+    setPieceWithTarget(1)
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    await startTake('piece-1')
+    bumpLiveRepetition()
+
+    await wait(3200)
+    await stopTake('user')
+
+    const state = getSessionState()
+    expect(state.status).toBe('done')
+    if (state.status === 'done') expect(state.songBeadIds).toHaveLength(2)
+    const totalBeads = Object.values(getDoc().collection.beads).reduce((a, b) => a + b, 0)
+    expect(totalBeads).toBe(2)
+  }, 8000)
+
+  it('reports no beads when the target is not yet met', async () => {
+    setPieceWithTarget(3)
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    await startTake('piece-1')
+    bumpLiveRepetition()
+
+    await wait(3200)
+    await stopTake('user')
+
+    const state = getSessionState()
+    expect(state.status).toBe('done')
+    if (state.status === 'done') expect(state.songBeadIds).toBeNull()
+  }, 8000)
+
+  it('reports no beads for a piece with no target at all', async () => {
+    setPieceWithTarget(0)
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    await startTake('piece-1')
+    bumpLiveRepetition()
+
+    await wait(3200)
+    await stopTake('user')
+
+    const state = getSessionState()
+    expect(state.status).toBe('done')
+    if (state.status === 'done') expect(state.songBeadIds).toBeNull()
+  }, 8000)
+
+  it('never awards song beads for a grown-up voice note', async () => {
+    setPieceWithTarget(1)
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    await startTake('piece-1', { isNote: true })
+    bumpLiveRepetition()
+
+    await wait(3200)
+    await stopTake('user')
+
+    const state = getSessionState()
+    expect(state.status).toBe('done')
+    if (state.status === 'done') expect(state.songBeadIds).toBeNull()
+  }, 8000)
+})
+
+describe('recoverUnfinishedTakes carries the live repetition count over from the checkpoint', () => {
+  it('sets repetitions on the recovered take from a matching inflight checkpoint', async () => {
+    const store = getRecordingStore()
+    const enc = new TextEncoder()
+    const takeId = 'crash-take-reps'
+    await store.putPartial({
+      id: takeId,
+      seq: 0,
+      bytes: enc.encode('chunk-0').buffer as ArrayBuffer,
+      mimeType: 'audio/webm',
+      startedAt: Date.now() - 5000,
+      pieceId: 'piece-1',
+      deviceId: 'device-1',
+    })
+    sessionStorage.setItem(
+      'cubeclimb.piano.inflight',
+      JSON.stringify({ id: takeId, activeMs: 4000, startedAt: Date.now() - 5000, pieceId: 'piece-1', repetitions: 2 }),
+    )
+
+    const recovered = await recoverUnfinishedTakes()
+    expect(recovered).toBe(1)
+    expect(getDoc().piano.takes.find((t) => t.id === takeId)?.repetitions).toBe(2)
+  })
+
+  it('leaves repetitions unset when the checkpoint has none', async () => {
+    const store = getRecordingStore()
+    const enc = new TextEncoder()
+    const takeId = 'crash-take-noreps'
+    await store.putPartial({
+      id: takeId,
+      seq: 0,
+      bytes: enc.encode('chunk-0').buffer as ArrayBuffer,
+      mimeType: 'audio/webm',
+      startedAt: Date.now() - 5000,
+      pieceId: 'piece-1',
+      deviceId: 'device-1',
+    })
+
+    const recovered = await recoverUnfinishedTakes()
+    expect(recovered).toBe(1)
+    expect(getDoc().piano.takes.find((t) => t.id === takeId)?.repetitions).toBeUndefined()
+  })
+})
+
+describe('the inflight checkpoint key is per-kid', () => {
+  it("keeps Nora's key name unchanged but writes another kid's checkpoint under a suffixed key", async () => {
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    setKid('amelia')
+    await startTake('piece-1')
+    bumpLiveRepetition()
+
+    expect(sessionStorage.getItem('cubeclimb.piano.inflight')).toBeNull()
+    expect(sessionStorage.getItem('cubeclimb.piano.inflight.amelia')).toBeTruthy()
+
+    await wait(1200)
+    await stopTake('user')
+    expect(sessionStorage.getItem('cubeclimb.piano.inflight.amelia')).toBeNull() // cleared on a clean stop
+  }, 8000)
 })

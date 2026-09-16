@@ -12,12 +12,13 @@ import { steadinessScore } from './steadiness'
 import { computeWaveform } from './waveform'
 import { MicStartError, type AudioBackend, type MicError, type MicSession, type RecordingResult } from './types'
 import { acquireWakeLock, type WakeLockHandle } from './wakeLock'
-import { getDeviceId, awardGoalIfReached, saveTake, setTakeWaveform } from '../store/piano'
+import { getDeviceId, awardGoalIfReached, awardSongTargetBeadsIfReached, saveTake, setTakeWaveform } from '../store/piano'
 import { getDoc, type PianoTake } from '../store/progress'
 import { getRecordingStore, requestPersistentStorage } from '../store/recordings'
 import { isDriveConfigured, processUploadQueue } from '../store/driveUpload'
 import { localDay } from '../store/sessions'
 import { fireConfetti } from '../components/Confetti'
+import { kidKey } from '../store/kid'
 
 export type SessionState =
   | { status: 'idle' }
@@ -32,28 +33,36 @@ export type SessionState =
       silentSec: number
       wakeLock: boolean
       hearing: boolean
+      /** Times she's tapped "Played it! +1" so far this take - see bumpLiveRepetition. */
+      repetitions: number
     }
   | { status: 'saving' }
-  | { status: 'done'; take: PianoTake; goalJustReached: boolean; discarded: boolean }
+  | { status: 'done'; take: PianoTake; goalJustReached: boolean; discarded: boolean; songBeadIds: string[] | null }
   | { status: 'error'; error: MicError }
 
 const FAKE_MIC_FLAG_KEY = 'cubeclimb.fakeMic'
 const MIN_KEPT_DURATION_SEC = 3
-const INFLIGHT_KEY = 'cubeclimb.piano.inflight'
 const CHECKPOINT_INTERVAL_MS = 1000
 
-/** Written to sessionStorage roughly once a second while recording, so a reload can estimate active-minutes for a take recovered from leftover partial chunks (see recoverUnfinishedTakes). */
+/** Resolved at call time (not module load) so tests can switch kids - see src/store/kid.ts. */
+function inflightKey(): string {
+  return kidKey('cubeclimb.piano.inflight')
+}
+
+/** Written to sessionStorage roughly once a second while recording, so a reload can estimate active-minutes (and repeat-target progress) for a take recovered from leftover partial chunks (see recoverUnfinishedTakes). */
 interface InflightCheckpoint {
   id: string
   activeMs: number
   startedAt: number
   pieceId: string | null
+  /** How many "Played it! +1" taps had landed as of this checkpoint. Optional so a checkpoint written by an older build still parses. */
+  repetitions?: number
 }
 
 function readInflightCheckpoint(): InflightCheckpoint | null {
   try {
     if (typeof sessionStorage === 'undefined') return null
-    const raw = sessionStorage.getItem(INFLIGHT_KEY)
+    const raw = sessionStorage.getItem(inflightKey())
     if (!raw) return null
     return JSON.parse(raw) as InflightCheckpoint
   } catch {
@@ -64,7 +73,7 @@ function readInflightCheckpoint(): InflightCheckpoint | null {
 function writeInflightCheckpoint(cp: InflightCheckpoint): void {
   try {
     if (typeof sessionStorage === 'undefined') return
-    sessionStorage.setItem(INFLIGHT_KEY, JSON.stringify(cp))
+    sessionStorage.setItem(inflightKey(), JSON.stringify(cp))
   } catch {
     // Storage disabled/full - the recovered take (if any) just falls back to activeSec 0.
   }
@@ -73,7 +82,7 @@ function writeInflightCheckpoint(cp: InflightCheckpoint): void {
 function clearInflightCheckpoint(): void {
   try {
     if (typeof sessionStorage === 'undefined') return
-    sessionStorage.removeItem(INFLIGHT_KEY)
+    sessionStorage.removeItem(inflightKey())
   } catch {
     // Nothing to clean up if storage is unavailable.
   }
@@ -172,6 +181,9 @@ let hiddenListenersAttached = false
 // Piano home's take list, but still uploads to Drive like any other take.
 let currentIsNote = false
 let autoStopTimer: ReturnType<typeof setTimeout> | null = null
+// Live "Played it! +1" tally for the take in progress (see bumpLiveRepetition) -
+// reset at the start of every take and folded onto the take itself at stop.
+let currentRepetitions = 0
 
 // --- Onset tracking for the steady-beat readout ----------------------------
 //
@@ -286,6 +298,7 @@ export async function startTake(pieceId: string | null, opts?: { isNote?: boolea
 
   currentPieceId = pieceId
   currentIsNote = opts?.isNote ?? false
+  currentRepetitions = 0
   const takeId = randomId()
   currentTakeId = takeId
   setState({ status: 'starting', pieceId })
@@ -309,6 +322,7 @@ export async function startTake(pieceId: string | null, opts?: { isNote?: boolea
       silentSec: 0,
       wakeLock: wakeLockOn,
       hearing: false,
+      repetitions: 0,
     })
 
     if (opts?.maxSeconds) {
@@ -365,11 +379,12 @@ export async function startTake(pieceId: string | null, opts?: { isNote?: boolea
           silentSec: Math.round(frame.silentMs / 1000),
           wakeLock: wakeLockOn,
           hearing: frame.active,
+          repetitions: currentRepetitions,
         })
       }
       if (nowMs - lastCheckpointAt >= CHECKPOINT_INTERVAL_MS) {
         lastCheckpointAt = nowMs
-        writeInflightCheckpoint({ id: takeId, activeMs: frame.activeMs, startedAt: currentStartedAt, pieceId })
+        writeInflightCheckpoint({ id: takeId, activeMs: frame.activeMs, startedAt: currentStartedAt, pieceId, repetitions: currentRepetitions })
       }
     })
 
@@ -378,10 +393,33 @@ export async function startTake(pieceId: string | null, opts?: { isNote?: boolea
     const kind = err instanceof MicStartError ? err.kind : 'unknown'
     currentTakeId = null
     currentIsNote = false
+    currentRepetitions = 0
     clearAutoStopTimer()
     resetTrackingState()
     setState({ status: 'error', error: kind })
   }
+}
+
+/**
+ * Records one "Played it! +1" tap on the take in progress (see Record.tsx's
+ * rep-plus button) and returns the new tally. A no-op returning the
+ * unchanged tally when nothing is recording. Updates the live session state
+ * immediately (so the "N of M today" line reacts right away) and writes the
+ * inflight checkpoint immediately too, rather than waiting for the next ~1s
+ * periodic write, so a crash right after a tap never loses it.
+ */
+export function bumpLiveRepetition(): number {
+  if (state.status !== 'recording' || !currentTakeId) return currentRepetitions
+  currentRepetitions += 1
+  setState({ ...state, repetitions: currentRepetitions })
+  writeInflightCheckpoint({
+    id: currentTakeId,
+    activeMs: currentMeter?.activeMs ?? 0,
+    startedAt: currentStartedAt,
+    pieceId: currentPieceId,
+    repetitions: currentRepetitions,
+  })
+  return currentRepetitions
 }
 
 export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void> {
@@ -395,7 +433,9 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
   const takeId = currentTakeId
   const isNote = currentIsNote
   const onsets = currentOnsets
+  const repetitions = currentRepetitions
   currentIsNote = false
+  currentRepetitions = 0
   clearAutoStopTimer()
 
   detachHiddenListeners()
@@ -442,6 +482,7 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
     activeSec,
     ...(onsets.length > 0 ? { onsets } : {}),
     ...(steadiness !== undefined ? { steadiness } : {}),
+    ...(repetitions > 0 ? { repetitions } : {}),
     mimeType: result.mimeType,
     sizeBytes: result.blob?.size ?? 0,
     hasAudio: Boolean(result.blob && result.blob.size > 0),
@@ -451,6 +492,7 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
 
   const discarded = durationSec < MIN_KEPT_DURATION_SEC
   let goalJustReached = false
+  let songBeadIds: string[] | null = null
 
   if (!discarded) {
     if (result.blob) {
@@ -463,6 +505,7 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
     saveTake(take)
     goalJustReached = awardGoalIfReached(day, settings.goalMinutes.piano)
     if (goalJustReached) fireConfetti('big')
+    if (pieceId && !isNote) songBeadIds = awardSongTargetBeadsIfReached(pieceId, day)
     // Kick the Drive upload right away; the worker also retries later.
     if (take.upload) void processUploadQueue()
 
@@ -492,7 +535,7 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
   clearInflightCheckpoint()
   currentTakeId = null
 
-  setState({ status: 'done', take, goalJustReached, discarded })
+  setState({ status: 'done', take, goalJustReached, discarded, songBeadIds })
 }
 
 export function dismiss(): void {
@@ -570,7 +613,9 @@ export async function recoverUnfinishedTakes(): Promise<number> {
     }
 
     const { blob, mimeType, startedAt, pieceId, chunks } = assembled
-    const activeMs = checkpoint && checkpoint.id === id ? checkpoint.activeMs : 0
+    const matchingCheckpoint = checkpoint && checkpoint.id === id ? checkpoint : null
+    const activeMs = matchingCheckpoint?.activeMs ?? 0
+    const repetitions = matchingCheckpoint?.repetitions ?? 0
     const settings = getDoc().settings
     const take: PianoTake = {
       id,
@@ -579,6 +624,7 @@ export async function recoverUnfinishedTakes(): Promise<number> {
       startedAt,
       durationSec: chunks, // ~1 chunk per second - see AssembledPartial's doc comment
       activeSec: Math.round(activeMs / 1000),
+      ...(repetitions > 0 ? { repetitions } : {}),
       mimeType,
       sizeBytes: blob.size,
       hasAudio: true,

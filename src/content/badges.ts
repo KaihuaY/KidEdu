@@ -4,6 +4,7 @@
 // newly-earned ids and fires toasts.
 
 import { isMissionDone } from '../store/missions'
+import { findItem, itemsInSet, type CollectionSet } from './collection'
 import type { ProgressDoc } from '../store/progress'
 
 export interface Badge {
@@ -33,7 +34,20 @@ export const BADGES: Badge[] = [
   { id: 'ten-takes', title: '10 recordings', emoji: '🎼', how: 'Record 10 piano takes.' },
   { id: 'hundred-minutes', title: '100 minutes of playing', emoji: '⏱️', how: 'Play the piano for 100 minutes in total.' },
   { id: 'first-gold-stars', title: 'Triple star day', emoji: '⭐', how: 'Get 3 stars from your grown-up on a day.' },
+  { id: 'first-card', title: 'First card', emoji: '🃏', how: 'Open a Blind Box and win your first collection card.' },
+  { id: 'set-gems', title: 'Gem collector', emoji: '💎', how: 'Collect every card in the Gems & minerals set.' },
+  { id: 'set-animals', title: 'Animal expert', emoji: '🦊', how: 'Collect every card in the Animals set.' },
+  { id: 'set-space', title: 'Space explorer', emoji: '🪐', how: 'Collect every card in the Space set.' },
+  { id: 'first-legendary', title: 'Legendary!', emoji: '🌟', how: 'Win a legendary collection card.' },
+  { id: 'first-bracelet', title: 'Bracelet maker', emoji: '📿', how: 'Finish your first bead bracelet.' },
 ]
+
+/** Whether every card in `set` is owned (count >= 1) in `doc.collection`. */
+function setComplete(doc: ProgressDoc, set: CollectionSet): boolean {
+  const ownedIds = new Set(doc.collection.items.filter((i) => i.count > 0).map((i) => i.id))
+  const cards = itemsInSet(set)
+  return cards.length > 0 && cards.every((c) => ownedIds.has(c.id))
+}
 
 /**
  * Every badge id `doc` currently qualifies for (order matches BADGES, not
@@ -71,6 +85,13 @@ export function earnedBadges(doc: ProgressDoc): string[] {
   if (totalActiveMinutes >= 100) out.push('hundred-minutes')
 
   if (Object.values(doc.piano.days).some((d) => d.parentStars === 3)) out.push('first-gold-stars')
+
+  if (doc.collection.items.length > 0) out.push('first-card')
+  if (setComplete(doc, 'gems')) out.push('set-gems')
+  if (setComplete(doc, 'animals')) out.push('set-animals')
+  if (setComplete(doc, 'space')) out.push('set-space')
+  if (doc.collection.items.some((i) => findItem(i.id)?.rarity === 'legendary')) out.push('first-legendary')
+  if (doc.collection.bracelets.some((b) => b.finishedAt)) out.push('first-bracelet')
 
   return out
 }

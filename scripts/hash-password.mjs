@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 // Prints the SHA-256 hex digest of a secret word, for CubeClimb's lock screen.
+// Each kid (Nora, Amelia, ...) has her own word and her own entry in the
+// `KIDS` array in src/content/access.ts.
 //
 // Usage: node scripts/hash-password.mjs <new word>
 
@@ -15,4 +17,4 @@ if (!word) {
 const hash = createHash('sha256').update(word).digest('hex')
 
 console.log(hash)
-console.log(`Paste this as FAMILY_PASSWORD_SHA256 in src/content/access.ts, then push.`)
+console.log(`Paste this as the secretSha256 for that kid's entry in the KIDS array in src/content/access.ts, then push.`)

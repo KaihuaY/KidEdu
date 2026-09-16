@@ -10,6 +10,7 @@ import {
   start,
   stop,
 } from '../metronome'
+import { clearKid, setKid } from '../../store/kid'
 
 class MemoryStorage implements Storage {
   private map = new Map<string, string>()
@@ -39,11 +40,17 @@ beforeEach(() => {
     configurable: true,
     writable: true,
   })
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: new MemoryStorage(),
+    configurable: true,
+    writable: true,
+  })
 })
 
 afterEach(() => {
   stop()
   vi.useRealTimers()
+  clearKid()
 })
 
 describe('clampBpm', () => {
@@ -100,6 +107,22 @@ describe('remembered tempo per piece', () => {
   it('clamps a remembered tempo on the way in', () => {
     setRememberedBpm('piece-1', 999)
     expect(getRememberedBpm('piece-1')).toBe(160)
+  })
+})
+
+describe('remembered tempo is per-kid', () => {
+  it("keeps Nora's key name unchanged but stores another kid's tempo under a suffixed key", () => {
+    setRememberedBpm('piece-1', 108)
+    expect(sessionStorage.getItem('cubeclimb.metronome.piece-1')).toBe('108')
+
+    setKid('amelia')
+    expect(getRememberedBpm('piece-1')).toBe(84) // a fresh kid has never set this piece's tempo
+    setRememberedBpm('piece-1', 120)
+    expect(sessionStorage.getItem('cubeclimb.metronome.piece-1.amelia')).toBe('120')
+    expect(sessionStorage.getItem('cubeclimb.metronome.piece-1')).toBe('108') // Nora's is untouched
+
+    clearKid()
+    expect(getRememberedBpm('piece-1')).toBe(108) // back to Nora's own tempo
   })
 })
 

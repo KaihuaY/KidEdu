@@ -13,13 +13,14 @@ import { holdForPhase } from '../content/lessons'
 import { useProgress } from '../store/progress'
 import { logSolve } from '../store/solves'
 import { CubeTabs } from '../components/CubeTabs'
+import { kidKey } from '../store/kid'
 
 const NET_STORAGE_KEY = 'cubeclimb.help.net'
 
 function readStoredNet(): string {
   try {
     if (typeof sessionStorage === 'undefined') return blankFacelets()
-    const raw = sessionStorage.getItem(NET_STORAGE_KEY)
+    const raw = sessionStorage.getItem(kidKey(NET_STORAGE_KEY))
     return raw && raw.length === 54 ? raw : blankFacelets()
   } catch {
     return blankFacelets()
@@ -28,7 +29,7 @@ function readStoredNet(): string {
 
 function writeStoredNet(facelets: string): void {
   try {
-    sessionStorage?.setItem(NET_STORAGE_KEY, facelets)
+    sessionStorage?.setItem(kidKey(NET_STORAGE_KEY), facelets)
   } catch {
     // ignore - the net just won't survive a refresh
   }

@@ -14,7 +14,14 @@ export type KidId = 'nora' | 'amelia'
 
 export const DEFAULT_KID: KidId = 'nora'
 
+/** Friendly display name for each kid id, e.g. for the header and defaults.settings.kidName. */
+export const KID_NAMES: Record<KidId, string> = {
+  nora: 'Nora',
+  amelia: 'Amelia',
+}
+
 const KID_KEY = 'cubeclimb.kid'
+const UNLOCKED_KEY = 'cubeclimb.unlocked'
 
 export function isKidId(value: unknown): value is KidId {
   return value === 'nora' || value === 'amelia'
@@ -57,6 +64,22 @@ export function clearKid(): void {
   } catch {
     // ignore
   }
+}
+
+/** Friendly display name for `id` (defaults to the current device's kid). */
+export function kidDisplayName(id: KidId = getKid()): string {
+  return KID_NAMES[id]
+}
+
+/** Re-locks the device: forgets both the unlock flag and which kid it belongs to. */
+export function lockDevice(): void {
+  if (!hasLocalStorage()) return
+  try {
+    localStorage.removeItem(UNLOCKED_KEY)
+  } catch {
+    // ignore
+  }
+  clearKid()
 }
 
 /**

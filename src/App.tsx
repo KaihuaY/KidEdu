@@ -15,6 +15,8 @@ import { Settings } from './screens/Settings'
 import { PianoHome } from './screens/piano/PianoHome'
 import { Record } from './screens/piano/Record'
 import { ParentReview } from './screens/piano/ParentReview'
+import { Family } from './screens/Family'
+import { Credits } from './screens/Credits'
 
 interface NavItem {
   path: string
@@ -75,6 +77,8 @@ function Screen({ path }: { path: string }) {
   if (path === '/box') return <BlindBox />
   if (path === '/solves') return <SolveLog />
   if (path === '/settings') return <Settings />
+  if (path === '/family') return <Family />
+  if (path === '/credits') return <Credits />
   if (path.startsWith('/lesson/')) return <Lesson />
   if (path === '/piano') return <PianoHome />
   if (path === '/piano/record') return <Record />

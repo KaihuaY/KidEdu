@@ -10,6 +10,10 @@ import { ActivityCard } from '../components/ActivityCard'
 import { TokenPill } from '../components/TokenPill'
 import { NoteCard } from '../components/NoteCard'
 import { BadgeToast } from '../components/BadgeToast'
+import { FamilyBoard } from '../components/FamilyBoard'
+import { BraceletStrand } from '../components/BraceletMaker'
+import { latestFinishedBracelet } from '../store/collection'
+import { COLLECTION } from '../content/collection'
 
 export function Home() {
   const progress = useProgress()
@@ -27,6 +31,7 @@ export function Home() {
   const cubeStatus = tomorrow
     ? `Done today ✅ · Tomorrow: ${tomorrow.title}`
     : cubeStatusText(cubePlan, kidName)
+  const latestBracelet = latestFinishedBracelet(progress.collection)
   const pianoGoal = progress.settings.goalMinutes.piano
   const pianoCountMode = progress.settings.pianoCountMode ?? 'recording'
   const pianoCountedSec = practiceSecondsForDay(progress.piano.takes, today, pianoCountMode)
@@ -72,6 +77,34 @@ export function Home() {
           🎁 Open a box
         </button>
       </div>
+
+      <button
+        type="button"
+        className="cc-card"
+        data-testid="home-collection"
+        onClick={() => navigate('/box')}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.5rem',
+          padding: '0.9rem 1rem',
+          width: '100%',
+          minHeight: 56,
+          textAlign: 'left',
+          border: 'none',
+          cursor: 'pointer',
+          font: 'inherit',
+          color: 'var(--cc-ink)',
+        }}
+      >
+        <span style={{ fontWeight: 700 }}>
+          🃏 My cards: {progress.collection.items.length} / {COLLECTION.length}
+          {latestBracelet ? ` · 📿 ${latestBracelet.name}` : ''}
+        </span>
+        {latestBracelet && <BraceletStrand bracelet={latestBracelet} width={300} />}
+      </button>
+
+      <FamilyBoard compact />
     </div>
   )
 }

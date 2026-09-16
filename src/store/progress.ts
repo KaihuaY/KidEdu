@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { APP_BUILD } from '../buildInfo'
-import { kidKey } from './kid'
+import { kidDisplayName, kidKey } from './kid'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -285,6 +285,8 @@ export interface PianoDay {
   goalReachedAt?: number
   parentStars?: ParentStars
   parentRatedAt?: number
+  /** Piece ids that already got their "song repeat target" beads today (see awardSongTargetBeadsIfReached). */
+  songBeadsAwarded?: string[]
 }
 
 export interface PianoSection {
@@ -382,7 +384,7 @@ export function defaultDoc(): ProgressDoc {
   return {
     schemaVersion: 1,
     settings: {
-      kidName: 'Nora',
+      kidName: kidDisplayName(),
       parentName: 'Coach',
       pin: '1234',
       sessionMinutes: 10,

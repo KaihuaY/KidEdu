@@ -14,6 +14,7 @@ import { extensionFor } from '../audio/mime'
 import { getDoc, subscribe, update, exportJson, type PianoTake, type Settings } from './progress'
 import { getRecordingStore, type RecordingStore } from './recordings'
 import { localDay } from './sessions'
+import { kidKey } from './kid'
 
 export interface DriveConfig {
   scriptUrl: string
@@ -401,7 +402,7 @@ const PROGRESS_BACKUP_DAY_KEY = 'cubeclimb.drive.progressBackupDay'
 export function lastProgressBackupDay(): string | null {
   if (!hasLocalStorage()) return null
   try {
-    return localStorage.getItem(PROGRESS_BACKUP_DAY_KEY)
+    return localStorage.getItem(kidKey(PROGRESS_BACKUP_DAY_KEY))
   } catch {
     return null
   }
@@ -410,7 +411,7 @@ export function lastProgressBackupDay(): string | null {
 function setLastProgressBackupDay(day: string): void {
   if (!hasLocalStorage()) return
   try {
-    localStorage.setItem(PROGRESS_BACKUP_DAY_KEY, day)
+    localStorage.setItem(kidKey(PROGRESS_BACKUP_DAY_KEY), day)
   } catch {
     // Storage full/disabled - the next tick just retries the same day, which is harmless.
   }
