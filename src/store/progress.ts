@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { APP_BUILD } from '../buildInfo'
+import { kidKey } from './kid'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -27,6 +28,8 @@ export interface PianoPiece {
   goal?: string
   /** Local YYYY-MM-DD the goal was set. */
   goalSetOn?: string
+  /** Grown-up target: play this piece this many times a day (counted by the "+1" tap while recording). 0/undefined = off. */
+  timesPerDay?: number
 }
 
 /** What counts toward the daily piano goal: the whole recording (default) or only seconds where playing was heard. */
@@ -160,6 +163,10 @@ export interface BoxHistoryEntry {
   tier: 'gold' | 'silver' | 'bronze'
   openedAt: number
   result: string
+  /** Collection item the box held (content/collection.ts id), for boxes opened after the photo collection shipped. */
+  itemId?: string
+  /** Beads the box (or a duplicate item) turned into. */
+  beadIds?: string[]
 }
 
 export interface EarnedBadge {
@@ -191,6 +198,37 @@ export interface Note {
 
 export interface NotesSection {
   items: Note[]
+  updatedAt: number
+}
+
+// --- Photo collection + beads (the reward system from round 6) ------------
+
+export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
+
+export const RARITIES: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
+
+/** One collection card she owns (id from src/content/collection.ts). */
+export interface OwnedItem {
+  id: string
+  /** How many times it dropped; duplicates beyond the first turned into beads. */
+  count: number
+  firstAt: number
+}
+
+export interface Bracelet {
+  id: string
+  name: string
+  /** Fixed number of slots along the strand; null = empty slot. Bead ids from src/content/beads.ts. */
+  beads: (string | null)[]
+  startedAt: number
+  finishedAt?: number
+}
+
+export interface CollectionSection {
+  items: OwnedItem[]
+  /** beadId -> how many are loose in the tray (beads on a bracelet are not counted here). */
+  beads: Record<string, number>
+  bracelets: Bracelet[]
   updatedAt: number
 }
 
@@ -226,6 +264,8 @@ export interface PianoTake {
   steadiness?: number
   /** Did she say she met the piece's goal for this take? */
   goalHit?: boolean
+  /** How many times she tapped "Played it! +1" during this take (song repeat targets). */
+  repetitions?: number
   mimeType: string
   sizeBytes: number
   hasAudio: boolean
@@ -262,9 +302,10 @@ export interface ProgressDoc {
   solveLog: SolveLog
   piano: PianoSection
   notes: NotesSection
+  collection: CollectionSection
 }
 
-export type SectionKey = 'settings' | 'profiles' | 'rewards' | 'solveLog' | 'piano' | 'notes'
+export type SectionKey = 'settings' | 'profiles' | 'rewards' | 'solveLog' | 'piano' | 'notes' | 'collection'
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -306,6 +347,26 @@ export function emptyPiano(updatedAt: number): PianoSection {
 
 export function emptyNotes(updatedAt: number): NotesSection {
   return { items: [], updatedAt }
+}
+
+export function emptyCollection(updatedAt: number): CollectionSection {
+  return { items: [], beads: {}, bracelets: [], updatedAt }
+}
+
+function normalizeCollection(parsed: Partial<CollectionSection> | undefined): CollectionSection {
+  if (!parsed) return emptyCollection(0)
+  const beads: Record<string, number> = {}
+  if (parsed.beads && typeof parsed.beads === 'object') {
+    for (const [id, n] of Object.entries(parsed.beads)) {
+      if (typeof n === 'number' && Number.isFinite(n) && n > 0) beads[id] = Math.floor(n)
+    }
+  }
+  return {
+    items: Array.isArray(parsed.items) ? parsed.items : [],
+    beads,
+    bracelets: Array.isArray(parsed.bracelets) ? parsed.bracelets : [],
+    updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : 0,
+  }
 }
 
 function normalizeNotes(parsed: Partial<NotesSection> | undefined): NotesSection {
@@ -369,6 +430,7 @@ export function defaultDoc(): ProgressDoc {
     },
     piano: emptyPiano(now),
     notes: emptyNotes(now),
+    collection: emptyCollection(now),
   }
 }
 
@@ -376,7 +438,14 @@ export function defaultDoc(): ProgressDoc {
 // Store
 // ---------------------------------------------------------------------------
 
-const STORAGE_KEY = 'cubeclimb.progress'
+/**
+ * Per-kid document key: `cubeclimb.progress` for Nora (unchanged from
+ * before the app knew about kids), `cubeclimb.progress.<kid>` otherwise.
+ * Resolved at call time, not module load, so tests can switch kids.
+ */
+function storageKey(): string {
+  return kidKey('cubeclimb.progress')
+}
 
 function hasLocalStorage(): boolean {
   try {
@@ -521,6 +590,7 @@ function normalizeDoc(parsed: Partial<ProgressDoc>): ProgressDoc {
     solveLog: { ...fallback.solveLog, ...parsed.solveLog },
     piano: normalizePiano(parsed.piano),
     notes: normalizeNotes(parsed.notes),
+    collection: normalizeCollection(parsed.collection),
   }
 }
 
@@ -543,6 +613,7 @@ function neverEditedDoc(): ProgressDoc {
     solveLog: { ...fresh.solveLog, updatedAt: 0 },
     piano: emptyPiano(0),
     notes: emptyNotes(0),
+    collection: emptyCollection(0),
   }
 }
 
@@ -558,7 +629,9 @@ function neverEditedDoc(): ProgressDoc {
 // against an already-normalized doc many times over does not pile up copies.
 // ---------------------------------------------------------------------------
 
-const BACKUPS_KEY = 'cubeclimb.progress.backups'
+function backupsKey(): string {
+  return kidKey('cubeclimb.progress.backups')
+}
 const BUILD_ID_KEY = 'cubeclimb.buildId'
 const MAX_BACKUPS = 3
 
@@ -571,7 +644,7 @@ interface StoredBackup {
 function readBackups(): StoredBackup[] {
   if (!hasLocalStorage()) return []
   try {
-    const raw = localStorage.getItem(BACKUPS_KEY)
+    const raw = localStorage.getItem(backupsKey())
     if (!raw) return []
     const parsed: unknown = JSON.parse(raw)
     return Array.isArray(parsed) ? (parsed as StoredBackup[]) : []
@@ -583,7 +656,7 @@ function readBackups(): StoredBackup[] {
 function writeBackups(backups: StoredBackup[]): void {
   if (!hasLocalStorage()) return
   try {
-    localStorage.setItem(BACKUPS_KEY, JSON.stringify(backups.slice(-MAX_BACKUPS)))
+    localStorage.setItem(backupsKey(), JSON.stringify(backups.slice(-MAX_BACKUPS)))
   } catch {
     // Storage full/disabled - the backup just won't be available; not fatal.
   }
@@ -616,7 +689,7 @@ export function restoreBackup(index: number): void {
 function loadInitialDoc(): ProgressDoc {
   if (!hasLocalStorage()) return neverEditedDoc()
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(storageKey())
     if (!raw) return neverEditedDoc()
     const parsed = JSON.parse(raw) as Partial<ProgressDoc>
     if (!parsed || parsed.schemaVersion !== 1) return neverEditedDoc()
@@ -640,10 +713,19 @@ function loadInitialDoc(): ProgressDoc {
 let doc: ProgressDoc = loadInitialDoc()
 const listeners = new Set<() => void>()
 
+/**
+ * Re-reads the document from this kid's storage key. Only used by tests and
+ * by the "this device belongs to" switch (which reloads the page anyway).
+ */
+export function reloadFromStorage(): void {
+  doc = loadInitialDoc()
+  notify()
+}
+
 function persist(): void {
   if (!hasLocalStorage()) return
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(doc))
+    localStorage.setItem(storageKey(), JSON.stringify(doc))
   } catch {
     // Storage can be full or disabled (private browsing); progress just
     // won't survive a reload in that case, which is an acceptable fallback.
@@ -694,7 +776,7 @@ function newer<T extends { updatedAt: number }>(local: T, remote: T | undefined)
   return remote.updatedAt > local.updatedAt ? remote : local
 }
 
-const KNOWN_SECTION_KEYS = new Set(['schemaVersion', 'settings', 'profiles', 'rewards', 'solveLog', 'piano'])
+const KNOWN_SECTION_KEYS = new Set(['schemaVersion', 'settings', 'profiles', 'rewards', 'solveLog', 'piano', 'notes', 'collection'])
 
 function sectionUpdatedAt(value: unknown): number | undefined {
   if (!value || typeof value !== 'object') return undefined
@@ -759,6 +841,7 @@ export function mergeDocs(local: ProgressDoc, remote: ProgressDoc): ProgressDoc 
     solveLog: newer(local.solveLog, remote.solveLog),
     piano: newer(local.piano ?? emptyPiano(0), remote.piano),
     notes: newer(local.notes ?? emptyNotes(0), remote.notes),
+    collection: newer(local.collection ?? emptyCollection(0), remote.collection),
   }
 }
 

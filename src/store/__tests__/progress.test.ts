@@ -6,6 +6,7 @@ import {
   getDoc,
   importJson,
   mergeDocs,
+  reloadFromStorage,
   resetAll,
   setGoalMinutes,
   update,
@@ -782,5 +783,57 @@ describe('restoreBackup', () => {
     Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true, writable: true })
     const fresh = await import('../progress')
     expect(() => fresh.restoreBackup(0)).toThrow()
+  })
+})
+
+describe('collection section (round 6)', () => {
+  it('defaults to an empty collection with updatedAt 0 on a blank device and merges LWW', () => {
+    expect(getDoc().collection).toEqual({ items: [], beads: {}, bracelets: [], updatedAt: 0 })
+    const local = defaultDoc()
+    local.collection = { items: [{ id: 'amethyst', count: 1, firstAt: 1 }], beads: { red: 2 }, bracelets: [], updatedAt: 100 }
+    const remote = defaultDoc()
+    remote.collection = { items: [{ id: 'fox', count: 1, firstAt: 2 }], beads: {}, bracelets: [], updatedAt: 200 }
+    expect(mergeDocs(local, remote).collection.items[0].id).toBe('fox')
+    // A remote doc from a build that predates the section never wipes local.
+    const old = defaultDoc() as Partial<ProgressDoc>
+    delete old.collection
+    expect(mergeDocs(local, old as ProgressDoc).collection.items[0].id).toBe('amethyst')
+  })
+
+  it('normalizes a half-formed collection on import (bad bead counts dropped)', () => {
+    const doc = defaultDoc() as unknown as Record<string, unknown>
+    doc.collection = { items: [{ id: 'moon', count: 2, firstAt: 5 }], beads: { blue: 3, bad: -1, worse: 'x' }, updatedAt: 7 }
+    importJson(JSON.stringify(doc))
+    expect(getDoc().collection).toEqual({ items: [{ id: 'moon', count: 2, firstAt: 5 }], beads: { blue: 3 }, bracelets: [], updatedAt: 7 })
+  })
+
+  it('keeps timesPerDay on pieces and repetitions on takes through export/import', () => {
+    update('settings', (s) => ({ ...s, pianoPieces: [{ id: 'p1', name: 'Twinkle', emoji: '⭐', timesPerDay: 3 }] }))
+    update('piano', (p) => ({
+      ...p,
+      takes: [{ id: 't1', day: '2026-09-15', pieceId: 'p1', startedAt: 1, durationSec: 10, activeSec: 5, repetitions: 2, mimeType: 'audio/mp4', sizeBytes: 1, hasAudio: true, deviceId: 'd' }],
+    }))
+    importJson(exportJson())
+    expect(getDoc().settings.pianoPieces[0].timesPerDay).toBe(3)
+    expect(getDoc().piano.takes[0].repetitions).toBe(2)
+  })
+})
+
+describe('per-kid storage keys', () => {
+  it("writes Nora's document under the legacy key and Amelia's under a suffixed one, never touching each other", () => {
+    update('profiles', (p) => ({ ...p, kid: { ...p.kid, xp: 111 } }))
+    expect(JSON.parse(localStorage.getItem('cubeclimb.progress')!).profiles.kid.xp).toBe(111)
+    expect(localStorage.getItem('cubeclimb.progress.amelia')).toBeNull()
+
+    localStorage.setItem('cubeclimb.kid', 'amelia')
+    reloadFromStorage()
+    expect(getDoc().profiles.kid.xp).toBe(0)
+    update('profiles', (p) => ({ ...p, kid: { ...p.kid, xp: 222 } }))
+    expect(JSON.parse(localStorage.getItem('cubeclimb.progress.amelia')!).profiles.kid.xp).toBe(222)
+    expect(JSON.parse(localStorage.getItem('cubeclimb.progress')!).profiles.kid.xp).toBe(111)
+
+    localStorage.removeItem('cubeclimb.kid')
+    reloadFromStorage()
+    expect(getDoc().profiles.kid.xp).toBe(111)
   })
 })
