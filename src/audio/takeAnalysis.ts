@@ -298,10 +298,22 @@ function buildFingerprint(frames: Frames, sounding: Uint8Array): Fingerprint {
       for (let c = 0; c < 12; c++) acc[c] += frames.chroma[f * 12 + c]
     }
     if (live < perBlock * 0.25) continue // a silent block: pauses are measured elsewhere
+    // Log-compress and remove the block's mean before normalising: what is left is the *shape*
+    // across the 12 pitch classes (which notes stand out), so two blocks from pieces in the same
+    // key no longer look alike just because they share a scale.
+    let mean = 0
+    for (let c = 0; c < 12; c++) {
+      acc[c] = Math.log1p(acc[c] / live)
+      mean += acc[c]
+    }
+    mean /= 12
     let norm = 0
-    for (let c = 0; c < 12; c++) norm += acc[c] * acc[c]
+    for (let c = 0; c < 12; c++) {
+      acc[c] -= mean
+      norm += acc[c] * acc[c]
+    }
     norm = Math.sqrt(norm)
-    if (norm <= 0) continue
+    if (norm <= 1e-9) continue
     for (let c = 0; c < 12; c++) rows.push(acc[c] / norm)
   }
   return { blockSec: FP_BLOCK_S, data: Float32Array.from(rows), blocks: rows.length / 12 }
@@ -379,7 +391,12 @@ export interface ReferenceComparison {
   matchToBest: number
   /** Positions (0-1 through the reference) where she lingered or repeated for 2 s or more. */
   stumbles: number[]
+  /** Speed relative to the reference over the aligned stretch: 1.10 = 10 % faster than the reference take. */
+  pace: number
 }
+
+/** Extra cost for a DTW step that advances only one side. Without it the path can sit on one block for free. */
+const STALL_PENALTY = 0.12
 
 function blockCost(a: Fingerprint, i: number, b: Fingerprint, j: number): number {
   let dot = 0
@@ -414,12 +431,12 @@ export function compareToReference(take: Fingerprint, reference: Fingerprint): R
       const left = j > 0 ? cost[i * m + j - 1] : Infinity
       let best = diag
       let dir = 0
-      if (up < best) {
-        best = up
+      if (up + STALL_PENALTY < best) {
+        best = up + STALL_PENALTY
         dir = 1
       }
-      if (left < best) {
-        best = left
+      if (left + STALL_PENALTY < best) {
+        best = left + STALL_PENALTY
         dir = 2
       }
       cost[i * m + j] = c + best
@@ -462,10 +479,13 @@ export function compareToReference(take: Fingerprint, reference: Fingerprint): R
     runStart = k
   }
 
+  const refSpan = endJ - startJ + 1
   return {
-    coverage: round(Math.min(1, (endJ - startJ + 1) / m), 2),
+    coverage: round(Math.min(1, refSpan / m), 2),
     matchToBest: round(Math.max(0, 1 - sum / Math.max(1, steps)), 2),
     stumbles,
+    // Same stretch of music in less take-time = faster. Both sides have silent blocks removed.
+    pace: round(Math.max(0.25, Math.min(4, (refSpan * reference.blockSec) / (n * take.blockSec))), 2),
   }
 }
 

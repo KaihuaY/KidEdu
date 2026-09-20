@@ -275,6 +275,13 @@ export interface TakeMetrics {
   matchToBest?: number
   /** Positions 0-1 through the piece where she lingered or repeated. */
   stumbles?: number[]
+  /**
+   * Speed relative to the piece's reference take over the aligned stretch
+   * (1.10 = 10 % faster). This is the trustworthy speed measure: `tempoBpm`
+   * flips between half/double time on real music and `steadiness` reads low
+   * for any piece that mixes note lengths, so neither is used for feedback.
+   */
+  paceVsBest?: number
 }
 
 /** The coach's written feedback for one take. `parent` is only ever rendered behind the grown-up PIN. */

@@ -98,6 +98,20 @@ describe('compareToReference', () => {
     expect(cmp.matchToBest).toBeGreaterThan(0.8)
   })
 
+  it('measures pace against the reference: slower take below 1, faster take above 1', () => {
+    const slow = compareToReference(analyzeTake(synth(melody(TUNE_A, 0.75), 23), RATE).fingerprint, reference)!
+    const fast = compareToReference(analyzeTake(synth(melody(TUNE_A, 0.4), 13), RATE).fingerprint, reference)!
+    expect(slow.pace).toBeGreaterThan(0.55)
+    expect(slow.pace).toBeLessThan(0.8)
+    expect(fast.pace).toBeGreaterThan(1.1)
+    expect(fast.coverage).toBeGreaterThan(0.85)
+  })
+
+  it('does not let an unrelated tune crawl along the reference for free', () => {
+    const other = compareToReference(analyzeTake(synth(melody(TUNE_B, 0.5), 16), RATE).fingerprint, reference)!
+    expect(other.matchToBest).toBeLessThan(0.8) // synthetic tunes share the same five notes; real pieces separate far more (0.45 vs 0.85)
+  })
+
   it('reports about half coverage when she only plays the first half', () => {
     const take = analyzeTake(synth(melody(TUNE_A.slice(0, 14), 0.5), 9), RATE).fingerprint
     const cmp = compareToReference(take, reference)!
