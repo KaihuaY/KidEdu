@@ -366,6 +366,9 @@ export function Settings() {
   const [testingDrive, setTestingDrive] = useState(false)
   const [coachTestMessage, setCoachTestMessage] = useState<string | null>(null)
   const [testingCoach, setTestingCoach] = useState(false)
+  // The Drive secret is masked by default; the grown-up (already past the PIN) can reveal it to
+  // copy it into the Apps Script's UPLOAD_SECRET property.
+  const [secretHidden, setSecretHidden] = useState(true)
   const [storageStatus, setStorageStatus] = useState<{ persisted: boolean; usage: number | null; quota: number | null } | null>(
     null,
   )
@@ -723,11 +726,32 @@ export function Settings() {
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontWeight: 700 }}>
           Secret
-          <input
-            type="password"
-            value={driveCfg.secret}
-            onChange={(e) => setDriveField({ secret: e.target.value })}
-          />
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <input
+              type={secretHidden ? 'password' : 'text'}
+              data-testid="drive-secret"
+              value={driveCfg.secret}
+              onChange={(e) => setDriveField({ secret: e.target.value })}
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              style={{ flex: 1, minWidth: 0 }}
+            />
+            <button
+              type="button"
+              data-testid="drive-secret-toggle"
+              className="cc-btn cc-btn-surface"
+              style={{ minHeight: 56, minWidth: 56, padding: '0.5rem' }}
+              onClick={() => setSecretHidden((h) => !h)}
+              aria-label={secretHidden ? 'Show the secret' : 'Hide the secret'}
+            >
+              {secretHidden ? '👁️' : '🙈'}
+            </button>
+          </div>
+          <span style={{ fontWeight: 400, fontSize: '0.8rem', color: 'var(--cc-ink-soft)' }}>
+            This must be the same word as the <code>UPLOAD_SECRET</code> property in your Apps Script.
+          </span>
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontWeight: 700 }}>
           Folder name
@@ -760,14 +784,20 @@ export function Settings() {
               Open <code>script.google.com</code> and click "New project".
             </li>
             <li>
-              Delete the sample code, paste in the whole <code>scripts/drive-uploader.gs</code> file from this
-              repo, and change <code>SECRET</code> to a word of your own.
+              Delete the sample code and paste in the whole <code>scripts/drive-uploader.gs</code> file from this
+              repo. Then Project Settings → Script properties → add <code>UPLOAD_SECRET</code> with a long word
+              of your own (kept there, so pasting a newer script never resets it).
             </li>
             <li>
               Click Deploy → New deployment → type Web app. Set "Execute as" to Me and "Who has access" to
               Anyone, then Deploy and authorize when asked. Copy the Web app URL (it ends in <code>/exec</code>).
             </li>
             <li>Paste that URL and the same secret above, then press Test.</li>
+            <li>
+              Later, after pasting a newer version of the script: run the function <code>authorizeOnce</code> once,
+              then Deploy → Manage deployments → your existing deployment → ✏️ → New version. Do not create a new
+              deployment, or the URL changes.
+            </li>
           </ol>
         </details>
 
