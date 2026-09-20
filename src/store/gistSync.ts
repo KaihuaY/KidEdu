@@ -1,5 +1,14 @@
 import { useSyncExternalStore } from 'react'
-import { exportJson, getDoc, importJson, mergeDocs, subscribe, type ProgressDoc } from './progress'
+import { getDoc, importJson, mergeDocs, subscribe, type ProgressDoc } from './progress'
+
+/**
+ * The document as it is stored in the gist: COMPACT JSON. The human export (exportJson) is
+ * pretty-printed, which made the synced file ~2.4x bigger than its data - and GitHub truncates
+ * gist files over 1 MB in API responses. Parsing is identical, so old and new builds interoperate.
+ */
+function syncJson(): string {
+  return JSON.stringify(getDoc())
+}
 import { getKid, isKidId, kidKey, type KidId } from './kid'
 import { setRemoteKid } from './family'
 
@@ -143,6 +152,8 @@ let lastKnownRemoteUpdatedAt: string | null = null
 interface GistFile {
   content?: string
   truncated?: boolean
+  /** Present on every file; the only way to read the full content of one GitHub truncated (over ~1 MB). */
+  raw_url?: string
 }
 interface GistSummary {
   id: string
@@ -150,6 +161,27 @@ interface GistSummary {
 }
 interface GistDetail extends GistSummary {
   updated_at: string
+}
+
+/**
+ * GitHub truncates a gist file's `content` in the detail response once it's
+ * over ~1 MB (`truncated: true`) - a progress doc with enough takes/history
+ * can get there. When that happens, `raw_url` still serves the full text (no
+ * auth header needed, harmless to send none). Falls back to whatever
+ * `content` there is (likely itself truncated, so probably unparsable JSON -
+ * the caller's own JSON.parse/schema check already treats that as
+ * "malformed, skip" rather than crashing) if the raw fetch fails.
+ */
+async function resolveFileContent(file: GistFile): Promise<string> {
+  if (file.truncated && file.raw_url) {
+    try {
+      const res = await fetch(file.raw_url)
+      if (res.ok) return await res.text()
+    } catch {
+      // Fall through to file.content below.
+    }
+  }
+  return file.content ?? ''
 }
 
 async function githubFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -189,7 +221,7 @@ async function findOrCreateGist(): Promise<string> {
     body: JSON.stringify({
       description: GIST_DESCRIPTION,
       public: false,
-      files: { [fileNameForKid()]: { content: exportJson() } },
+      files: { [fileNameForKid()]: { content: syncJson() } },
     }),
   })
   if (createRes.status === 401) {
@@ -218,15 +250,17 @@ async function fetchGistDetail(id: string): Promise<GistDetail> {
  * uploaded anywhere. A file that isn't valid JSON, or doesn't look like a
  * schema-1 progress doc, is silently skipped rather than crashing sync.
  */
-function harvestOtherKids(detail: GistDetail): void {
+async function harvestOtherKids(detail: GistDetail): Promise<void> {
   const ownFile = fileNameForKid()
   const updatedAt = Date.parse(detail.updated_at) || Date.now()
   for (const [name, file] of Object.entries(detail.files)) {
     if (name === ownFile) continue
     const kid = kidIdFromFileName(name)
-    if (!kid || kid === getKid() || !file.content) continue
+    if (!kid || kid === getKid() || (!file.content && !file.truncated)) continue
     try {
-      const parsed: unknown = JSON.parse(file.content)
+      const content = await resolveFileContent(file)
+      if (!content) continue
+      const parsed: unknown = JSON.parse(content)
       if (!parsed || typeof parsed !== 'object' || (parsed as { schemaVersion?: unknown }).schemaVersion !== 1) continue
       setRemoteKid(kid, parsed as ProgressDoc, updatedAt)
     } catch {
@@ -252,7 +286,7 @@ async function pushToGist(content: string): Promise<void> {
   lastSyncedJson = content
   lastKnownRemoteUpdatedAt = data.updated_at
   setStatus('saved')
-  harvestOtherKids(data)
+  await harvestOtherKids(data)
 }
 
 /**
@@ -266,7 +300,7 @@ async function pushToGist(content: string): Promise<void> {
  */
 function applyRemoteContent(remoteJson: string): boolean {
   if (!remoteJson) {
-    lastSyncedJson = exportJson()
+    lastSyncedJson = syncJson()
     return true
   }
   let remoteDoc: ProgressDoc
@@ -286,7 +320,7 @@ function applyRemoteContent(remoteJson: string): boolean {
   try {
     const merged = mergeDocs(getDoc(), remoteDoc)
     importJson(JSON.stringify(merged))
-    lastSyncedJson = exportJson()
+    lastSyncedJson = syncJson()
   } finally {
     applyingRemote = false
   }
@@ -299,7 +333,7 @@ function scheduleUpload(): void {
   if (applyingRemote) return
   if (debounceTimer) clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {
-    const content = exportJson()
+    const content = syncJson()
     if (content === lastSyncedJson) return
     pushToGist(content).catch(() => {
       if (status !== 'expired') scheduleRetry()
@@ -317,7 +351,7 @@ function scheduleRetry(): void {
 
 /** Pushes the current doc immediately (bypassing the debounce) after a merge revealed the remote is behind. */
 function pushMergedResult(): void {
-  pushToGist(exportJson()).catch(() => {
+  pushToGist(syncJson()).catch(() => {
     if (status !== 'expired') scheduleRetry()
   })
 }
@@ -327,8 +361,9 @@ async function trySync(): Promise<void> {
     if (!gistId) gistId = await findOrCreateGist()
     const detail = await fetchGistDetail(gistId)
     lastKnownRemoteUpdatedAt = detail.updated_at
-    harvestOtherKids(detail)
-    const ownContent = detail.files[fileNameForKid()]?.content ?? ''
+    await harvestOtherKids(detail)
+    const ownFile = detail.files[fileNameForKid()]
+    const ownContent = ownFile ? await resolveFileContent(ownFile) : ''
     const needsPush = applyRemoteContent(ownContent)
     if (!unsubscribeStore) {
       unsubscribeStore = subscribe(scheduleUpload)
@@ -353,8 +388,9 @@ async function pollForRemoteChanges(): Promise<void> {
     const detail = await fetchGistDetail(gistId)
     if (detail.updated_at !== lastKnownRemoteUpdatedAt) {
       lastKnownRemoteUpdatedAt = detail.updated_at
-      harvestOtherKids(detail)
-      const ownContent = detail.files[fileNameForKid()]?.content ?? ''
+      await harvestOtherKids(detail)
+      const ownFile = detail.files[fileNameForKid()]
+      const ownContent = ownFile ? await resolveFileContent(ownFile) : ''
       if (applyRemoteContent(ownContent)) pushMergedResult()
     }
   } catch {

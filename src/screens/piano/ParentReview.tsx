@@ -3,11 +3,14 @@ import { navigate } from '../../router'
 import { useProgress, type ParentStars, type PianoPiece, type PianoSection, type PianoTake, type SelfRating } from '../../store/progress'
 import { markAudioPruned, setParentStars, usePiano } from '../../store/piano'
 import { daysNeedingParentRating, heardSecondsForDay, steadyBeatDots, takesForDay } from '../../store/pianoRewards'
+import { pieceSeries, trend, type SeriesKey } from '../../store/songProgress'
+import { requestJourney } from '../../store/coach'
 import { dayOffset, formatClock, localDay } from '../../store/sessions'
 import { formatBytes, getRecordingStore } from '../../store/recordings'
 import { addNote } from '../../store/notes'
 import { dismiss, isRecordingActive, startTake, stopTake, useRecordingSession } from '../../audio/recordingSession'
 import { PinGate } from '../../components/PinGate'
+import { CoachNote } from '../../components/CoachNote'
 import { TakePlayer } from '../../components/TakePlayer'
 import { UploadChip } from '../../components/UploadChip'
 import { BadgeToast } from '../../components/BadgeToast'
@@ -32,6 +35,7 @@ function dayLabel(day: string, today: string): string {
 
 function TakeRow({ take, piece }: { take: PianoTake; piece: PianoPiece | undefined }) {
   const wallTime = new Date(take.startedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const [showCoach, setShowCoach] = useState(false)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem' }}>
@@ -60,6 +64,16 @@ function TakeRow({ take, piece }: { take: PianoTake; piece: PianoPiece | undefin
       )}
       <TakePlayer take={take} />
       <UploadChip take={take} />
+      <button
+        type="button"
+        className="cc-btn cc-btn-surface"
+        style={{ minHeight: 56, alignSelf: 'flex-start' }}
+        aria-expanded={showCoach}
+        onClick={() => setShowCoach((v) => !v)}
+      >
+        🎧 Coach note {showCoach ? '▲' : '▼'}
+      </button>
+      {showCoach && <CoachNote take={take} />}
     </div>
   )
 }
@@ -216,6 +230,54 @@ function DayCard({
   )
 }
 
+/** "improving" / "dipping" / "holding steady" for one series field, given which direction is the good one. */
+function trendWords(direction: 'up' | 'down' | 'flat', goodDirection: 'up' | 'down'): string {
+  if (direction === 'flat') return 'holding steady'
+  return direction === goodDirection ? 'improving' : 'dipping a little'
+}
+
+/** The written "how this song has grown" summary for one piece, plain-word trends, and a refresh button. */
+function SongJourneyCard({ piece, journeyParent, takes }: { piece: PianoPiece; journeyParent: string; takes: PianoTake[] }) {
+  const [refreshing, setRefreshing] = useState(false)
+  const series = useMemo(() => pieceSeries(takes, piece.id), [takes, piece.id])
+
+  function trendFor(key: SeriesKey, goodDirection: 'up' | 'down'): string {
+    return trendWords(trend(series, key), goodDirection)
+  }
+
+  async function handleRefresh() {
+    setRefreshing(true)
+    try {
+      await requestJourney(piece.id, { force: true })
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  return (
+    <div className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+      <strong>
+        {piece.emoji} {piece.name} - song journey
+      </strong>
+      <p style={{ margin: 0 }}>{journeyParent}</p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1rem', fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+        <span>Long pauses: {trendFor('hesitations', 'down')}</span>
+        <span>Sticky spots: {trendFor('stumbles', 'down')}</span>
+        <span>Coverage: {trendFor('coverage', 'up')}</span>
+      </div>
+      <button
+        type="button"
+        className="cc-btn cc-btn-surface"
+        style={{ minHeight: 56, alignSelf: 'flex-start' }}
+        disabled={refreshing}
+        onClick={() => void handleRefresh()}
+      >
+        ↻ Refresh
+      </button>
+    </div>
+  )
+}
+
 export function ParentReview() {
   const progress = useProgress()
   const [unlocked, setUnlocked] = useState(false)
@@ -251,6 +313,14 @@ function ParentReviewContent() {
     const set = new Set([...needsRating, ...Object.keys(justRated)])
     return Array.from(set).sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
   }, [needsRating, justRated])
+
+  const pieceJourneys = useMemo(
+    () =>
+      pianoPieces
+        .map((piece) => ({ piece, journey: piano.journeys?.[piece.id] }))
+        .filter((entry): entry is { piece: PianoPiece; journey: NonNullable<PianoSection['journeys']>[string] } => !!entry.journey),
+    [pianoPieces, piano.journeys],
+  )
 
   const [recordingStats, setRecordingStats] = useState<{ count: number; bytes: number } | null>(null)
   useEffect(() => {
@@ -328,6 +398,15 @@ function ParentReviewContent() {
             ))}
           </div>
         </details>
+      )}
+
+      {pieceJourneys.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <strong style={{ fontSize: '1.05rem' }}>Song journeys</strong>
+          {pieceJourneys.map(({ piece, journey }) => (
+            <SongJourneyCard key={piece.id} piece={piece} journeyParent={journey.parent} takes={piano.takes} />
+          ))}
+        </div>
       )}
 
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>

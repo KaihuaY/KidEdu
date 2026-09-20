@@ -6,6 +6,8 @@ import { setToken, start as startGistSync } from './store/gistSync'
 import { startUploadWorker } from './store/driveUpload'
 import { recoverUnfinishedTakes } from './audio/recordingSession'
 import { getKid, isKidId, setKid } from './store/kid'
+import { backfillLocalFingerprints } from './store/coach'
+import { getRecordingStore } from './store/recordings'
 
 // One-tap household setup link: https://<app>/#/setup?token=<gist-only token>[&kid=amelia|nora]
 // Stores the sync token (and unlocks the secret-word gate) on this device,
@@ -52,6 +54,9 @@ if (!applySetupLink()) {
   // audio/recordingSession.ts) into a real, playable take before Piano home
   // ever renders.
   void recoverUnfinishedTakes()
+  // A little later, quietly give recent takes of named pieces a fingerprint on this device so
+  // the coach can compare the next take against them (see store/coach.ts).
+  setTimeout(() => void backfillLocalFingerprints((id) => getRecordingStore().get(id)), 10_000)
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>

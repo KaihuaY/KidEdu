@@ -15,6 +15,7 @@ import { Settings } from './screens/Settings'
 import { PianoHome } from './screens/piano/PianoHome'
 import { Record } from './screens/piano/Record'
 import { ParentReview } from './screens/piano/ParentReview'
+import { SongJourney } from './screens/piano/SongJourney'
 import { Family } from './screens/Family'
 import { Credits } from './screens/Credits'
 
@@ -80,6 +81,7 @@ function Screen({ path }: { path: string }) {
   if (path === '/family') return <Family />
   if (path === '/credits') return <Credits />
   if (path.startsWith('/lesson/')) return <Lesson />
+  if (path.startsWith('/piano/song/')) return <SongJourney />
   if (path === '/piano') return <PianoHome />
   if (path === '/piano/record') return <Record />
   if (path === '/piano/review') return <ParentReview />

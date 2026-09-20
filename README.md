@@ -363,6 +363,60 @@ tray - once per piece per day. Piano home lists each targeted piece with
 its "2 of 3 today" and shows "Songs done ✅" when every target is met; the
 grown-up review shows "🎵 ×3" next to a take.
 
+### The coach: written feedback for every take, and song journeys
+
+After each take the app **measures the recording** and then writes two
+notes about it. Both are text only; nothing is read aloud.
+
+- **What is measured** (`src/audio/takeAnalysis.ts`, on the device, from the
+  recorded audio): how long the piano was actually sounding, long pauses
+  inside the music and the longest one, the loud-to-soft range, and - for a
+  named piece - how the take lines up against her own best complete take of
+  that piece: how far through the piece she got, how closely it matched,
+  "sticky spots" where she lingered or repeated, and her speed relative to
+  that best take. These are measurements of sound through a tablet
+  microphone, **not a judgement of right or wrong notes**; nothing in the app
+  knows the score. The method was validated on 128 of Nora's real
+  recordings, where the fingerprints picked the right piece 98 % of the time.
+  Absolute tempo (bpm) and the older steady-beat score proved unreliable on
+  real music and are deliberately not used for feedback. A take that barely
+  matches the selected piece (probably other music) is never compared.
+- **Who writes the notes.** Claude (`claude-opus-5`) turns the measurements
+  into the two notes. Claude cannot receive audio, so it only ever sees the
+  numbers, and the prompt (`src/content/coachPrompt.ts`) forbids claiming to
+  have listened, asks for praise of effort and strategy rather than talent,
+  treats slow practice as a good choice, never compares the girls, and keeps
+  Nora's note to two short sentences plus one "try next time". The request
+  goes through **your own Apps Script** (below), which holds the API key;
+  the key is never in the app, this repository or the synced file. Whenever
+  Claude is unavailable (no key yet, offline, daily cap reached, an invalid
+  answer) built-in phrases (`src/content/coachPhrases.ts`) fill the same
+  fields from the same numbers, so the feature never blocks.
+- **Where they show.** Nora sees the short "🎧 Coach" card on the done
+  screen and one line on each take card. The fuller grown-up note, with the
+  numbers and one practice idea, is only in **👀 Grown-up review** (behind
+  the PIN) under "🎧 Coach note", with a "↻ Refresh feedback" button.
+- **Song journeys.** A piece with two or more takes gets a "📈 Journey"
+  button on Piano home: a written "how this song has grown" summary, ribbons
+  ("First time with no long pauses 🎉", "Played it all the way through 🏁"),
+  small charts over the days (long pauses, sticky spots, how far she got,
+  speed versus her best take - with the reminder that speed is not a score),
+  and her best take to replay. The grown-up version of each journey, with
+  trend numbers, is in the review screen.
+- **One-time setup for the AI text** (the app works without it, using the
+  built-in phrases): paste the current `scripts/drive-uploader.gs` over your
+  script, add a Script Property `ANTHROPIC_API_KEY` (Project Settings →
+  Script properties) with a key from console.anthropic.com, then Deploy →
+  Manage deployments → ✏️ → Version: New version → Deploy, so the URL in
+  Settings stays the same. **Settings → Google Drive upload → AI coach →
+  Test AI coach** confirms it. The script fixes the model, caps requests
+  per day (`COACH_DAILY_CAP`, default 80) and costs about one cent per take.
+- **Past recordings.** `scripts/backfill-analysis.mjs` downloads every past
+  take from Drive and measures it with the same code (inside headless
+  Chrome, which also decodes the audio); `scripts/backfill-apply.mjs` merges
+  the results into the synced document behind a backup, a before/after
+  "nothing lost" check and an automatic rollback.
+
 ### Notes and badges
 
 - **Grown-up notes.** From **👀 Grown-up review**, rating a day also offers
@@ -507,6 +561,19 @@ their own protection, and are handled automatically:
   and Amelia's are the same names with `.amelia` appended, so no data moved
   and a device only ever writes its own kid's gist file (see "Two kids, two
   secret words" above).
+- **Every update is rehearsed against a real backup.** Before a release that
+  touches saved data, both kids' files are downloaded from the sync gist
+  with checksums and an inventory (`backups/MANIFEST.md`, outside the
+  repository), the new build is made to restore them through the app's own
+  import path, and `node scripts/verify-progress.mjs <backup> <later>` proves
+  the later document still has every take, rating, Drive link, token, card,
+  bead, bracelet, badge, note and setting (only additions and the documented
+  size trimming are allowed). To restore by hand: Settings → Backup → Import
+  the backup file on the device, or put the file back in the gist.
+- **The synced file stays small.** It is stored as compact JSON, per-take
+  note-onset lists are dropped once the take has been measured, waveforms of
+  takes older than two weeks are dropped (they are recomputed on demand), and
+  the sync code reads GitHub's raw file when a gist file is ever truncated.
 - **Progress gets a second, independent backup.** Beyond the private-gist
   sync above, whenever Google Drive upload is configured the whole progress
   export is also uploaded to that same Drive folder once a day, as

@@ -7,12 +7,15 @@ import {
   markAudioPruned,
   repetitionsForPiece,
   saveTake,
+  setJourney,
   setParentStars,
   setSelfRating,
+  setTakeAi,
   setTakeGoalHit,
+  slimOldTakes,
   songTargetsForDay,
 } from '../piano'
-import { getDoc, resetAll, update, type PianoPiece, type PianoTake } from '../progress'
+import { getDoc, resetAll, update, type PianoPiece, type PianoTake, type TakeCoach } from '../progress'
 import { dayOffset } from '../sessions'
 
 // Same in-memory localStorage mock as progress.test.ts / sessions.test.ts -
@@ -388,6 +391,105 @@ describe('markAudioPruned', () => {
     saveTake(makeTake({ id: 'a' }))
     const before = getDoc()
     markAudioPruned([])
+    expect(getDoc()).toEqual(before)
+  })
+})
+
+function makeMetrics(overrides: Partial<TakeCoach['metrics']> = {}): TakeCoach['metrics'] {
+  return { v: 1, playedSec: 42, hesitations: 1, longestPauseSec: 2.3, dynamicRangeDb: 12, ...overrides }
+}
+
+describe('setTakeAi', () => {
+  it('writes ai.metrics and drops the take\'s onsets', () => {
+    saveTake(makeTake({ id: 'a', onsets: [100, 250, 400] }))
+    const ai: TakeCoach = { metrics: makeMetrics(), at: 5000 }
+
+    setTakeAi('a', ai)
+
+    const take = getDoc().piano.takes.find((t) => t.id === 'a')!
+    expect(take.ai).toEqual(ai)
+    expect(take.onsets).toBeUndefined()
+    expect('onsets' in take).toBe(false)
+  })
+
+  it('merges a second call (adding kid/parent text) onto the first rather than clobbering it', () => {
+    saveTake(makeTake({ id: 'a' }))
+    setTakeAi('a', { metrics: makeMetrics(), at: 1000 })
+    setTakeAi('a', {
+      metrics: makeMetrics(),
+      kid: { praise: 'Nice work!', tryNext: 'Try it again slowly.' },
+      parent: { note: 'She played steadily today.' },
+      source: 'rules',
+      at: 2000,
+    })
+
+    const take = getDoc().piano.takes.find((t) => t.id === 'a')!
+    expect(take.ai?.kid?.praise).toBe('Nice work!')
+    expect(take.ai?.source).toBe('rules')
+    expect(take.ai?.at).toBe(2000)
+  })
+
+  it('only touches the matching take', () => {
+    saveTake(makeTake({ id: 'a', onsets: [1, 2] }))
+    saveTake(makeTake({ id: 'b', onsets: [3, 4] }))
+    setTakeAi('a', { metrics: makeMetrics(), at: 1000 })
+
+    const b = getDoc().piano.takes.find((t) => t.id === 'b')!
+    expect(b.ai).toBeUndefined()
+    expect(b.onsets).toEqual([3, 4])
+  })
+})
+
+describe('setJourney', () => {
+  it('writes a journey for one piece without touching others', () => {
+    setJourney('piece-1', { kid: 'Great progress!', parent: 'The trend looks good.', at: 1000, takeCount: 3, source: 'rules' })
+    setJourney('piece-2', { kid: 'Also great!', parent: 'Also good.', at: 2000, takeCount: 5, source: 'claude' })
+
+    const journeys = getDoc().piano.journeys
+    expect(journeys?.['piece-1']?.kid).toBe('Great progress!')
+    expect(journeys?.['piece-2']?.takeCount).toBe(5)
+  })
+
+  it('overwrites an existing journey for the same piece', () => {
+    setJourney('piece-1', { kid: 'v1', parent: 'v1', at: 1000, takeCount: 3 })
+    setJourney('piece-1', { kid: 'v2', parent: 'v2', at: 2000, takeCount: 6 })
+
+    expect(getDoc().piano.journeys?.['piece-1']?.kid).toBe('v2')
+  })
+})
+
+describe('slimOldTakes', () => {
+  const today = '2026-09-20'
+
+  it('drops waveform from takes strictly older than 14 days, keeps recent ones', () => {
+    const oldDay = dayOffset(today, -20)
+    const recentDay = dayOffset(today, -5)
+    saveTake(makeTake({ id: 'old', day: oldDay, waveform: [1, 2, 3] }))
+    saveTake(makeTake({ id: 'recent', day: recentDay, waveform: [4, 5, 6] }))
+
+    slimOldTakes(today)
+
+    const takes = getDoc().piano.takes
+    expect(takes.find((t) => t.id === 'old')?.waveform).toBeUndefined()
+    expect(takes.find((t) => t.id === 'recent')?.waveform).toEqual([4, 5, 6])
+  })
+
+  it('is a no-op (does not bump piano.updatedAt) when no take has a stale waveform', () => {
+    saveTake(makeTake({ id: 'recent', day: dayOffset(today, -2), waveform: [1] }))
+    const before = getDoc()
+
+    slimOldTakes(today)
+
+    expect(getDoc()).toEqual(before)
+    expect(getDoc().piano.updatedAt).toBe(before.piano.updatedAt)
+  })
+
+  it('is a no-op for a take with no waveform to begin with', () => {
+    saveTake(makeTake({ id: 'old', day: dayOffset(today, -30) }))
+    const before = getDoc()
+
+    slimOldTakes(today)
+
     expect(getDoc()).toEqual(before)
   })
 })

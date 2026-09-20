@@ -16,6 +16,7 @@ import { getDeviceId, awardGoalIfReached, awardSongTargetBeadsIfReached, saveTak
 import { getDoc, type PianoTake } from '../store/progress'
 import { getRecordingStore, requestPersistentStorage } from '../store/recordings'
 import { isDriveConfigured, processUploadQueue } from '../store/driveUpload'
+import { analyzeAndCoach } from '../store/coach'
 import { localDay } from '../store/sessions'
 import { fireConfetti } from '../components/Confetti'
 import { kidKey } from '../store/kid'
@@ -517,6 +518,11 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
       void computeWaveform(blobForWaveform).then((waveform) => {
         if (waveform) setTakeWaveform(take.id, waveform)
       })
+
+      // Fire-and-forget, same reasoning as the waveform above: the AI coach's
+      // measurements and written feedback are a nice-to-have that must never
+      // hold up the done screen. analyzeAndCoach never throws.
+      if (!isNote) void analyzeAndCoach(take.id, blobForWaveform)
     }
   }
 

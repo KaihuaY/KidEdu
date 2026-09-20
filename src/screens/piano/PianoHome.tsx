@@ -13,6 +13,7 @@ import { kidKey } from '../../store/kid'
 import { RingTimer } from '../../components/RingTimer'
 import { WeekDots } from '../../components/WeekDots'
 import { BadgeToast } from '../../components/BadgeToast'
+import { CoachCard } from '../../components/CoachCard'
 import { Metronome } from '../../components/Metronome'
 import { SayIt } from '../../components/SayIt'
 import { SelfRatingButtons } from '../../components/SelfRatingButtons'
@@ -149,6 +150,7 @@ function TakeCard({ take, piece }: { take: PianoTake; piece: PianoPiece | undefi
         </span>
       )}
       {piece?.goal && <span style={{ color: 'var(--cc-ink-soft)' }}>{take.goalHit ? '🎯 ✅' : '🎯 ⬜'}</span>}
+      <CoachCard take={take} compact />
       <SelfRatingButtons value={take.selfRating} onChange={(rating) => setSelfRating(take.id, rating)} />
       <TakePlayer take={take} />
       {isLocal && <ShareOrDownload take={take} piece={piece} />}
@@ -208,6 +210,18 @@ export function PianoHome() {
 
   const selectedPiece = pianoPieces.find((p) => p.id === selectedPieceId)
 
+  // How many takes exist of each piece (all-time, not just today) - a "📈
+  // Journey" button only makes sense once there's more than one take to
+  // compare.
+  const pieceTakeCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const t of piano.takes) {
+      if (t.isNote || !t.pieceId) continue
+      counts.set(t.pieceId, (counts.get(t.pieceId) ?? 0) + 1)
+    }
+    return counts
+  }, [piano.takes])
+
   function pickPiece(id: string | null) {
     setSelectedPieceId(id)
     storePieceId(id)
@@ -256,15 +270,27 @@ export function PianoHome() {
         <strong>What are you playing?</strong>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           {pianoPieces.map((piece) => (
-            <button
-              key={piece.id}
-              type="button"
-              className={`cc-btn ${selectedPieceId === piece.id ? 'cc-btn-primary' : 'cc-btn-surface'}`}
-              style={{ minHeight: 56 }}
-              onClick={() => pickPiece(piece.id)}
-            >
-              {piece.emoji} {piece.name}
-            </button>
+            <div key={piece.id} style={{ display: 'flex', gap: '0.35rem' }}>
+              <button
+                type="button"
+                className={`cc-btn ${selectedPieceId === piece.id ? 'cc-btn-primary' : 'cc-btn-surface'}`}
+                style={{ minHeight: 56 }}
+                onClick={() => pickPiece(piece.id)}
+              >
+                {piece.emoji} {piece.name}
+              </button>
+              {(pieceTakeCounts.get(piece.id) ?? 0) >= 2 && (
+                <button
+                  type="button"
+                  className="cc-btn cc-btn-surface"
+                  aria-label={`${piece.name} journey`}
+                  style={{ minHeight: 56, minWidth: 56, padding: '0.5rem' }}
+                  onClick={() => navigate(`/piano/song/${piece.id}`)}
+                >
+                  📈
+                </button>
+              )}
+            </div>
           ))}
           <button
             type="button"

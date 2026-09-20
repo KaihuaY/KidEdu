@@ -9,6 +9,7 @@ import { getLastTakeBpm, nudgeBpm, setRememberedBpm } from '../../audio/metronom
 import { fireConfetti } from '../../components/Confetti'
 import { RingTimer } from '../../components/RingTimer'
 import { Aurora } from '../../components/Aurora'
+import { CoachCard } from '../../components/CoachCard'
 import { MetronomeStrip } from '../../components/Metronome'
 import { SelfRatingButtons } from '../../components/SelfRatingButtons'
 import { TakePlayer } from '../../components/TakePlayer'
@@ -264,6 +265,7 @@ export function Record() {
           </div>
         )}
         <SelfRatingButtons value={liveSelfRating} onChange={(rating) => setSelfRating(take.id, rating)} />
+        <CoachCard take={take} />
         {take.hasAudio && <TakePlayer take={take} />}
         <button type="button" className="cc-btn cc-btn-primary" style={{ minHeight: 56 }} onClick={backToPiano}>
           ✅ Done

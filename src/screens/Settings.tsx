@@ -23,6 +23,7 @@ import {
   useUploadSummary,
   type DriveConfig,
 } from '../store/driveUpload'
+import { coachStatus } from '../store/coach'
 import { markAudioPruned } from '../store/piano'
 import { addNote } from '../store/notes'
 import { APP_BUILD } from '../buildInfo'
@@ -363,6 +364,8 @@ export function Settings() {
   const [confirmingDeleteRecordings, setConfirmingDeleteRecordings] = useState(false)
   const [driveTestMessage, setDriveTestMessage] = useState<string | null>(null)
   const [testingDrive, setTestingDrive] = useState(false)
+  const [coachTestMessage, setCoachTestMessage] = useState<string | null>(null)
+  const [testingCoach, setTestingCoach] = useState(false)
   const [storageStatus, setStorageStatus] = useState<{ persisted: boolean; usage: number | null; quota: number | null } | null>(
     null,
   )
@@ -435,6 +438,22 @@ export function Settings() {
     })
     setDriveTestMessage(result.message)
     setTestingDrive(false)
+  }
+
+  async function handleTestCoach() {
+    setTestingCoach(true)
+    setCoachTestMessage(null)
+    const result = await coachStatus()
+    if (!result.ok) {
+      setCoachTestMessage(
+        result.outdated ? 'Update the script first (it does not know the coach action)' : (result.error ?? 'Something went wrong.'),
+      )
+    } else if (!result.hasKey) {
+      setCoachTestMessage('The script has no API key yet - add ANTHROPIC_API_KEY under Script properties')
+    } else {
+      setCoachTestMessage(`Ready ✅ · ${result.usedToday} of ${result.cap} used today`)
+    }
+    setTestingCoach(false)
   }
 
   async function handleDeleteAllRecordings() {
@@ -743,6 +762,36 @@ export function Settings() {
             <li>Paste that URL and the same secret above, then press Test.</li>
           </ol>
         </details>
+
+        <div style={{ borderTop: '2px solid var(--cc-border)', paddingTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <h3 style={{ margin: 0, fontSize: '0.95rem' }}>🤖 AI coach</h3>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 700, minHeight: 44 }}>
+            <input
+              type="checkbox"
+              checked={settings.aiCoach?.enabled !== false}
+              onChange={(e) => update('settings', (s) => ({ ...s, aiCoach: { enabled: e.target.checked } }))}
+              style={{ width: 24, height: 24 }}
+            />
+            Write a short note after each take
+          </label>
+          <button
+            type="button"
+            className="cc-btn cc-btn-surface"
+            style={{ alignSelf: 'flex-start' }}
+            disabled={testingCoach}
+            onClick={() => void handleTestCoach()}
+          >
+            {testingCoach ? 'Testing…' : 'Test AI coach'}
+          </button>
+          {coachTestMessage && <p style={{ margin: 0, fontSize: '0.85rem' }}>{coachTestMessage}</p>}
+          <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--cc-ink-soft)' }}>
+            One-time setup, once Drive above is working: 1) paste the latest scripts/drive-uploader.gs over your
+            script's code, 2) add a Script property named ANTHROPIC_API_KEY with your Claude API key, 3) Deploy →
+            Manage deployments → pencil icon → Version: New version → Deploy (the URL above stays the same). Until
+            then - or any time it's off, offline, or over its daily limit - feedback quietly uses built-in phrases
+            instead of Claude, and never anything read aloud either way.
+          </p>
+        </div>
       </section>
 
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>

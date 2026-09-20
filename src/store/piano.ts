@@ -4,8 +4,19 @@
 // Mirrors the shape of src/store/sessions.ts: thin wrappers around
 // `update()` plus one React hook.
 
-import { getDoc, useProgress, update, type ParentStars, type PianoPiece, type PianoSection, type PianoTake, type SelfRating } from './progress'
-import { bumpStreak, dayOffset } from './sessions'
+import {
+  getDoc,
+  useProgress,
+  update,
+  type ParentStars,
+  type PianoPiece,
+  type PianoSection,
+  type PianoTake,
+  type PieceJourney,
+  type SelfRating,
+  type TakeCoach,
+} from './progress'
+import { bumpStreak, dayOffset, localDay } from './sessions'
 import { xpForTier, type Tier } from './rewards'
 import { goalReached, PIANO_GOAL_TIER, practiceSecondsForDay, tokenForParentStars } from './pianoRewards'
 import { getRecordingStore } from './recordings'
@@ -245,4 +256,71 @@ export async function pruneRecordings(keepDays: number): Promise<void> {
   const cutoff = Date.now() - keepDays * 86_400_000
   const removedIds = await getRecordingStore().pruneOlderThan(cutoff)
   markAudioPruned(removedIds)
+  slimOldTakes(localDay())
+}
+
+// ---------------------------------------------------------------------------
+// AI coach (round 7): measurements + written feedback per take, and a
+// written "how this song has grown" summary per piece. See src/store/coach.ts
+// for the pipeline that calls these.
+// ---------------------------------------------------------------------------
+
+/** A shallow copy of `t` with its `onsets` field removed. */
+function dropOnsets(t: PianoTake): PianoTake {
+  const next = { ...t }
+  delete next.onsets
+  return next
+}
+
+/**
+ * Merges `ai` onto a take's `ai` field (so a call that only carries the
+ * measured metrics, followed later by one that adds the written feedback,
+ * combines rather than clobbers). Once the merged `ai` has `metrics`, this
+ * also drops the take's raw `onsets` - the offline metrics supersede them,
+ * and `onsets` is the bulk of what would otherwise sync in the doc.
+ */
+export function setTakeAi(takeId: string, ai: TakeCoach): void {
+  update('piano', (piano) => ({
+    ...piano,
+    takes: piano.takes.map((t) => {
+      if (t.id !== takeId) return t
+      const merged: TakeCoach = { ...t.ai, ...ai }
+      const base = merged.metrics ? dropOnsets(t) : t
+      return { ...base, ai: merged }
+    }),
+  }))
+}
+
+/** Writes (or overwrites, on a `force` re-run) the written "song journey" summary for one piece. */
+export function setJourney(pieceId: string, journey: PieceJourney): void {
+  update('piano', (piano) => ({
+    ...piano,
+    journeys: { ...piano.journeys, [pieceId]: journey },
+  }))
+}
+
+/** How many days of a take's `waveform` to keep before TakePlayer just recomputes it lazily from the (still-local) audio. */
+const WAVEFORM_KEEP_DAYS = 14
+
+/**
+ * Drops the `waveform` array from takes older than WAVEFORM_KEEP_DAYS days,
+ * relative to local day `today`. Checked before `update()` so a no-op (no
+ * take actually had a stale waveform to drop) never bumps `piano.updatedAt` -
+ * same rule as awardGoalIfReached.
+ */
+export function slimOldTakes(today: string): void {
+  const cutoff = dayOffset(today, -WAVEFORM_KEEP_DAYS)
+  const current = getDoc().piano
+  const hasStaleWaveform = current.takes.some((t) => t.day < cutoff && t.waveform !== undefined)
+  if (!hasStaleWaveform) return
+
+  update('piano', (piano) => ({
+    ...piano,
+    takes: piano.takes.map((t) => {
+      if (t.day >= cutoff || t.waveform === undefined) return t
+      const next = { ...t }
+      delete next.waveform
+      return next
+    }),
+  }))
 }

@@ -27,23 +27,35 @@ class MemoryStorage implements Storage {
   }
 }
 
+interface FakeGistFile {
+  content: string
+  truncated?: boolean
+  raw_url?: string
+}
+
 interface FakeGist {
   id: string
-  files: Record<string, { content: string }>
+  files: Record<string, FakeGistFile>
   updated_at: string
 }
 
 /**
  * A tiny in-memory stand-in for the bits of the GitHub Gists API gistSync.ts
- * uses: listing, creating, reading, and PATCHing one gist. `gists` is the
- * live backing array so tests can assert on it after a sync runs.
+ * uses: listing, creating, reading, and PATCHing one gist, plus serving
+ * `raw_url` bodies for a truncated file (see `rawFiles`, keyed by URL).
+ * `gists` is the live backing array so tests can assert on it after a sync
+ * runs.
  */
-function fakeGithub(initial: FakeGist[] = []) {
+function fakeGithub(initial: FakeGist[] = [], rawFiles: Record<string, string> = {}) {
   const gists = initial
   let nextId = 1
   const fetchFn = vi.fn(async (input: string | URL, init?: RequestInit) => {
     const url = new URL(String(input))
     const method = init?.method ?? 'GET'
+    if (url.hostname !== 'api.github.com') {
+      const raw = rawFiles[String(input)]
+      return raw !== undefined ? new Response(raw, { status: 200 }) : new Response('not found', { status: 404 })
+    }
     if (url.pathname === '/gists' && method === 'GET') {
       return new Response(JSON.stringify(gists.map((g) => ({ id: g.id, files: g.files }))), { status: 200 })
     }
@@ -197,6 +209,85 @@ describe("Amelia's device", () => {
     expect(ameliaUploaded.profiles.kid.xp).toBe(23)
     // Nora's file is byte-for-byte untouched.
     expect(JSON.parse(gists[0].files['cubeclimb-progress.json'].content).profiles.kid.xp).toBe(11)
+
+    stop()
+    vi.unstubAllGlobals()
+  })
+})
+
+describe('truncated gist files (GitHub truncates content over ~1MB)', () => {
+  it("fetches raw_url for this device's own truncated file and merges the full content", async () => {
+    const remoteDoc = docWithXp(42)
+    const rawUrl = 'https://gist.githubusercontent.com/raw/gist-1/cubeclimb-progress.json'
+    const { fetch } = fakeGithub(
+      [
+        {
+          id: 'gist-1',
+          files: {
+            'cubeclimb-progress.json': { content: '{"trunc', truncated: true, raw_url: rawUrl },
+          },
+          updated_at: new Date().toISOString(),
+        },
+      ],
+      { [rawUrl]: JSON.stringify(remoteDoc) },
+    )
+    vi.stubGlobal('fetch', fetch)
+    setToken('tok')
+    start()
+
+    await vi.waitFor(() => expect(getDoc().profiles.kid.xp).toBe(42))
+
+    stop()
+    vi.unstubAllGlobals()
+  })
+
+  it("fetches raw_url for another kid's truncated file and still routes it to the family store only", async () => {
+    const noraDoc = docWithXp(5)
+    const ameliaDoc = docWithXp(77)
+    const rawUrl = 'https://gist.githubusercontent.com/raw/gist-1/cubeclimb-progress.amelia.json'
+    const { fetch } = fakeGithub(
+      [
+        {
+          id: 'gist-1',
+          files: {
+            'cubeclimb-progress.json': gistFile(noraDoc),
+            'cubeclimb-progress.amelia.json': { content: '{"trunc', truncated: true, raw_url: rawUrl },
+          },
+          updated_at: new Date().toISOString(),
+        },
+      ],
+      { [rawUrl]: JSON.stringify(ameliaDoc) },
+    )
+    vi.stubGlobal('fetch', fetch)
+    setToken('tok')
+    start() // device stays on the default kid (nora)
+
+    await vi.waitFor(() => expect(getRemoteKid('amelia')?.doc.profiles.kid.xp).toBe(77))
+    // Nora's own doc is unaffected by Amelia's (truncated) file.
+    expect(getDoc().profiles.kid.xp).toBe(5)
+
+    stop()
+    vi.unstubAllGlobals()
+  })
+
+  it('falls back to whatever content is present if the raw_url fetch fails, without crashing sync', async () => {
+    const rawUrl = 'https://gist.githubusercontent.com/raw/gist-1/cubeclimb-progress.json'
+    const { fetch, gists } = fakeGithub([
+      {
+        id: 'gist-1',
+        files: { 'cubeclimb-progress.json': { content: '', truncated: true, raw_url: rawUrl } },
+        updated_at: new Date().toISOString(),
+      },
+    ]) // no rawFiles entry -> the raw fetch 404s
+    vi.stubGlobal('fetch', fetch)
+    update('profiles', (p) => ({ ...p, kid: { ...p.kid, xp: 9 } }))
+    setToken('tok')
+    start()
+
+    // applyRemoteContent('') is treated as "nothing remote yet" (see its own
+    // doc comment) so local (xp 9) is preserved and pushed back up.
+    await vi.waitFor(() => expect(gists[0].files['cubeclimb-progress.json']).toBeDefined())
+    expect(getDoc().profiles.kid.xp).toBe(9)
 
     stop()
     vi.unstubAllGlobals()
