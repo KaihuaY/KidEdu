@@ -339,9 +339,24 @@ function isTransientReason(reason: string | undefined): boolean {
 const BANNED_WORDS = ['wrong', 'bad', 'mistake', 'lazy', 'terrible', 'sister']
 const MAX_PRAISE_CHARS = 240
 const MAX_TRY_NEXT_CHARS = 160
-const MAX_PARENT_NOTE_CHARS = 900
-const MAX_JOURNEY_KID_CHARS = 600
-const MAX_JOURNEY_PARENT_CHARS = 1500
+// Real Claude notes (checked against 10 live answers) run up to ~890 / ~1140 characters, so the caps
+// leave generous headroom: a note a little over the asked-for length is still better than the fallback.
+const MAX_PARENT_NOTE_CHARS = 1400
+const MAX_JOURNEY_KID_CHARS = 700
+const MAX_JOURNEY_PARENT_CHARS = 2000
+
+/**
+ * Tidies model text before validation: long dashes (and the occasional mangled escape such as a literal
+ * "u2014" that slipped through structured output) become a plain hyphen, curly quotes become straight.
+ */
+export function tidyCoachText(text: string): string {
+  return text
+    .replace(/\s*(?:\\?u201[34]|[–—])\s*/g, ' - ')
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+}
 
 /** Every kid name other than the one on this device - never allowed to appear in the coach's text. */
 function otherKidNames(): string[] {
@@ -353,7 +368,8 @@ function otherKidNames(): string[] {
 
 function containsBannedContent(text: string): boolean {
   const lower = text.toLowerCase()
-  if (BANNED_WORDS.some((w) => lower.includes(w))) return true
+  // Whole words only: "badge" must not trip on "bad".
+  if (BANNED_WORDS.some((w) => new RegExp(`\\b${w}(s|es)?\\b`).test(lower))) return true
   if (otherKidNames().some((name) => lower.includes(name.toLowerCase()))) return true
   if (lower.includes('i heard') || lower.includes('i listened')) return true
   return false
@@ -367,8 +383,9 @@ function validateFeedback(raw: unknown): RuleFeedbackResult | null {
   if (!kid || typeof kid.praise !== 'string' || typeof kid.tryNext !== 'string') return null
   if (!parent || typeof parent.note !== 'string') return null
 
-  const { praise, tryNext } = kid as { praise: string; tryNext: string }
-  const { note } = parent as { note: string }
+  const praise = tidyCoachText(kid.praise)
+  const tryNext = tidyCoachText(kid.tryNext)
+  const note = tidyCoachText(parent.note)
   if (praise.length > MAX_PRAISE_CHARS || tryNext.length > MAX_TRY_NEXT_CHARS || note.length > MAX_PARENT_NOTE_CHARS) return null
   if (containsBannedContent(praise) || containsBannedContent(tryNext) || containsBannedContent(note)) return null
 
@@ -379,9 +396,11 @@ function validateJourney(raw: unknown): RuleJourneyResult | null {
   if (!raw || typeof raw !== 'object') return null
   const r = raw as Record<string, unknown>
   if (typeof r.kid !== 'string' || typeof r.parent !== 'string') return null
-  if (r.kid.length > MAX_JOURNEY_KID_CHARS || r.parent.length > MAX_JOURNEY_PARENT_CHARS) return null
-  if (containsBannedContent(r.kid) || containsBannedContent(r.parent)) return null
-  return { kid: r.kid, parent: r.parent }
+  const kidText = tidyCoachText(r.kid)
+  const parentText = tidyCoachText(r.parent)
+  if (kidText.length > MAX_JOURNEY_KID_CHARS || parentText.length > MAX_JOURNEY_PARENT_CHARS) return null
+  if (containsBannedContent(kidText) || containsBannedContent(parentText)) return null
+  return { kid: kidText, parent: parentText }
 }
 
 // ---------------------------------------------------------------------------

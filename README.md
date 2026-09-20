@@ -414,7 +414,10 @@ notes about it. Both are text only; nothing is read aloud.
   → your existing deployment → ✏️ → Version: New version → Deploy, so the
   URL in Settings stays the same. Do not use "New deployment". **Settings → Google Drive upload → AI coach →
   Test AI coach** confirms it. The script fixes the model, caps requests
-  per day (`COACH_DAILY_CAP`, default 80) and costs about one cent per take.
+  per day (`COACH_DAILY_CAP`, default 80). Measured on real notes it costs about
+  2.5 cents per take with `claude-opus-5` (roughly 2,900 tokens in, 380 out), so
+  around 9 dollars a month at a dozen takes a day; changing the one `model`
+  line in the script to `claude-sonnet-5` brings that to about 1 cent per take.
 - **Past recordings.** `scripts/backfill-analysis.mjs` downloads every past
   take from Drive and measures it with the same code (inside headless
   Chrome, which also decodes the audio); `scripts/backfill-apply.mjs` merges

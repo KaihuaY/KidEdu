@@ -6,6 +6,7 @@ import {
   getCoachStage,
   requestFeedback,
   requestJourney,
+  tidyCoachText,
 } from '../coach'
 import { decodeToMono, analyzeTake, compareToReference, type Fingerprint, type ReferenceComparison } from '../../audio/takeAnalysis'
 import { getDoc, resetAll, update, type PianoTake, type TakeMetrics } from '../progress'
@@ -296,6 +297,26 @@ describe('requestFeedback', () => {
 
     expect(getDoc().piano.takes.find((t) => t.id === 'rf-5')?.ai?.source).toBe('rules')
     vi.unstubAllGlobals()
+  })
+
+  it('does not mistake a harmless word for a banned one ("badge" contains "bad")', async () => {
+    enableDrive()
+    saveTake(makeTake({ id: 'rf-badge' }))
+    setTakeAi('rf-badge', { metrics: makeMetrics(), at: 1 })
+    vi.stubGlobal('fetch', okFetch(claudeFeedbackBody({ praise: 'You earned your practice badge today with zero long pauses.' })))
+
+    await requestFeedback('rf-badge')
+
+    expect(getDoc().piano.takes.find((t) => t.id === 'rf-badge')?.ai?.source).toBe('claude')
+    vi.unstubAllGlobals()
+  })
+
+  it('tidies long dashes, mangled dash escapes and curly quotes out of the coach text', () => {
+    expect(tidyCoachText('not much to go on u2014 no real measure')).toBe('not much to go on - no real measure')
+    expect(tidyCoachText('runs of 90\\u2013110 seconds')).toBe('runs of 90 - 110 seconds')
+    expect(tidyCoachText('steady — and calm')).toBe('steady - and calm')
+    expect(tidyCoachText('“Puff” is Nora’s song')).toBe('"Puff" is Nora\'s song')
+    expect(tidyCoachText('plain text stays  the same ')).toBe('plain text stays the same')
   })
 
   it('falls back to rules when Claude returns text over the length caps', async () => {
