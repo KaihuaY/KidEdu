@@ -434,7 +434,7 @@ function buildFeedbackContext(take: PianoTake): { input: FeedbackInput; ruleCtx:
   const takeNumber = pieceId ? takeNumberForPiece(pieceId, take) : 1
   const kidFirstName = firstName(settings.kidName)
   const selfRating = mapSelfRating(take.selfRating)
-  const pieceName = piece?.name ?? null
+  const pieceName = piece?.name.trim() || null
 
   const input: FeedbackInput = {
     kidFirstName,
@@ -618,7 +618,7 @@ export async function requestJourney(pieceId: string, opts?: { force?: boolean }
 
     const settings = doc.settings
     const piece = settings.pianoPieces.find((p) => p.id === pieceId)
-    const pieceName = piece?.name ?? 'this piece'
+    const pieceName = piece?.name.trim() || 'this piece'
     const kidFirstName = firstName(settings.kidName)
 
     const input: JourneyInput = { kidFirstName, age: AGE, pieceName, goalText: piece?.goal, series, takeCount: analysedTakes.length }

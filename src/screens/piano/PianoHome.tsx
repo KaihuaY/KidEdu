@@ -279,17 +279,6 @@ export function PianoHome() {
               >
                 {piece.emoji} {piece.name}
               </button>
-              {(pieceTakeCounts.get(piece.id) ?? 0) >= 2 && (
-                <button
-                  type="button"
-                  className="cc-btn cc-btn-surface"
-                  aria-label={`${piece.name} journey`}
-                  style={{ minHeight: 56, minWidth: 56, padding: '0.5rem' }}
-                  onClick={() => navigate(`/piano/song/${piece.id}`)}
-                >
-                  📈
-                </button>
-              )}
             </div>
           ))}
           <button
@@ -301,6 +290,17 @@ export function PianoHome() {
             🎵 Free play
           </button>
         </div>
+        {selectedPiece && (pieceTakeCounts.get(selectedPiece.id) ?? 0) >= 2 && (
+          <button
+            type="button"
+            data-testid="journey-button"
+            className="cc-btn cc-btn-surface"
+            style={{ minHeight: 56 }}
+            onClick={() => navigate(`/piano/song/${selectedPiece.id}`)}
+          >
+            📈 See how {selectedPiece.name.trim()} has grown
+          </button>
+        )}
         {pianoPieces.length === 0 && (
           <span style={{ color: 'var(--cc-ink-soft)', fontSize: '0.85rem' }}>
             Ask a grown-up to add your pieces in Settings.
