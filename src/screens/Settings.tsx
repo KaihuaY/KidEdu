@@ -450,8 +450,12 @@ export function Settings() {
       )
     } else if (!result.hasKey) {
       setCoachTestMessage('The script has no API key yet - add ANTHROPIC_API_KEY under Script properties')
+    } else if (result.apiOk === false) {
+      setCoachTestMessage(`The key is in the script, but Claude refused the test request: ${result.apiError ?? 'unknown error'}`)
+    } else if (result.apiOk === undefined) {
+      setCoachTestMessage(`Key found ✅ · ${result.usedToday} of ${result.cap} used today (update the script to also test a real request)`)
     } else {
-      setCoachTestMessage(`Ready ✅ · ${result.usedToday} of ${result.cap} used today`)
+      setCoachTestMessage(`Ready ✅ Claude answered · ${result.usedToday} of ${result.cap} used today`)
     }
     setTestingCoach(false)
   }

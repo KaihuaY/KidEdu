@@ -662,6 +662,10 @@ export async function requestJourney(pieceId: string, opts?: { force?: boolean }
 export interface CoachStatusResult {
   ok: boolean
   hasKey?: boolean
+  /** Result of the script's real test request to Claude; undefined when the deployed script is too old to run one. */
+  apiOk?: boolean
+  /** Claude's own error message when apiOk is false (no credits, key not scoped to a workspace, ...). */
+  apiError?: string
   usedToday?: number
   cap?: number
   /** True when the script responded but doesn't recognize the coach action at all (an old, pre-coach deployment). */
@@ -682,7 +686,7 @@ export async function coachStatus(deps: { fetch?: typeof fetch } = {}): Promise<
       redirect: 'follow',
       body: JSON.stringify({ secret: settings.driveUpload.secret, action: 'coach-status' }),
     })
-    let parsed: { ok?: boolean; hasKey?: boolean; usedToday?: number; cap?: number; error?: string } | null = null
+    let parsed: { ok?: boolean; hasKey?: boolean; apiOk?: boolean; apiError?: string; usedToday?: number; cap?: number; error?: string } | null = null
     try {
       parsed = await res.json()
     } catch {
@@ -690,7 +694,15 @@ export async function coachStatus(deps: { fetch?: typeof fetch } = {}): Promise<
     }
     if (!parsed) return { ok: false, error: `Could not reach that URL (HTTP ${res.status}).` }
     if (parsed.ok) {
-      return { ok: true, hasKey: Boolean(parsed.hasKey), usedToday: parsed.usedToday ?? 0, cap: parsed.cap ?? 0 }
+      return {
+        ok: true,
+        hasKey: Boolean(parsed.hasKey),
+        // Older script versions only report hasKey; treat a missing apiOk as "not checked".
+        apiOk: parsed.apiOk,
+        apiError: parsed.apiError,
+        usedToday: parsed.usedToday ?? 0,
+        cap: parsed.cap ?? 0,
+      }
     }
     return { ok: false, outdated: parsed.error === 'no audio data', error: parsed.error ?? 'Unknown error.' }
   } catch (err) {

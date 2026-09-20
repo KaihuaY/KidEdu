@@ -13,7 +13,10 @@
 //   2. For the AI coach: Project Settings (gear icon) > Script Properties >
 //      Add script property. Name it ANTHROPIC_API_KEY, value your Claude
 //      API key from console.anthropic.com. (Optional: add COACH_DAILY_CAP
-//      to change the default 80-requests-a-day limit.) Skip this step and
+//      to change the default 80-requests-a-day limit. If the Test button says
+//      the key "is not scoped to a workspace", either create the key inside a
+//      workspace in the Console (simplest), or add one more property,
+//      ANTHROPIC_WORKSPACE_ID, with the workspace id.) Skip this step and
 //      the coach quietly uses its built-in phrases instead of Claude.
 //   3. Click Deploy > New deployment > type: Web app.
 //        Execute as: Me            Who has access: Anyone
@@ -93,6 +96,28 @@ function todayKey_() {
  * max_tokens are fixed here (never sent by the client) so a compromised or
  * buggy client build can't run up an unexpected bill.
  */
+/** Request headers for the Claude API; adds the workspace header only when the parent configured one. */
+function anthropicHeaders_(props, apiKey) {
+  var headers = {
+    'x-api-key': apiKey,
+    'anthropic-version': '2023-06-01',
+    'anthropic-beta': 'server-side-fallback-2026-07-01',
+  }
+  var workspace = props.getProperty('ANTHROPIC_WORKSPACE_ID')
+  if (workspace) headers['anthropic-workspace-id'] = workspace
+  return headers
+}
+
+/** The API's own error message out of an error response body, for showing to the parent. */
+function apiErrorMessage_(text) {
+  try {
+    var parsed = JSON.parse(text)
+    return (parsed && parsed.error && parsed.error.message) || text
+  } catch (err) {
+    return text
+  }
+}
+
 function doCoach(body) {
   var props = PropertiesService.getScriptProperties()
   var apiKey = props.getProperty('ANTHROPIC_API_KEY')
@@ -119,11 +144,7 @@ function doCoach(body) {
     method: 'post',
     contentType: 'application/json',
     muteHttpExceptions: true,
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-beta': 'server-side-fallback-2026-07-01',
-    },
+    headers: anthropicHeaders_(props, apiKey),
     payload: JSON.stringify({
       model: 'claude-opus-5',
       max_tokens: 16000,
@@ -136,7 +157,7 @@ function doCoach(body) {
 
   var status = resp.getResponseCode()
   if (status !== 200) {
-    return json({ ok: false, reason: 'http-' + status, detail: resp.getContentText() })
+    return json({ ok: false, reason: 'http-' + status, detail: apiErrorMessage_(resp.getContentText()) })
   }
 
   var data = JSON.parse(resp.getContentText())
@@ -166,5 +187,29 @@ function doCoachStatus() {
   var hasKey = !!props.getProperty('ANTHROPIC_API_KEY')
   var cap = Number(props.getProperty('COACH_DAILY_CAP')) || 80
   var usedToday = Number(props.getProperty('coach-count-' + todayKey_())) || 0
-  return json({ ok: true, hasKey: hasKey, usedToday: usedToday, cap: cap })
+  if (!hasKey) return json({ ok: true, hasKey: false, usedToday: usedToday, cap: cap })
+
+  // A real, tiny request, so the Test button catches what a key check cannot: a key without
+  // credits, a key that is not scoped to a workspace, a model the account cannot use...
+  var apiOk = false
+  var apiError = ''
+  try {
+    var resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+      method: 'post',
+      contentType: 'application/json',
+      muteHttpExceptions: true,
+      headers: anthropicHeaders_(props, props.getProperty('ANTHROPIC_API_KEY')),
+      payload: JSON.stringify({
+        model: 'claude-opus-5',
+        max_tokens: 64,
+        output_config: { effort: 'low' },
+        messages: [{ role: 'user', content: 'Reply with the single word OK.' }],
+      }),
+    })
+    apiOk = resp.getResponseCode() === 200
+    if (!apiOk) apiError = 'HTTP ' + resp.getResponseCode() + ': ' + apiErrorMessage_(resp.getContentText())
+  } catch (err) {
+    apiError = String(err)
+  }
+  return json({ ok: true, hasKey: true, apiOk: apiOk, apiError: apiError, usedToday: usedToday, cap: cap })
 }
