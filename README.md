@@ -406,9 +406,13 @@ notes about it. Both are text only; nothing is read aloud.
 - **One-time setup for the AI text** (the app works without it, using the
   built-in phrases): paste the current `scripts/drive-uploader.gs` over your
   script, add a Script Property `ANTHROPIC_API_KEY` (Project Settings →
-  Script properties) with a key from console.anthropic.com, then Deploy →
-  Manage deployments → ✏️ → Version: New version → Deploy, so the URL in
-  Settings stays the same. **Settings → Google Drive upload → AI coach →
+  Script properties) with a key from console.anthropic.com (create the key
+  inside a workspace), keep your upload secret in the `UPLOAD_SECRET`
+  property (so pasting a newer script never resets it), run the function
+  `authorizeOnce` once in the editor (Review permissions → Allow: the coach
+  needs "connect to an external service"), then Deploy → Manage deployments
+  → your existing deployment → ✏️ → Version: New version → Deploy, so the
+  URL in Settings stays the same. Do not use "New deployment". **Settings → Google Drive upload → AI coach →
   Test AI coach** confirms it. The script fixes the model, caps requests
   per day (`COACH_DAILY_CAP`, default 80) and costs about one cent per take.
 - **Past recordings.** `scripts/backfill-analysis.mjs` downloads every past

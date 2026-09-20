@@ -8,8 +8,11 @@
 //
 // Setup (once, ~3 minutes):
 //   1. Open https://script.google.com and click "New project".
-//      Delete the sample code, paste this whole file, change SECRET below
-//      to any long word of your own (letters/digits, no spaces).
+//      Delete the sample code and paste this whole file. Then Project
+//      Settings (gear icon) > Script Properties > Add script property:
+//      name UPLOAD_SECRET, value any long word of your own (letters/digits,
+//      no spaces). The secret lives in a property, NOT in this file, so
+//      pasting a newer version of this file later can never reset it.
 //   2. For the AI coach: Project Settings (gear icon) > Script Properties >
 //      Add script property. Name it ANTHROPIC_API_KEY, value your Claude
 //      API key from console.anthropic.com. (Optional: add COACH_DAILY_CAP
@@ -24,9 +27,15 @@
 //      (it ends in /exec).
 //   4. In Practice: Settings (PIN) > Recordings > Google Drive:
 //      paste the URL and the same SECRET, then press Test.
-//   Redeploying after editing this file (e.g. after adding the API key
-//   above): Deploy > Manage deployments > pencil icon > Version: New
-//   version > Deploy (the URL stays the same).
+//   After pasting a NEWER version of this file:
+//     a. Run the function "authorizeOnce" once (pick it in the toolbar's
+//        function list > Run > Review permissions > Allow). Newer versions
+//        may need a permission the old one did not (the AI coach needs
+//        "connect to an external service").
+//     b. Deploy > Manage deployments > pick your EXISTING deployment >
+//        pencil icon > Version: New version > Deploy. The URL stays the
+//        same. Do not use "New deployment": that makes a second URL the app
+//        does not know about.
 //
 // Smoke test from a terminal:
 //   curl -sL -X POST "<url>" -H "Content-Type: text/plain" \
@@ -34,7 +43,27 @@
 //   -> {"ok":true,"pong":true}
 // ---------------------------------------------------------------------------
 
+// Legacy fallback only. Prefer the UPLOAD_SECRET script property (see setup step 1): while this
+// still says 'change-me-please' and no property is set, every request is refused.
 var SECRET = 'change-me-please'
+
+/** The shared secret: the UPLOAD_SECRET script property, else the constant above if it was changed. */
+function secret_() {
+  var fromProps = PropertiesService.getScriptProperties().getProperty('UPLOAD_SECRET')
+  if (fromProps) return fromProps
+  return SECRET === 'change-me-please' ? null : SECRET
+}
+
+/**
+ * Run this once from the editor after pasting a new version. It touches every service the script
+ * uses, so Google shows its permission prompt for all of them in one go.
+ */
+function authorizeOnce() {
+  DriveApp.getRootFolder()
+  PropertiesService.getScriptProperties().getKeys()
+  UrlFetchApp.fetch('https://api.anthropic.com/', { muteHttpExceptions: true })
+  Logger.log('Authorized. Now: Deploy > Manage deployments > your existing deployment > New version.')
+}
 var DEFAULT_FOLDER = 'Nora Piano'
 // When true, saved files are viewable by anyone who has the link, so the
 // Practice app on another device can play them without a Google sign-in.
@@ -44,7 +73,9 @@ var SHARE_WITH_LINK = true
 function doPost(e) {
   try {
     var body = JSON.parse((e && e.postData && e.postData.contents) || '{}')
-    if (!body || body.secret !== SECRET) return json({ ok: false, error: 'bad secret' })
+    var expected = secret_()
+    if (!expected) return json({ ok: false, error: 'no secret set: add the UPLOAD_SECRET script property' })
+    if (!body || body.secret !== expected) return json({ ok: false, error: 'bad secret' })
     if (body.ping) return json({ ok: true, pong: true })
     if (body.action === 'coach') return doCoach(body)
     if (body.action === 'coach-status') return doCoachStatus()
