@@ -51,6 +51,8 @@ export interface Settings {
   pianoCountMode?: PianoCountMode
   /** Parent-entered once, synced via the private gist. Undefined = uploads off. */
   driveUpload?: { scriptUrl: string; secret: string; folderName: string }
+  /** AI coach feedback. Undefined = on (it silently uses built-in phrases until the Apps Script has an API key). */
+  aiCoach?: { enabled: boolean }
   prizePools: {
     gold: Prize[]
     silver: Prize[]
@@ -246,6 +248,56 @@ export interface SolveLog {
 export type SelfRating = 1 | 2 | 3 // 😕 🙂 🤩
 export type ParentStars = 1 | 2 | 3
 
+/**
+ * What the app measured about a take's sound (see src/audio/takeAnalysis.ts).
+ * Measurements through a tablet microphone, not a judgement of right or
+ * wrong notes. Optional fields are absent when there was not enough evidence.
+ */
+export interface TakeMetrics {
+  v: 1
+  /** Seconds with the piano actually sounding. */
+  playedSec: number
+  tempoBpm?: number
+  /** +0.10 = the last third was 10 % faster than the first third. */
+  tempoDrift?: number
+  /** 0-1, same scale as PianoTake.steadiness but from the offline detector. */
+  steadiness?: number
+  /** Silent gaps inside the music that were long for this take's pace. */
+  hesitations: number
+  longestPauseSec: number
+  /** Loud-to-soft spread in dB: did she play loud AND soft? */
+  dynamicRangeDb: number
+  /** Note onsets per played second. */
+  noteRate?: number
+  /** Against the piece's reference take: how far through the piece this take got (0-1). */
+  coverage?: number
+  /** Against the piece's reference take: similarity along the aligned path (0-1). */
+  matchToBest?: number
+  /** Positions 0-1 through the piece where she lingered or repeated. */
+  stumbles?: number[]
+}
+
+/** The coach's written feedback for one take. `parent` is only ever rendered behind the grown-up PIN. */
+export interface TakeCoach {
+  metrics: TakeMetrics
+  kid?: { praise: string; tryNext: string }
+  parent?: { note: string }
+  /** 'claude' = written by the AI from the metrics; 'rules' = built-in phrases (offline / no key / fallback). */
+  source?: 'claude' | 'rules'
+  model?: string
+  at: number
+}
+
+/** A written "how this song has grown" summary for one piece. */
+export interface PieceJourney {
+  kid: string
+  parent: string
+  at: number
+  /** How many analysed takes of the piece existed when this was written. */
+  takeCount: number
+  source?: 'claude' | 'rules'
+}
+
 export interface PianoTake {
   id: string
   day: string // local YYYY-MM-DD
@@ -266,6 +318,8 @@ export interface PianoTake {
   goalHit?: boolean
   /** How many times she tapped "Played it! +1" during this take (song repeat targets). */
   repetitions?: number
+  /** Measurements + coach feedback (round 7). Once present, `onsets` is dropped from the take to keep the synced doc small. */
+  ai?: TakeCoach
   mimeType: string
   sizeBytes: number
   hasAudio: boolean
@@ -293,6 +347,8 @@ export interface PianoSection {
   takes: PianoTake[]
   days: Record<string, PianoDay>
   streak: Streak
+  /** pieceId -> written song-journey summary. */
+  journeys?: Record<string, PieceJourney>
   updatedAt: number
 }
 
