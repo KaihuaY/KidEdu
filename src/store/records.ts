@@ -83,8 +83,15 @@ export function updateRecords(): RecordKey[] {
   return beaten
 }
 
+/**
+ * Her records for display: the cached copy, or computed live from the takes
+ * until the first take on this build caches them (so history shows at once).
+ */
 export function useRecords(): Records | undefined {
-  return useProgress().piano.records
+  const doc = useProgress()
+  if (doc.piano.records) return doc.piano.records
+  if (doc.piano.takes.every((t) => t.isNote)) return undefined
+  return computeRecords(doc.piano.takes, doc.piano.streak, doc.settings.pianoCountMode ?? 'recording')
 }
 
 /** Kid-facing labels for each record. */

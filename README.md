@@ -350,6 +350,37 @@ an iPad propped on the music stand, microphone only - no MIDI, no teaching.
   audio is stitched back together into a normal take automatically (see
   "Your data is safe" below).
 
+### Three tiers of daily reward
+
+The ring goal (**Settings → Daily goals**, 10 or 15 minutes) still earns a
+bronze token and keeps the streak going. Two more marks sit above it, per kid
+and adjustable in the same section:
+
+- **Gold token at 20 minutes** of playing in a day (guaranteed).
+- **Bonus at 30 minutes**: one more token, gold or silver by coin toss, shown
+  with a little "🎲 The coin landed on…" on the done screen.
+
+Each tier is awarded once per day, the moment a take pushes the day's total
+past the mark (the same counting mode as the ring: whole recording by
+default, or "heard" seconds). Piano home shows the three marks under the ring
+with ✓ for those reached and "N more min" to the next one.
+
+### Personal records
+
+Piano home has a **🏆 My records** card: longest single take, most playing in
+one day, most plays of one song in one day (a take counts once, or as many
+times as she tapped "Played it! +1"), and longest streak. Records are computed
+from all her takes, so history counts from day one; beating one shows
+"🏆 New record: …" on the done screen. Longest take and best day also appear
+on the family board.
+
+### Grown-up box control
+
+**Settings (PIN) → 🎁 Boxes** shows the live count of gold, silver and
+bronze tokens with + and − buttons: give a box for chores or kindness, or
+take one away (− asks for a second tap within four seconds). Tokens never go
+below zero and XP is untouched.
+
 ### Song repeat targets
 
 A grown-up can ask for a piece to be played a set number of times a day:

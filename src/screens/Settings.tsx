@@ -24,23 +24,33 @@ import {
   type DriveConfig,
 } from '../store/driveUpload'
 import { coachStatus } from '../store/coach'
-import { markAudioPruned } from '../store/piano'
+import { adjustTokens, markAudioPruned, pianoTiers } from '../store/piano'
 import { addNote } from '../store/notes'
 import { APP_BUILD } from '../buildInfo'
 import { DeviceOwner } from '../components/DeviceOwner'
 import { lockDevice } from '../store/kid'
+import type { Tier } from '../store/rewards'
 
 // Re-exported so BlindBox.tsx's `import { PinGate } from './Settings'` keeps working.
 export { PinGate } from '../components/PinGate'
 
 const CUBE_GOAL_OPTIONS = [5, 10, 15, 20]
 const PIANO_GOAL_OPTIONS = [10, 15, 20, 30]
+const GOLD_MIN_OPTIONS = [20, 25, 30, 40]
+const BONUS_MIN_OPTIONS = [30, 40, 45, 60]
 const RECORDING_KEEP_OPTIONS = [7, 14, 30]
 const TIERS: Array<'gold' | 'silver' | 'bronze'> = ['gold', 'silver', 'bronze']
 const TIER_LABEL: Record<(typeof TIERS)[number], string> = { gold: 'Gold', silver: 'Silver', bronze: 'Bronze' }
+const BOX_TIER_EMOJI: Record<Tier, string> = { gold: '🟡', silver: '⚪', bronze: '🟤' }
+const BOX_TIER_LABEL: Record<Tier, string> = { gold: 'Gold', silver: 'Silver', bronze: 'Bronze' }
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+/** Smallest option strictly greater than `mustExceed`, or the largest option if none is. */
+function nextValidOption(options: number[], mustExceed: number): number {
+  return options.find((o) => o > mustExceed) ?? options[options.length - 1]
 }
 
 const PIECE_GOAL_MAX_LENGTH = 80
@@ -205,6 +215,91 @@ function PrizePoolEditor({ tier }: { tier: (typeof TIERS)[number] }) {
         + Add prize
       </button>
     </div>
+  )
+}
+
+const BOX_MINUS_CONFIRM_MS = 4000
+
+function BoxTokensSection() {
+  const progress = useProgress()
+  const tokens = progress.profiles.kid.tokens
+  const [confirming, setConfirming] = useState<Tier | null>(null)
+  const confirmTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (confirmTimeout.current) clearTimeout(confirmTimeout.current)
+    }
+  }, [])
+
+  function handleMinusClick(tier: Tier) {
+    if (confirmTimeout.current) {
+      clearTimeout(confirmTimeout.current)
+      confirmTimeout.current = null
+    }
+    if (confirming === tier) {
+      setConfirming(null)
+      adjustTokens(tier, -1)
+      return
+    }
+    setConfirming(tier)
+    confirmTimeout.current = setTimeout(() => {
+      setConfirming(null)
+      confirmTimeout.current = null
+    }, BOX_MINUS_CONFIRM_MS)
+  }
+
+  return (
+    <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <h2 style={{ margin: 0, fontSize: '1.05rem' }}>🎁 Boxes</h2>
+      <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+        Give or take away box tokens - for chores, kindness, or a correction.
+      </p>
+      {TIERS.map((tier) => {
+        const count = tokens[tier]
+        const isConfirming = confirming === tier
+        return (
+          <div key={tier} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <span style={{ flex: 1, fontWeight: 700 }}>
+              {BOX_TIER_EMOJI[tier]} {BOX_TIER_LABEL[tier]}
+            </span>
+            <span
+              data-testid={`box-count-${tier}`}
+              style={{ minWidth: '2.5ch', textAlign: 'center', fontWeight: 700, fontSize: '1.1rem' }}
+            >
+              {count}
+            </span>
+            <button
+              type="button"
+              className="cc-btn cc-btn-surface"
+              data-testid={isConfirming ? `box-minus-confirm-${tier}` : `box-minus-${tier}`}
+              style={{
+                minHeight: 56,
+                minWidth: 56,
+                padding: '0 0.5rem',
+                background: isConfirming ? 'var(--cc-danger)' : undefined,
+                color: isConfirming ? '#fff' : undefined,
+              }}
+              disabled={count <= 0}
+              onClick={() => handleMinusClick(tier)}
+              aria-label={isConfirming ? `Confirm remove one ${BOX_TIER_LABEL[tier]} token` : `Remove one ${BOX_TIER_LABEL[tier]} token`}
+            >
+              {isConfirming ? 'Remove? ✓' : '−'}
+            </button>
+            <button
+              type="button"
+              className="cc-btn cc-btn-surface"
+              data-testid={`box-plus-${tier}`}
+              style={{ minHeight: 56, minWidth: 56, padding: 0 }}
+              onClick={() => adjustTokens(tier, 1)}
+              aria-label={`Add one ${BOX_TIER_LABEL[tier]} token`}
+            >
+              ＋
+            </button>
+          </div>
+        )
+      })}
+    </section>
   )
 }
 
@@ -423,6 +518,33 @@ export function Settings() {
   const settings = progress.settings
   const driveCfg: DriveConfig = settings.driveUpload ?? { scriptUrl: '', secret: '', folderName: 'Nora Piano' }
 
+  const tiers = pianoTiers(settings)
+
+  function handlePianoGoalClick(minutes: number) {
+    setGoalMinutes('piano', minutes)
+    update('settings', (s) => {
+      const current = pianoTiers(s)
+      const goldMin = current.goldMin <= minutes ? nextValidOption(GOLD_MIN_OPTIONS, minutes) : current.goldMin
+      const bonusMin = current.bonusMin <= goldMin ? nextValidOption(BONUS_MIN_OPTIONS, goldMin) : current.bonusMin
+      if (goldMin === current.goldMin && bonusMin === current.bonusMin) return s
+      return { ...s, pianoTiers: { goldMin, bonusMin } }
+    })
+  }
+
+  function handleGoldMinClick(goldMin: number) {
+    if (goldMin <= settings.goalMinutes.piano) return
+    update('settings', (s) => {
+      const current = pianoTiers(s)
+      const bonusMin = current.bonusMin <= goldMin ? nextValidOption(BONUS_MIN_OPTIONS, goldMin) : current.bonusMin
+      return { ...s, pianoTiers: { goldMin, bonusMin } }
+    })
+  }
+
+  function handleBonusMinClick(bonusMin: number) {
+    if (bonusMin <= tiers.goldMin) return
+    update('settings', (s) => ({ ...s, pianoTiers: { ...pianoTiers(s), bonusMin } }))
+  }
+
   function setDriveField(patch: Partial<DriveConfig>) {
     const next = { ...driveCfg, ...patch }
     update('settings', (s) => ({
@@ -573,7 +695,7 @@ export function Settings() {
                 key={minutes}
                 type="button"
                 className="cc-btn"
-                onClick={() => setGoalMinutes('piano', minutes)}
+                onClick={() => handlePianoGoalClick(minutes)}
                 style={{
                   flex: 1,
                   background: settings.goalMinutes.piano === minutes ? 'var(--cc-primary)' : 'var(--cc-surface)',
@@ -587,6 +709,67 @@ export function Settings() {
             ))}
           </div>
         </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <span style={{ fontWeight: 700, color: 'var(--cc-ink-soft)' }}>🟡 Gold token at</span>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {GOLD_MIN_OPTIONS.map((minutes) => {
+              const disabled = minutes <= settings.goalMinutes.piano
+              const selected = tiers.goldMin === minutes
+              return (
+                <button
+                  key={minutes}
+                  type="button"
+                  className="cc-btn"
+                  data-testid={`tier-gold-${minutes}`}
+                  disabled={disabled}
+                  onClick={() => handleGoldMinClick(minutes)}
+                  style={{
+                    flex: 1,
+                    background: selected ? 'var(--cc-primary)' : 'var(--cc-surface)',
+                    color: disabled ? 'var(--cc-ink-soft)' : selected ? '#fff' : 'var(--cc-ink)',
+                    border: selected ? 'none' : '2px solid var(--cc-border)',
+                    boxShadow: 'none',
+                    opacity: disabled ? 0.5 : 1,
+                  }}
+                >
+                  {minutes} min
+                </button>
+              )
+            })}
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <span style={{ fontWeight: 700, color: 'var(--cc-ink-soft)' }}>🎲 Bonus gold-or-silver at</span>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {BONUS_MIN_OPTIONS.map((minutes) => {
+              const disabled = minutes <= tiers.goldMin
+              const selected = tiers.bonusMin === minutes
+              return (
+                <button
+                  key={minutes}
+                  type="button"
+                  className="cc-btn"
+                  data-testid={`tier-bonus-${minutes}`}
+                  disabled={disabled}
+                  onClick={() => handleBonusMinClick(minutes)}
+                  style={{
+                    flex: 1,
+                    background: selected ? 'var(--cc-primary)' : 'var(--cc-surface)',
+                    color: disabled ? 'var(--cc-ink-soft)' : selected ? '#fff' : 'var(--cc-ink)',
+                    border: selected ? 'none' : '2px solid var(--cc-border)',
+                    boxShadow: 'none',
+                    opacity: disabled ? 0.5 : 1,
+                  }}
+                >
+                  {minutes} min
+                </button>
+              )
+            })}
+          </div>
+        </div>
+        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+          Bronze comes with the ring goal above. Gold and the bonus are extra tokens for a longer practice day.
+        </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <span style={{ fontWeight: 700, color: 'var(--cc-ink-soft)' }}>Piano goal counts</span>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -831,6 +1014,8 @@ export function Settings() {
           </p>
         </div>
       </section>
+
+      <BoxTokensSection />
 
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Prize pools & ticket chance</h2>

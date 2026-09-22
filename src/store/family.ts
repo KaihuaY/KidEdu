@@ -10,6 +10,7 @@ import { DEFAULT_KID, getKid, kidDisplayName, type KidId } from './kid'
 import { useProgress, type ProgressDoc } from './progress'
 import { lastNDays, localDay } from './sessions'
 import { practiceSecondsForDay } from './pianoRewards'
+import { computeRecords } from './records'
 import { ALL_MISSION_IDS } from '../content/lessons'
 
 export interface KidSummary {
@@ -24,6 +25,10 @@ export interface KidSummary {
   cardsOwned: number
   beads: number
   braceletsFinished: number
+  /** Longest single piano take ever, in seconds (0 = no record yet). */
+  longestTakeSec: number
+  /** Most piano playing in one day ever, in seconds (0 = no record yet). */
+  bestDaySec: number
   /** Local YYYY-MM-DD of the most recent cube/piano activity, or null if none yet. */
   lastActiveDay: string | null
 }
@@ -80,6 +85,8 @@ export function summarize(doc: ProgressDoc, today: string = localDay()): KidSumm
 
   const lastTakeDay = maxDay(doc.piano.takes.map((t) => t.day))
   const lastActiveDay = maxDay([profile.streak.lastDay, doc.piano.streak.lastDay, lastTakeDay])
+  // Cached records when the kid's build has written them, else computed from her takes.
+  const records = doc.piano.records ?? computeRecords(doc.piano.takes, doc.piano.streak, doc.settings.pianoCountMode ?? 'recording')
 
   return {
     cubeStreak: profile.streak.current,
@@ -93,6 +100,8 @@ export function summarize(doc: ProgressDoc, today: string = localDay()): KidSumm
     cardsOwned: doc.collection.items.length,
     beads,
     braceletsFinished,
+    longestTakeSec: records.longestTakeSec?.value ?? 0,
+    bestDaySec: records.mostSecondsInDay?.value ?? 0,
     lastActiveDay,
   }
 }

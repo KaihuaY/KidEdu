@@ -15,9 +15,11 @@ import { WeekDots } from '../../components/WeekDots'
 import { BadgeToast } from '../../components/BadgeToast'
 import { CoachCard } from '../../components/CoachCard'
 import { Metronome } from '../../components/Metronome'
+import { RecordsCard } from '../../components/RecordsCard'
 import { SayIt } from '../../components/SayIt'
 import { SelfRatingButtons } from '../../components/SelfRatingButtons'
 import { TakePlayer } from '../../components/TakePlayer'
+import { TierStrip } from '../../components/TierStrip'
 import { UploadChip } from '../../components/UploadChip'
 
 /** Resolved at call time (not module load) so tests can switch kids - see src/store/kid.ts. */
@@ -266,6 +268,8 @@ export function PianoHome() {
         </div>
       </div>
 
+      <TierStrip />
+
       <div className="cc-card" style={{ padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <strong>What are you playing?</strong>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -364,6 +368,8 @@ export function PianoHome() {
           ))
         )}
       </div>
+
+      <RecordsCard />
 
       <button type="button" className="cc-btn cc-btn-surface" style={{ alignSelf: 'center' }} onClick={() => navigate('/piano/review')}>
         👀 Grown-up review

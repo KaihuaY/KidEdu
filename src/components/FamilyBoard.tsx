@@ -3,7 +3,7 @@ import { useFamily, type FamilyMember } from '../store/family'
 import { getToken } from '../store/gistSync'
 import { KID_NAMES, DEFAULT_KID, kidDisplayName } from '../store/kid'
 import type { KidId } from '../store/kid'
-import { localDay } from '../store/sessions'
+import { formatClock, localDay } from '../store/sessions'
 
 // ---------------------------------------------------------------------------
 // The family board: a friendly side-by-side of both kids' week, shown as a
@@ -58,6 +58,20 @@ const ROWS: Row[] = [
     label: 'Cards',
     compare: (m) => m.summary.cardsOwned,
     render: (m) => `${m.summary.cardsOwned}`,
+  },
+  {
+    key: 'longest',
+    emoji: '⏱',
+    label: 'Longest take',
+    compare: (m) => m.summary.longestTakeSec,
+    render: (m) => formatClock(m.summary.longestTakeSec),
+  },
+  {
+    key: 'bestday',
+    emoji: '📅',
+    label: 'Best day',
+    compare: (m) => m.summary.bestDaySec,
+    render: (m) => `${Math.round(m.summary.bestDaySec / 60)} min`,
   },
 ]
 

@@ -37,6 +37,8 @@ describe('summarize', () => {
       cardsOwned: 0,
       beads: 0,
       braceletsFinished: 0,
+      longestTakeSec: 0,
+      bestDaySec: 0,
       lastActiveDay: null,
     })
   })
@@ -109,6 +111,20 @@ describe('summarize', () => {
     doc.piano.takes = [take()]
     expect(() => summarize(doc, '2026-09-15')).not.toThrow()
     expect(summarize(doc, '2026-09-15').songsMetThisWeek).toBe(0)
+  })
+
+  it('reads longestTakeSec and bestDaySec off piano.records, 0 when absent', () => {
+    const doc = baseDoc()
+    expect(summarize(doc, '2026-09-15').longestTakeSec).toBe(0)
+    expect(summarize(doc, '2026-09-15').bestDaySec).toBe(0)
+
+    doc.piano.records = {
+      longestTakeSec: { value: 151, day: '2026-09-14', setAt: 1 },
+      mostSecondsInDay: { value: 2040, day: '2026-09-13', setAt: 1 },
+    }
+    const summary = summarize(doc, '2026-09-15')
+    expect(summary.longestTakeSec).toBe(151)
+    expect(summary.bestDaySec).toBe(2040)
   })
 
   it("lastActiveDay is the max of both streaks' lastDay and the newest take day", () => {
