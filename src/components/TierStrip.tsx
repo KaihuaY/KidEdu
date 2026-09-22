@@ -46,7 +46,9 @@ export function TierStrip() {
             <span>{m.minutes} min</span>
             {m.reached && <span aria-hidden="true" style={{ color: 'var(--cc-success)' }}>✓</span>}
             {isNext && status.next && (
-              <span style={{ color: 'var(--cc-ink-soft)', fontWeight: 600 }}>· {status.next.minutesLeft} more min</span>
+              <span style={{ color: 'var(--cc-ink-soft)', fontWeight: 600 }}>
+                {status.next.minutesLeft <= 0 ? '· on your next take!' : `· ${status.next.minutesLeft} more min`}
+              </span>
             )}
           </span>
         )
