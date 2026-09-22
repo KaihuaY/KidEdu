@@ -53,6 +53,12 @@ export interface Settings {
   driveUpload?: { scriptUrl: string; secret: string; folderName: string }
   /** AI coach feedback. Undefined = on (it silently uses built-in phrases until the Apps Script has an API key). */
   aiCoach?: { enabled: boolean }
+  /**
+   * Tiered daily piano rewards beyond the ring goal (which stays tier 1, bronze):
+   * `goldMin` minutes in a day = a guaranteed gold token, `bonusMin` = one more
+   * token, gold or silver by coin toss. Undefined = defaults 20 / 30.
+   */
+  pianoTiers?: { goldMin: number; bonusMin: number }
   prizePools: {
     gold: Prize[]
     silver: Prize[]
@@ -348,6 +354,36 @@ export interface PianoDay {
   parentRatedAt?: number
   /** Piece ids that already got their "song repeat target" beads today (see awardSongTargetBeadsIfReached). */
   songBeadsAwarded?: string[]
+  /** Tier 2: the guaranteed gold token for reaching `settings.pianoTiers.goldMin` minutes (see awardTiersIfReached). */
+  goldReachedAt?: number
+  /** Tier 3: the bonus token for reaching `settings.pianoTiers.bonusMin` minutes, and which tier the coin toss gave. */
+  bonusReachedAt?: number
+  bonusTier?: 'gold' | 'silver'
+}
+
+/** One personal record: the value, when it was set, and where (take / day / piece) so the kid can find it. */
+export interface RecordEntry {
+  value: number
+  day: string
+  setAt: number
+  takeId?: string
+  pieceId?: string
+}
+
+/**
+ * Personal records, derived from the takes (src/store/records.ts is the source
+ * of truth) and cached here so a new record can be spotted cheaply and
+ * celebrated once. Absent until the first take after the feature shipped.
+ */
+export interface Records {
+  /** Longest single take, in seconds. */
+  longestTakeSec?: RecordEntry
+  /** Most playing time in one day, in seconds. */
+  mostSecondsInDay?: RecordEntry
+  /** Most plays of one song in one day (takes + "+1" repetitions). */
+  mostPlaysOfSong?: RecordEntry
+  /** Longest piano streak, in days. */
+  longestStreakDays?: RecordEntry
 }
 
 export interface PianoSection {
@@ -356,6 +392,7 @@ export interface PianoSection {
   streak: Streak
   /** pieceId -> written song-journey summary. */
   journeys?: Record<string, PieceJourney>
+  records?: Records
   updatedAt: number
 }
 

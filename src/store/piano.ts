@@ -219,6 +219,77 @@ export function awardGoalIfReached(day: string, goalMinutes: number): boolean {
   return true
 }
 
+export const DEFAULT_PIANO_TIERS = { goldMin: 20, bonusMin: 30 }
+
+export function pianoTiers(settings: { pianoTiers?: { goldMin: number; bonusMin: number } }): { goldMin: number; bonusMin: number } {
+  return settings.pianoTiers ?? DEFAULT_PIANO_TIERS
+}
+
+export interface TiersReached {
+  /** Tier 2: the guaranteed gold token was awarded just now. */
+  gold: boolean
+  /** Tier 3: the bonus token was awarded just now, and which tier the coin toss gave. */
+  bonus: 'gold' | 'silver' | null
+}
+
+/**
+ * Tiers 2 and 3 of the daily piano reward (tier 1, the ring goal, stays in
+ * awardGoalIfReached): `goldMin` minutes in a day = one gold token, `bonusMin`
+ * = one more token that is gold or silver by coin toss. Each awarded at most
+ * once per local day, with the same no-write-on-no-op rule as tier 1.
+ */
+export function awardTiersIfReached(day: string, rng: () => number = Math.random): TiersReached {
+  const doc = getDoc()
+  const tiers = pianoTiers(doc.settings)
+  const mode = doc.settings.pianoCountMode ?? 'recording'
+  const minutes = practiceSecondsForDay(doc.piano.takes, day, mode) / 60
+  const dayState = doc.piano.days[day]
+  const result: TiersReached = { gold: false, bonus: null }
+
+  if (!dayState?.goldReachedAt && minutes >= tiers.goldMin) {
+    update('piano', (piano) => ({ ...piano, days: { ...piano.days, [day]: { ...piano.days[day], goldReachedAt: Date.now() } } }))
+    grantToken('gold')
+    result.gold = true
+  }
+  if (!dayState?.bonusReachedAt && minutes >= tiers.bonusMin) {
+    const tier: 'gold' | 'silver' = rng() < 0.5 ? 'gold' : 'silver'
+    update('piano', (piano) => ({
+      ...piano,
+      days: { ...piano.days, [day]: { ...piano.days[day], bonusReachedAt: Date.now(), bonusTier: tier } },
+    }))
+    grantToken(tier)
+    result.bonus = tier
+  }
+  return result
+}
+
+function grantToken(tier: Tier): void {
+  update('profiles', (profiles) => ({
+    ...profiles,
+    kid: {
+      ...profiles.kid,
+      xp: profiles.kid.xp + xpForTier(tier),
+      tokens: { ...profiles.kid.tokens, [tier]: profiles.kid.tokens[tier] + 1 },
+    },
+  }))
+}
+
+/**
+ * Grown-up control: gives (+1) or takes away (-1) one box token of a tier.
+ * Never goes below zero, never touches XP, and writes nothing when there is
+ * nothing to change. Returns the new count.
+ */
+export function adjustTokens(tier: Tier, delta: 1 | -1): number {
+  const current = getDoc().profiles.kid.tokens[tier]
+  const next = Math.max(0, current + delta)
+  if (next === current) return current
+  update('profiles', (profiles) => ({
+    ...profiles,
+    kid: { ...profiles.kid, tokens: { ...profiles.kid.tokens, [tier]: next } },
+  }))
+  return next
+}
+
 /**
  * Records the parent's 1-3 star rating for a day, once per day. 2 stars
  * awards a silver token, 3 gold, 1 nothing extra - Nora's self-rating never

@@ -12,7 +12,8 @@ import { steadinessScore } from './steadiness'
 import { computeWaveform } from './waveform'
 import { MicStartError, type AudioBackend, type MicError, type MicSession, type RecordingResult } from './types'
 import { acquireWakeLock, type WakeLockHandle } from './wakeLock'
-import { getDeviceId, awardGoalIfReached, awardSongTargetBeadsIfReached, saveTake, setTakeWaveform } from '../store/piano'
+import { getDeviceId, awardGoalIfReached, awardSongTargetBeadsIfReached, awardTiersIfReached, saveTake, setTakeWaveform, type TiersReached } from '../store/piano'
+import { updateRecords, type RecordKey } from '../store/records'
 import { getDoc, type PianoTake } from '../store/progress'
 import { getRecordingStore, requestPersistentStorage } from '../store/recordings'
 import { isDriveConfigured, processUploadQueue } from '../store/driveUpload'
@@ -38,7 +39,17 @@ export type SessionState =
       repetitions: number
     }
   | { status: 'saving' }
-  | { status: 'done'; take: PianoTake; goalJustReached: boolean; discarded: boolean; songBeadIds: string[] | null }
+  | {
+      status: 'done'
+      take: PianoTake
+      goalJustReached: boolean
+      discarded: boolean
+      songBeadIds: string[] | null
+      /** Tiers 2/3 of the daily reward awarded by this take (see awardTiersIfReached). */
+      tiersJustReached: TiersReached
+      /** Personal records this take just beat (see src/store/records.ts). */
+      recordsBeaten: RecordKey[]
+    }
   | { status: 'error'; error: MicError }
 
 const FAKE_MIC_FLAG_KEY = 'cubeclimb.fakeMic'
@@ -494,6 +505,8 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
   const discarded = durationSec < MIN_KEPT_DURATION_SEC
   let goalJustReached = false
   let songBeadIds: string[] | null = null
+  let tiersJustReached: TiersReached = { gold: false, bonus: null }
+  let recordsBeaten: RecordKey[] = []
 
   if (!discarded) {
     if (result.blob) {
@@ -506,6 +519,11 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
     saveTake(take)
     goalJustReached = awardGoalIfReached(day, settings.goalMinutes.piano)
     if (goalJustReached) fireConfetti('big')
+    if (!isNote) {
+      tiersJustReached = awardTiersIfReached(day)
+      if (tiersJustReached.gold || tiersJustReached.bonus) fireConfetti('big')
+      recordsBeaten = updateRecords()
+    }
     if (pieceId && !isNote) songBeadIds = awardSongTargetBeadsIfReached(pieceId, day)
     // Kick the Drive upload right away; the worker also retries later.
     if (take.upload) void processUploadQueue()
@@ -541,7 +559,7 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
   clearInflightCheckpoint()
   currentTakeId = null
 
-  setState({ status: 'done', take, goalJustReached, discarded, songBeadIds })
+  setState({ status: 'done', take, goalJustReached, discarded, songBeadIds, tiersJustReached, recordsBeaten })
 }
 
 export function dismiss(): void {
