@@ -12,7 +12,7 @@ import { steadinessScore } from './steadiness'
 import { computeWaveform } from './waveform'
 import { MicStartError, type AudioBackend, type MicError, type MicSession, type RecordingResult } from './types'
 import { acquireWakeLock, type WakeLockHandle } from './wakeLock'
-import { getDeviceId, awardGoalIfReached, awardSongTargetBeadsIfReached, awardTiersIfReached, saveTake, setTakeWaveform, type TiersReached } from '../store/piano'
+import { getDeviceId, awardMarksIfReached, awardSongTargetBeadsIfReached, saveTake, setTakeWaveform, type MarkReached } from '../store/piano'
 import { updateRecords, type RecordKey } from '../store/records'
 import { getDoc, type PianoTake } from '../store/progress'
 import { getRecordingStore, requestPersistentStorage } from '../store/recordings'
@@ -45,8 +45,8 @@ export type SessionState =
       goalJustReached: boolean
       discarded: boolean
       songBeadIds: string[] | null
-      /** Tiers 2/3 of the daily reward awarded by this take (see awardTiersIfReached). */
-      tiersJustReached: TiersReached
+      /** Daily minute marks this take pushed the day past (see awardMarksIfReached); index 0 is the ring goal. */
+      marksJustReached: MarkReached[]
       /** Personal records this take just beat (see src/store/records.ts). */
       recordsBeaten: RecordKey[]
     }
@@ -505,7 +505,7 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
   const discarded = durationSec < MIN_KEPT_DURATION_SEC
   let goalJustReached = false
   let songBeadIds: string[] | null = null
-  let tiersJustReached: TiersReached = { gold: false, bonus: null }
+  let marksJustReached: MarkReached[] = []
   let recordsBeaten: RecordKey[] = []
 
   if (!discarded) {
@@ -517,11 +517,10 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
       }
     }
     saveTake(take)
-    goalJustReached = awardGoalIfReached(day, settings.goalMinutes.piano)
-    if (goalJustReached) fireConfetti('big')
     if (!isNote) {
-      tiersJustReached = awardTiersIfReached(day)
-      if (tiersJustReached.gold || tiersJustReached.bonus) fireConfetti('big')
+      marksJustReached = awardMarksIfReached(day)
+      goalJustReached = marksJustReached.some((m) => m.index === 0)
+      if (marksJustReached.length > 0) fireConfetti('big')
       recordsBeaten = updateRecords()
     }
     if (pieceId && !isNote) songBeadIds = awardSongTargetBeadsIfReached(pieceId, day)
@@ -559,7 +558,7 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
   clearInflightCheckpoint()
   currentTakeId = null
 
-  setState({ status: 'done', take, goalJustReached, discarded, songBeadIds, tiersJustReached, recordsBeaten })
+  setState({ status: 'done', take, goalJustReached, discarded, songBeadIds, marksJustReached, recordsBeaten })
 }
 
 export function dismiss(): void {

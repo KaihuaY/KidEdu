@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   allSongTargetsMet,
-  awardGoalIfReached,
+  awardMarksIfReached,
   awardSongTargetBeadsIfReached,
   bumpRepetition,
   markAudioPruned,
@@ -132,34 +132,34 @@ describe('setTakeGoalHit', () => {
   })
 })
 
-describe('awardGoalIfReached', () => {
+describe('awardMarksIfReached (mark 1 = the ring goal)', () => {
   it('defaults to "recording" mode: awards from wall time (durationSec), not activeSec', () => {
     const day = '2026-09-07'
     // Plenty of wall time, but well under the goal on activeSec alone -
     // proves this is summing durationSec, not activeSec.
     saveTake(makeTake({ id: 'a', day, durationSec: 900, activeSec: 100 }))
 
-    expect(awardGoalIfReached(day, 15)).toBe(true)
+    expect(awardMarksIfReached(day).some((m) => m.index === 0)).toBe(true)
 
     let doc = getDoc()
     expect(doc.piano.days[day]?.goalReachedAt).toBeTruthy()
     expect(doc.piano.streak.current).toBe(1)
-    expect(doc.profiles.kid.tokens.bronze).toBe(1)
-    expect(doc.profiles.kid.xp).toBe(10)
+    expect(doc.profiles.kid.tokens.gold).toBe(1) // mark 1 gives a gold token by default (round 9)
+    expect(doc.profiles.kid.xp).toBe(30)
 
     // Second call the same day: no-op, no double award.
-    expect(awardGoalIfReached(day, 15)).toBe(false)
+    expect(awardMarksIfReached(day).some((m) => m.index === 0)).toBe(false)
 
     doc = getDoc()
-    expect(doc.profiles.kid.tokens.bronze).toBe(1)
-    expect(doc.profiles.kid.xp).toBe(10)
+    expect(doc.profiles.kid.tokens.gold).toBe(1) // mark 1 gives a gold token by default (round 9)
+    expect(doc.profiles.kid.xp).toBe(30)
   })
 
   it('does not award before the goal is reached', () => {
     saveTake(makeTake({ id: 'a', day: '2026-09-07', durationSec: 100, activeSec: 100 }))
-    expect(awardGoalIfReached('2026-09-07', 15)).toBe(false)
+    expect(awardMarksIfReached('2026-09-07').some((m) => m.index === 0)).toBe(false)
     expect(getDoc().piano.days['2026-09-07']).toBeUndefined()
-    expect(getDoc().profiles.kid.tokens.bronze).toBe(0)
+    expect(getDoc().profiles.kid.tokens.gold).toBe(0)
   })
 
   it('"heard" mode awards from activeSec instead, once the setting is switched', () => {
@@ -168,7 +168,7 @@ describe('awardGoalIfReached', () => {
     // Plenty of wall time, but the goal is only reached on activeSec.
     saveTake(makeTake({ id: 'a', day, durationSec: 100, activeSec: 900 }))
 
-    expect(awardGoalIfReached(day, 15)).toBe(true)
+    expect(awardMarksIfReached(day).some((m) => m.index === 0)).toBe(true)
     expect(getDoc().piano.days[day]?.goalReachedAt).toBeTruthy()
   })
 })

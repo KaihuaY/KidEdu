@@ -13,12 +13,15 @@ import {
   type PianoSection,
   type PianoTake,
   type PieceJourney,
+  type PianoMark,
   type SelfRating,
+  type Settings,
+  type TokenCounts,
   type TakeCoach,
 } from './progress'
 import { bumpStreak, dayOffset, localDay } from './sessions'
-import { xpForTier, type Tier } from './rewards'
-import { goalReached, PIANO_GOAL_TIER, practiceSecondsForDay, tokenForParentStars } from './pianoRewards'
+import { TIERS, xpForTier, type Tier } from './rewards'
+import { practiceSecondsForDay, tokenForParentStars } from './pianoRewards'
 import { getRecordingStore } from './recordings'
 import { awardBeads } from './collection'
 import { randomBeadIds } from '../content/beads'
@@ -189,89 +192,97 @@ export function markAudioPruned(takeIds: string[], at: number = Date.now()): voi
   }))
 }
 
-/**
- * Awards the daily piano goal exactly once per local day: a bronze token
- * plus its XP to the kid profile, `days[day].goalReachedAt` stamped, and the
- * piano streak bumped. Returns true only when it actually awarded just now
- * (so the caller knows whether to celebrate).
- */
-export function awardGoalIfReached(day: string, goalMinutes: number): boolean {
-  // Checked before update() so a no-op never bumps piano.updatedAt, which
-  // would needlessly out-rank another device's edits during a sync merge.
-  const current = getDoc().piano
-  if (current.days[day]?.goalReachedAt) return false
-  const mode = getDoc().settings.pianoCountMode ?? 'recording'
-  if (!goalReached(practiceSecondsForDay(current.takes, day, mode), goalMinutes)) return false
-
-  update('piano', (piano) => ({
-    ...piano,
-    days: { ...piano.days, [day]: { ...piano.days[day], goalReachedAt: Date.now() } },
-    streak: bumpStreak(piano.streak, day),
-  }))
-  update('profiles', (profiles) => ({
-    ...profiles,
-    kid: {
-      ...profiles.kid,
-      xp: profiles.kid.xp + xpForTier(PIANO_GOAL_TIER),
-      tokens: { ...profiles.kid.tokens, [PIANO_GOAL_TIER]: profiles.kid.tokens[PIANO_GOAL_TIER] + 1 },
-    },
-  }))
-  return true
-}
-
-export const DEFAULT_PIANO_TIERS = { goldMin: 20, bonusMin: 30 }
-
-export function pianoTiers(settings: { pianoTiers?: { goldMin: number; bonusMin: number } }): { goldMin: number; bonusMin: number } {
-  return settings.pianoTiers ?? DEFAULT_PIANO_TIERS
-}
-
-export interface TiersReached {
-  /** Tier 2: the guaranteed gold token was awarded just now. */
-  gold: boolean
-  /** Tier 3: the bonus token was awarded just now, and which tier the coin toss gave. */
-  bonus: 'gold' | 'silver' | null
-}
+/** Default prizes for the three daily marks: 10 = 🟡, 20 = 🟡🟤, 30 = 🟡⚪🟤. */
+export const DEFAULT_MARK_TOKENS: TokenCounts[] = [
+  { gold: 1, silver: 0, bronze: 0 },
+  { gold: 1, silver: 0, bronze: 1 },
+  { gold: 1, silver: 1, bronze: 1 },
+]
+const DEFAULT_MARK_MINUTES = [10, 20, 30]
 
 /**
- * Tiers 2 and 3 of the daily piano reward (tier 1, the ring goal, stays in
- * awardGoalIfReached): `goldMin` minutes in a day = one gold token, `bonusMin`
- * = one more token that is gold or silver by coin toss. Each awarded at most
- * once per local day, with the same no-write-on-no-op rule as tier 1.
+ * The three daily minute marks for this kid. Mark 1's minutes always equal the
+ * ring goal; the older `pianoTiers` setting (round 8) seeds marks 2 and 3
+ * until the parent edits the marks. Always ascending and exactly three long.
  */
-export function awardTiersIfReached(day: string, rng: () => number = Math.random): TiersReached {
+export function pianoMarks(settings: Settings): PianoMark[] {
+  const goal = settings.goalMinutes.piano
+  let marks: PianoMark[]
+  if (settings.pianoMarks && settings.pianoMarks.length === 3) {
+    marks = settings.pianoMarks.map((m) => ({ minutes: m.minutes, tokens: { ...m.tokens } }))
+  } else {
+    const minutes = [goal, settings.pianoTiers?.goldMin ?? DEFAULT_MARK_MINUTES[1], settings.pianoTiers?.bonusMin ?? DEFAULT_MARK_MINUTES[2]]
+    marks = minutes.map((min, i) => ({ minutes: min, tokens: { ...DEFAULT_MARK_TOKENS[i] } }))
+  }
+  marks[0].minutes = goal
+  for (let i = 1; i < marks.length; i++) if (marks[i].minutes <= marks[i - 1].minutes) marks[i].minutes = marks[i - 1].minutes + 5
+  return marks
+}
+
+/** "🟡🟡⚪🟤" for a token set, or '' when it gives nothing. */
+export function tokenEmojis(tokens: TokenCounts): string {
+  return '🟡'.repeat(Math.max(0, tokens.gold)) + '⚪'.repeat(Math.max(0, tokens.silver)) + '🟤'.repeat(Math.max(0, tokens.bronze))
+}
+
+export function totalTokens(tokens: TokenCounts): number {
+  return Math.max(0, tokens.gold) + Math.max(0, tokens.silver) + Math.max(0, tokens.bronze)
+}
+
+export interface MarkReached {
+  /** 0 = the ring goal, 1, 2. */
+  index: number
+  minutes: number
+  tokens: TokenCounts
+}
+
+/** Which PianoDay stamp records mark `index` (kept from rounds 5 and 8 so old days still read correctly). */
+const MARK_STAMPS = ['goalReachedAt', 'goldReachedAt', 'bonusReachedAt'] as const
+
+/**
+ * Awards every daily mark the day's playing time has reached and that is not
+ * stamped yet: mark 1 (the ring) also bumps the streak; each mark grants its
+ * configured tokens (a mark with no tokens still stamps). Checked before
+ * update() so a no-op never bumps updatedAt (sync merge safety).
+ */
+export function awardMarksIfReached(day: string): MarkReached[] {
   const doc = getDoc()
-  const tiers = pianoTiers(doc.settings)
+  const marks = pianoMarks(doc.settings)
   const mode = doc.settings.pianoCountMode ?? 'recording'
   const minutes = practiceSecondsForDay(doc.piano.takes, day, mode) / 60
   const dayState = doc.piano.days[day]
-  const result: TiersReached = { gold: false, bonus: null }
-
-  if (!dayState?.goldReachedAt && minutes >= tiers.goldMin) {
-    update('piano', (piano) => ({ ...piano, days: { ...piano.days, [day]: { ...piano.days[day], goldReachedAt: Date.now() } } }))
-    grantToken('gold')
-    result.gold = true
-  }
-  if (!dayState?.bonusReachedAt && minutes >= tiers.bonusMin) {
-    const tier: 'gold' | 'silver' = rng() < 0.5 ? 'gold' : 'silver'
+  const reached: MarkReached[] = []
+  marks.forEach((mark, index) => {
+    const stamp = MARK_STAMPS[index]
+    if (dayState?.[stamp] || minutes < mark.minutes) return
     update('piano', (piano) => ({
       ...piano,
-      days: { ...piano.days, [day]: { ...piano.days[day], bonusReachedAt: Date.now(), bonusTier: tier } },
+      days: { ...piano.days, [day]: { ...piano.days[day], [stamp]: Date.now() } },
+      streak: index === 0 ? bumpStreak(piano.streak, day) : piano.streak,
     }))
-    grantToken(tier)
-    result.bonus = tier
-  }
-  return result
+    if (totalTokens(mark.tokens) > 0) grantTokens(mark.tokens)
+    reached.push({ index, minutes: mark.minutes, tokens: { ...mark.tokens } })
+  })
+  return reached
 }
 
-function grantToken(tier: Tier): void {
-  update('profiles', (profiles) => ({
-    ...profiles,
-    kid: {
-      ...profiles.kid,
-      xp: profiles.kid.xp + xpForTier(tier),
-      tokens: { ...profiles.kid.tokens, [tier]: profiles.kid.tokens[tier] + 1 },
-    },
-  }))
+function grantTokens(counts: TokenCounts): void {
+  update('profiles', (profiles) => {
+    const kid = profiles.kid
+    let xp = kid.xp
+    for (const tier of TIERS) xp += xpForTier(tier) * Math.max(0, counts[tier])
+    return {
+      ...profiles,
+      kid: {
+        ...kid,
+        xp,
+        tokens: {
+          gold: kid.tokens.gold + Math.max(0, counts.gold),
+          silver: kid.tokens.silver + Math.max(0, counts.silver),
+          bronze: kid.tokens.bronze + Math.max(0, counts.bronze),
+        },
+      },
+    }
+  })
 }
 
 /**

@@ -30,6 +30,22 @@ export interface PianoPiece {
   goalSetOn?: string
   /** Grown-up target: play this piece this many times a day (counted by the "+1" tap while recording). 0/undefined = off. */
   timesPerDay?: number
+  /** 'week' = this week's pieces (big chips), 'keep' (default) = under "More songs", 'archived' = hidden from the kid, history kept. */
+  status?: 'week' | 'keep' | 'archived'
+  /** Manual order within a status group (lower first). */
+  order?: number
+}
+
+export interface TokenCounts {
+  gold: number
+  silver: number
+  bronze: number
+}
+
+/** One daily minute mark and the box tokens it hands out (round 9: configurable per kid). */
+export interface PianoMark {
+  minutes: number
+  tokens: TokenCounts
 }
 
 /** What counts toward the daily piano goal: the whole recording (default) or only seconds where playing was heard. */
@@ -59,6 +75,12 @@ export interface Settings {
    * token, gold or silver by coin toss. Undefined = defaults 20 / 30.
    */
   pianoTiers?: { goldMin: number; bonusMin: number }
+  /**
+   * The three daily minute marks and their prizes (round 9). Mark 1's minutes always
+   * equals `goalMinutes.piano` (the ring). Undefined = defaults: 10 = 🟡, 20 = 🟡🟤,
+   * 30 = 🟡⚪🟤 (minutes taken from `pianoTiers` when that older setting exists).
+   */
+  pianoMarks?: PianoMark[]
   prizePools: {
     gold: Prize[]
     silver: Prize[]
@@ -359,6 +381,45 @@ export interface PianoDay {
   /** Tier 3: the bonus token for reaching `settings.pianoTiers.bonusMin` minutes, and which tier the coin toss gave. */
   bonusReachedAt?: number
   bonusTier?: 'gold' | 'silver'
+  /** Journal nudges already shown today ('third-take', 'mark-1'), so each appears once a day. */
+  nudges?: string[]
+}
+
+/** One entry in the kid's own practice journal (typed by her; a grown-up can delete behind the PIN). */
+export interface JournalEntry {
+  id: string
+  day: string
+  at: number
+  /** 1 = 😫, 2 = 😐, 3 = 🙂, 4 = 🤩 */
+  mood?: 1 | 2 | 3 | 4
+  text: string
+  /** The prompt chip she started from, if any. */
+  prompt?: string
+  takeIds?: string[]
+}
+
+/** A photo of the teacher's weekly note in her notebook. Full-size photo goes to Drive; the thumbnail stays here. */
+export interface TeacherNote {
+  id: string
+  /** The lesson day this note is about (defaults to the day the photo was taken). */
+  day: string
+  takenAt: number
+  /** Small JPEG data URL (<= 240 px, ~15 KB) so every device shows it offline. */
+  thumbDataUrl: string
+  caption?: string
+  upload: {
+    status: 'pending' | 'uploading' | 'done' | 'failed'
+    attempts: number
+    driveFileId?: string
+    driveUrl?: string
+    lastError?: string
+    updatedAt: number
+  }
+}
+
+export interface TeacherNotesSection {
+  items: TeacherNote[]
+  updatedAt: number
 }
 
 /** One personal record: the value, when it was set, and where (take / day / piece) so the kid can find it. */
@@ -393,6 +454,8 @@ export interface PianoSection {
   /** pieceId -> written song-journey summary. */
   journeys?: Record<string, PieceJourney>
   records?: Records
+  /** The kid's own practice journal, newest last. */
+  journal?: JournalEntry[]
   updatedAt: number
 }
 
@@ -405,9 +468,10 @@ export interface ProgressDoc {
   piano: PianoSection
   notes: NotesSection
   collection: CollectionSection
+  teacherNotes: TeacherNotesSection
 }
 
-export type SectionKey = 'settings' | 'profiles' | 'rewards' | 'solveLog' | 'piano' | 'notes' | 'collection'
+export type SectionKey = 'settings' | 'profiles' | 'rewards' | 'solveLog' | 'piano' | 'notes' | 'collection' | 'teacherNotes'
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -449,6 +513,18 @@ export function emptyPiano(updatedAt: number): PianoSection {
 
 export function emptyNotes(updatedAt: number): NotesSection {
   return { items: [], updatedAt }
+}
+
+export function emptyTeacherNotes(updatedAt: number): TeacherNotesSection {
+  return { items: [], updatedAt }
+}
+
+function normalizeTeacherNotes(parsed: Partial<TeacherNotesSection> | undefined): TeacherNotesSection {
+  if (!parsed) return emptyTeacherNotes(0)
+  return {
+    items: Array.isArray(parsed.items) ? parsed.items : [],
+    updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : 0,
+  }
 }
 
 export function emptyCollection(updatedAt: number): CollectionSection {
@@ -533,6 +609,7 @@ export function defaultDoc(): ProgressDoc {
     piano: emptyPiano(now),
     notes: emptyNotes(now),
     collection: emptyCollection(now),
+    teacherNotes: emptyTeacherNotes(now),
   }
 }
 
@@ -693,6 +770,7 @@ function normalizeDoc(parsed: Partial<ProgressDoc>): ProgressDoc {
     piano: normalizePiano(parsed.piano),
     notes: normalizeNotes(parsed.notes),
     collection: normalizeCollection(parsed.collection),
+    teacherNotes: normalizeTeacherNotes(parsed.teacherNotes),
   }
 }
 
@@ -716,6 +794,7 @@ function neverEditedDoc(): ProgressDoc {
     piano: emptyPiano(0),
     notes: emptyNotes(0),
     collection: emptyCollection(0),
+    teacherNotes: emptyTeacherNotes(0),
   }
 }
 
@@ -878,7 +957,7 @@ function newer<T extends { updatedAt: number }>(local: T, remote: T | undefined)
   return remote.updatedAt > local.updatedAt ? remote : local
 }
 
-const KNOWN_SECTION_KEYS = new Set(['schemaVersion', 'settings', 'profiles', 'rewards', 'solveLog', 'piano', 'notes', 'collection'])
+const KNOWN_SECTION_KEYS = new Set(['schemaVersion', 'settings', 'profiles', 'rewards', 'solveLog', 'piano', 'notes', 'collection', 'teacherNotes'])
 
 function sectionUpdatedAt(value: unknown): number | undefined {
   if (!value || typeof value !== 'object') return undefined
@@ -944,6 +1023,7 @@ export function mergeDocs(local: ProgressDoc, remote: ProgressDoc): ProgressDoc 
     piano: newer(local.piano ?? emptyPiano(0), remote.piano),
     notes: newer(local.notes ?? emptyNotes(0), remote.notes),
     collection: newer(local.collection ?? emptyCollection(0), remote.collection),
+    teacherNotes: newer(local.teacherNotes ?? emptyTeacherNotes(0), remote.teacherNotes),
   }
 }
 
@@ -977,9 +1057,15 @@ export function resetAll(): void {
 export function setGoalMinutes(activity: ActivityId, minutes: number): void {
   update('settings', (s) => {
     const goalMinutes = { ...s.goalMinutes, [activity]: minutes }
+    // Mark 1 of the piano reward marks IS the ring goal: keep them in step.
+    const pianoMarks =
+      activity === 'piano' && s.pianoMarks
+        ? s.pianoMarks.map((m, i) => (i === 0 ? { ...m, minutes } : m))
+        : s.pianoMarks
     return {
       ...s,
       goalMinutes,
+      ...(pianoMarks ? { pianoMarks } : {}),
       sessionMinutes: activity === 'cube' ? minutes : s.sessionMinutes,
     }
   })

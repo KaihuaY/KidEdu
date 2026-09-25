@@ -24,7 +24,7 @@ import {
   type DriveConfig,
 } from '../store/driveUpload'
 import { coachStatus } from '../store/coach'
-import { adjustTokens, markAudioPruned, pianoTiers } from '../store/piano'
+import { adjustTokens, markAudioPruned } from '../store/piano'
 import { addNote } from '../store/notes'
 import { APP_BUILD } from '../buildInfo'
 import { DeviceOwner } from '../components/DeviceOwner'
@@ -36,8 +36,6 @@ export { PinGate } from '../components/PinGate'
 
 const CUBE_GOAL_OPTIONS = [5, 10, 15, 20]
 const PIANO_GOAL_OPTIONS = [10, 15, 20, 30]
-const GOLD_MIN_OPTIONS = [20, 25, 30, 40]
-const BONUS_MIN_OPTIONS = [30, 40, 45, 60]
 const RECORDING_KEEP_OPTIONS = [7, 14, 30]
 const TIERS: Array<'gold' | 'silver' | 'bronze'> = ['gold', 'silver', 'bronze']
 const TIER_LABEL: Record<(typeof TIERS)[number], string> = { gold: 'Gold', silver: 'Silver', bronze: 'Bronze' }
@@ -46,11 +44,6 @@ const BOX_TIER_LABEL: Record<Tier, string> = { gold: 'Gold', silver: 'Silver', b
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-/** Smallest option strictly greater than `mustExceed`, or the largest option if none is. */
-function nextValidOption(options: number[], mustExceed: number): number {
-  return options.find((o) => o > mustExceed) ?? options[options.length - 1]
 }
 
 const PIECE_GOAL_MAX_LENGTH = 80
@@ -518,31 +511,8 @@ export function Settings() {
   const settings = progress.settings
   const driveCfg: DriveConfig = settings.driveUpload ?? { scriptUrl: '', secret: '', folderName: 'Nora Piano' }
 
-  const tiers = pianoTiers(settings)
-
   function handlePianoGoalClick(minutes: number) {
     setGoalMinutes('piano', minutes)
-    update('settings', (s) => {
-      const current = pianoTiers(s)
-      const goldMin = current.goldMin <= minutes ? nextValidOption(GOLD_MIN_OPTIONS, minutes) : current.goldMin
-      const bonusMin = current.bonusMin <= goldMin ? nextValidOption(BONUS_MIN_OPTIONS, goldMin) : current.bonusMin
-      if (goldMin === current.goldMin && bonusMin === current.bonusMin) return s
-      return { ...s, pianoTiers: { goldMin, bonusMin } }
-    })
-  }
-
-  function handleGoldMinClick(goldMin: number) {
-    if (goldMin <= settings.goalMinutes.piano) return
-    update('settings', (s) => {
-      const current = pianoTiers(s)
-      const bonusMin = current.bonusMin <= goldMin ? nextValidOption(BONUS_MIN_OPTIONS, goldMin) : current.bonusMin
-      return { ...s, pianoTiers: { goldMin, bonusMin } }
-    })
-  }
-
-  function handleBonusMinClick(bonusMin: number) {
-    if (bonusMin <= tiers.goldMin) return
-    update('settings', (s) => ({ ...s, pianoTiers: { ...pianoTiers(s), bonusMin } }))
   }
 
   function setDriveField(patch: Partial<DriveConfig>) {
@@ -709,67 +679,6 @@ export function Settings() {
             ))}
           </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          <span style={{ fontWeight: 700, color: 'var(--cc-ink-soft)' }}>🟡 Gold token at</span>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            {GOLD_MIN_OPTIONS.map((minutes) => {
-              const disabled = minutes <= settings.goalMinutes.piano
-              const selected = tiers.goldMin === minutes
-              return (
-                <button
-                  key={minutes}
-                  type="button"
-                  className="cc-btn"
-                  data-testid={`tier-gold-${minutes}`}
-                  disabled={disabled}
-                  onClick={() => handleGoldMinClick(minutes)}
-                  style={{
-                    flex: 1,
-                    background: selected ? 'var(--cc-primary)' : 'var(--cc-surface)',
-                    color: disabled ? 'var(--cc-ink-soft)' : selected ? '#fff' : 'var(--cc-ink)',
-                    border: selected ? 'none' : '2px solid var(--cc-border)',
-                    boxShadow: 'none',
-                    opacity: disabled ? 0.5 : 1,
-                  }}
-                >
-                  {minutes} min
-                </button>
-              )
-            })}
-          </div>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          <span style={{ fontWeight: 700, color: 'var(--cc-ink-soft)' }}>🎲 Bonus gold-or-silver at</span>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            {BONUS_MIN_OPTIONS.map((minutes) => {
-              const disabled = minutes <= tiers.goldMin
-              const selected = tiers.bonusMin === minutes
-              return (
-                <button
-                  key={minutes}
-                  type="button"
-                  className="cc-btn"
-                  data-testid={`tier-bonus-${minutes}`}
-                  disabled={disabled}
-                  onClick={() => handleBonusMinClick(minutes)}
-                  style={{
-                    flex: 1,
-                    background: selected ? 'var(--cc-primary)' : 'var(--cc-surface)',
-                    color: disabled ? 'var(--cc-ink-soft)' : selected ? '#fff' : 'var(--cc-ink)',
-                    border: selected ? 'none' : '2px solid var(--cc-border)',
-                    boxShadow: 'none',
-                    opacity: disabled ? 0.5 : 1,
-                  }}
-                >
-                  {minutes} min
-                </button>
-              )
-            })}
-          </div>
-        </div>
-        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
-          Bronze comes with the ring goal above. Gold and the bonus are extra tokens for a longer practice day.
-        </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <span style={{ fontWeight: 700, color: 'var(--cc-ink-soft)' }}>Piano goal counts</span>
           <div style={{ display: 'flex', gap: '0.5rem' }}>

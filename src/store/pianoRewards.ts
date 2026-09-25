@@ -14,7 +14,6 @@ export function tokenForParentStars(stars: ParentStars): Tier | null {
 }
 
 /** The token tier awarded for reaching the daily piano goal. */
-export const PIANO_GOAL_TIER: Tier = 'bronze'
 
 /** All *practice* takes recorded on a given local day - a grown-up's voice note (`isNote`) is never one of them. */
 export function takesForDay(takes: PianoTake[], day: string): PianoTake[] {

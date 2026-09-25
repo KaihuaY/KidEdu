@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { navigate } from '../../router'
 import { useProgress, type PianoPiece, type Records } from '../../store/progress'
-import { pianoTiers, repetitionsForPiece, setSelfRating, setTakeGoalHit, usePiano } from '../../store/piano'
+import { repetitionsForPiece, setSelfRating, setTakeGoalHit, tokenEmojis, usePiano } from '../../store/piano'
 import { goalProgress, practiceSecondsForDay, steadyBeatDots } from '../../store/pianoRewards'
 import { useRecords, type RecordKey } from '../../store/records'
 import { formatClock, localDay } from '../../store/sessions'
@@ -57,7 +57,6 @@ export function Record() {
   const records = useRecords()
   const kidName = progress.settings.kidName
   const goalMin = progress.settings.goalMinutes.piano
-  const { goldMin, bonusMin } = pianoTiers(progress.settings)
   const countMode = progress.settings.pianoCountMode ?? 'recording'
   const [fasterTempoSaved, setFasterTempoSaved] = useState(false)
   const today = localDay()
@@ -249,21 +248,19 @@ export function Record() {
         )}
         {session.goalJustReached && (
           <>
-            <p style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>You filled the ring! 🟤 +1 token</p>
+            <p style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>
+              You filled the ring! {tokenEmojis(session.marksJustReached.find((m) => m.index === 0)?.tokens ?? { gold: 0, silver: 0, bronze: 0 }) || '🎉'}
+            </p>
             <p style={{ margin: 0, fontWeight: 700 }}>See you tomorrow! 🎹</p>
           </>
         )}
-        {session.tiersJustReached.gold && (
-          <p data-testid="tier-gold" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-accent)' }}>
-            {goldMin} minutes of piano today! 🟡 A gold token!
-          </p>
-        )}
-        {session.tiersJustReached.bonus && (
-          <p data-testid="tier-bonus" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-accent)' }}>
-            {bonusMin} minutes! 🎲 The coin landed on… a {session.tiersJustReached.bonus === 'gold' ? 'GOLD' : 'SILVER'} token!{' '}
-            {session.tiersJustReached.bonus === 'gold' ? '🟡' : '⚪'}
-          </p>
-        )}
+        {session.marksJustReached
+          .filter((m) => m.index > 0)
+          .map((m) => (
+            <p key={m.index} data-testid={`mark-reached-${m.index + 1}`} style={{ margin: 0, fontWeight: 800, color: 'var(--cc-accent)' }}>
+              {m.minutes} minutes of piano today! {tokenEmojis(m.tokens) || '🎉'}
+            </p>
+          ))}
         {session.songBeadIds && session.songBeadIds.length > 0 && (
           <p data-testid="song-target-beads" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>
             Target done! ✨ +2 beads 📿

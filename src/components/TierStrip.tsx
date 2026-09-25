@@ -1,14 +1,7 @@
 import { useProgress } from '../store/progress'
 import { localDay } from '../store/sessions'
-import { tierStatus, type TierMarker } from '../store/tierStrip'
-
-/** What to show before a marker's minute count: a die until the bonus coin toss lands, then which tier it gave. */
-function markerEmoji(m: TierMarker): string {
-  if (m.tier === 'bronze') return '🟤'
-  if (m.tier === 'gold') return '🟡'
-  if (m.reached) return m.bonusTier === 'silver' ? '⚪' : '🟡'
-  return '🎲'
-}
+import { tokenEmojis } from '../store/piano'
+import { tierStatus } from '../store/tierStrip'
 
 /** A compact one-row strip of today's three piano reward tiers (ring goal, gold, bonus), the next one still to reach highlighted. */
 export function TierStrip() {
@@ -22,11 +15,11 @@ export function TierStrip() {
       style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center' }}
     >
       {status.markers.map((m) => {
-        const isNext = status.next?.tier === m.tier
+        const isNext = status.next?.index === m.index
         return (
           <span
-            key={m.tier}
-            data-testid={`tier-marker-${m.tier}`}
+            key={m.index}
+            data-testid={`tier-marker-${m.index + 1}`}
             data-reached={m.reached}
             style={{
               display: 'inline-flex',
@@ -42,7 +35,7 @@ export function TierStrip() {
               color: 'var(--cc-ink)',
             }}
           >
-            <span aria-hidden="true">{markerEmoji(m)}</span>
+            <span aria-hidden="true">{tokenEmojis(m.tokens) || '·'}</span>
             <span>{m.minutes} min</span>
             {m.reached && <span aria-hidden="true" style={{ color: 'var(--cc-success)' }}>✓</span>}
             {isNext && status.next && (

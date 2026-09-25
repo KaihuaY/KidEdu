@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  PIANO_GOAL_TIER,
   activeSecondsForDay,
   daysNeedingParentRating,
   goalProgress,
@@ -52,11 +51,6 @@ describe('tokenForParentStars', () => {
   })
 })
 
-describe('PIANO_GOAL_TIER', () => {
-  it('is bronze', () => {
-    expect(PIANO_GOAL_TIER).toBe('bronze')
-  })
-})
 
 describe('takesForDay / activeSecondsForDay', () => {
   it('filters to the given local day and sums active seconds', () => {
