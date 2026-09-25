@@ -33,11 +33,14 @@ import {
   type SelfRatingLabel,
 } from '../content/coachPrompt'
 import { ruleFeedback, ruleJourney, type RuleFeedbackContext, type RuleFeedbackResult, type RuleJourneyContext, type RuleJourneyResult } from '../content/coachPhrases'
+import { themeForDay, tooSimilar, voiceForDay } from '../content/coachVariety'
 import { getAnalysisStore } from './analysisStore'
 import { isDriveConfigured, type DriveConfig } from './driveUpload'
 import { getKid, KID_NAMES } from './kid'
 import { setJourney, setTakeAi } from './piano'
 import { getDoc, type PianoTake, type SelfRating, type TakeMetrics } from './progress'
+import { localDay } from './sessions'
+import { songStats } from './songStats'
 
 export type CoachStage = 'idle' | 'analyzing' | 'writing' | 'done' | 'failed'
 
@@ -392,6 +395,14 @@ function validateFeedback(raw: unknown): RuleFeedbackResult | null {
   return { kid: { praise, tryNext }, parent: { note } }
 }
 
+/** True when the freshly-validated kid praise or tryNext reads as a near-repeat of one of her recent notes (of any piece). */
+function tooSimilarToRecent(result: RuleFeedbackResult, recentNotes: FeedbackInput['recentNotes']): boolean {
+  if (recentNotes.length === 0) return false
+  const recentPraises = recentNotes.map((n) => n.praise)
+  const recentTryNexts = recentNotes.map((n) => n.tryNext)
+  return tooSimilar(result.kid.praise, recentPraises) || tooSimilar(result.kid.tryNext, recentTryNexts)
+}
+
 function validateJourney(raw: unknown): RuleJourneyResult | null {
   if (!raw || typeof raw !== 'object') return null
   const r = raw as Record<string, unknown>
@@ -412,6 +423,37 @@ function historyForPiece(pieceId: string, excludeTakeId: string): HistoryTake[] 
     .piano.takes.filter((t) => t.pieceId === pieceId && !t.isNote && t.id !== excludeTakeId && t.ai?.metrics)
     .sort((a, b) => a.startedAt - b.startedAt)
   return candidates.slice(-HISTORY_LIMIT).map((t) => ({ day: t.day, metrics: t.ai!.metrics }))
+}
+
+const RECENT_NOTES_LIMIT = 5
+
+/** Her last (up to) 5 kid notes from analysed takes of ANY piece, newest first - excludes `excludeTakeId` itself. Used to keep the coach from repeating itself. */
+function recentKidNotes(excludeTakeId: string): { praise: string; tryNext: string }[] {
+  return getDoc()
+    .piano.takes.filter((t) => !t.isNote && t.id !== excludeTakeId && t.ai?.kid)
+    .sort((a, b) => b.startedAt - a.startedAt)
+    .slice(0, RECENT_NOTES_LIMIT)
+    .map((t) => ({ praise: t.ai!.kid!.praise, tryNext: t.ai!.kid!.tryNext }))
+}
+
+/** The most recent journal entry's text for a local day, if she wrote one. */
+function journalTextForDay(day: string): string | undefined {
+  const entries = (getDoc().piano.journal ?? []).filter((e) => e.day === day)
+  return entries.length > 0 ? entries[entries.length - 1].text : undefined
+}
+
+function round1(n: number): number {
+  return Math.round(n * 10) / 10
+}
+
+/** How much she's played this song overall, for the coach's "only mention plays/time when round or new" rule - undefined when there's no piece or no takes yet. */
+function songSummary(pieceId: string | null): { plays: number; totalMin: number; days: number } | undefined {
+  if (!pieceId) return undefined
+  const doc = getDoc()
+  const mode = doc.settings.pianoCountMode ?? 'recording'
+  const stats = songStats(doc.piano.takes, pieceId, mode)
+  if (stats.takes === 0) return undefined
+  return { plays: stats.plays, totalMin: round1(stats.totalSec / 60), days: stats.daysPlayed }
 }
 
 function takeNumberForPiece(pieceId: string, take: PianoTake): number {
@@ -455,6 +497,11 @@ function buildFeedbackContext(take: PianoTake): { input: FeedbackInput; ruleCtx:
   const selfRating = mapSelfRating(take.selfRating)
   const pieceName = piece?.name.trim() || null
 
+  const today = localDay()
+  const theme = themeForDay(today)
+  const voice = voiceForDay(today)
+  const recentNotes = recentKidNotes(take.id)
+
   const input: FeedbackInput = {
     kidFirstName,
     age: AGE,
@@ -468,6 +515,11 @@ function buildFeedbackContext(take: PianoTake): { input: FeedbackInput; ruleCtx:
     takeNumber,
     differentMusic,
     isNewReference,
+    recentNotes,
+    theme: `${theme.label} - ${theme.description}`,
+    voice: `${voice.label} - ${voice.description}`,
+    song: songSummary(pieceId),
+    journalToday: journalTextForDay(today),
   }
   const ruleCtx: RuleFeedbackContext = {
     takeId: take.id,
@@ -477,6 +529,7 @@ function buildFeedbackContext(take: PianoTake): { input: FeedbackInput; ruleCtx:
     repetitions: take.repetitions,
     differentMusic,
     isNewReference,
+    recentNotes,
   }
   return { input, ruleCtx }
 }
@@ -555,10 +608,23 @@ export async function requestFeedback(takeId: string, opts?: { force?: boolean }
       })
       if (claudeResult.ok) {
         const validated = validateFeedback(claudeResult.result)
-        if (validated) {
+        if (validated && !tooSimilarToRecent(validated, input.recentNotes)) {
           result = validated
           source = 'claude'
           model = claudeResult.model
+        } else if (validated) {
+          // Too close to a recent note - one retry, nudged to say something genuinely different.
+          const retryUser = `${buildFeedbackUser(input)}\n\nYour last answer was too similar to a recent note: "${input.recentNotes[0].praise}". Say something genuinely different.`
+          const retryResult = await callCoach(settings.driveUpload, { system: COACH_SYSTEM, user: retryUser, schema: FEEDBACK_SCHEMA })
+          if (retryResult.ok) {
+            const retryValidated = validateFeedback(retryResult.result)
+            if (retryValidated && !tooSimilarToRecent(retryValidated, input.recentNotes)) {
+              result = retryValidated
+              source = 'claude'
+              model = retryResult.model
+            }
+          }
+          // Still similar (or invalid, or the retry failed) - falls through to the rules fallback below.
         }
       } else if (isTransientReason(claudeResult.reason)) {
         scheduleRetry = true
@@ -640,7 +706,16 @@ export async function requestJourney(pieceId: string, opts?: { force?: boolean }
     const pieceName = piece?.name.trim() || 'this piece'
     const kidFirstName = firstName(settings.kidName)
 
-    const input: JourneyInput = { kidFirstName, age: AGE, pieceName, goalText: piece?.goal, series, takeCount: analysedTakes.length }
+    const previousJourney = existing ? `${existing.kid} ${existing.parent}` : undefined
+    const input: JourneyInput = {
+      kidFirstName,
+      age: AGE,
+      pieceName,
+      goalText: piece?.goal,
+      series,
+      takeCount: analysedTakes.length,
+      previousJourney,
+    }
     const ruleCtx: RuleJourneyContext = { pieceId, kidFirstName, pieceName }
 
     const useClaude = settings.aiCoach?.enabled !== false && isDriveConfigured(settings)

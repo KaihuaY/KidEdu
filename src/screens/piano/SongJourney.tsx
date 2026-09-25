@@ -4,9 +4,18 @@ import { useProgress } from '../../store/progress'
 import { usePiano } from '../../store/piano'
 import { requestJourney } from '../../store/coach'
 import { bestTakeId, milestones, pieceSeries } from '../../store/songProgress'
+import { formatTotal, recentSeries, songStats } from '../../store/songStats'
+import { localDay } from '../../store/sessions'
 import { CoachCard } from '../../components/CoachCard'
+import { MiniBarChart } from '../../components/MiniBarChart'
 import { MiniLineChart } from '../../components/MiniLineChart'
 import { TakePlayer } from '../../components/TakePlayer'
+
+/** "2026-09-08" -> "Sep 8", for the stats card's first/last-played line. */
+function monthDayLabel(day: string): string {
+  const [y, m, d] = day.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
 
 /** Short day label for a chart's x-axis, e.g. "9/6" for 2026-09-06. */
 function shortDayLabel(day: string): string {
@@ -68,6 +77,15 @@ export function SongJourney() {
   const hasStumbles = series.some((p) => p.stumbles !== undefined)
   const hasPace = series.some((p) => p.pace !== undefined)
 
+  const countMode = progress.settings.pianoCountMode ?? 'recording'
+  const stats = useMemo(() => songStats(piano.takes, pieceId, countMode), [piano.takes, pieceId, countMode])
+  const today = localDay()
+  const dailySeries = useMemo(() => recentSeries(stats, today, 21), [stats, today])
+  const barPoints = useMemo(
+    () => dailySeries.map((d) => ({ label: monthDayLabel(d.day), value: d.plays, secondary: d.sec })),
+    [dailySeries],
+  )
+
   return (
     <div data-testid="song-journey" style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem', padding: '1rem 1rem 2rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
@@ -78,6 +96,22 @@ export function SongJourney() {
           ⬅ Back
         </button>
       </div>
+
+      {stats.takes > 0 && (
+        <div data-testid="song-stats" className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+          <strong style={{ fontSize: '1rem' }}>
+            ▶ {stats.plays} play{stats.plays === 1 ? '' : 's'} · ⏱ {formatTotal(stats.totalSec)} · 📅 {stats.daysPlayed} day
+            {stats.daysPlayed === 1 ? '' : 's'}
+          </strong>
+          {stats.firstDay && stats.lastDay && (
+            <span style={{ fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+              first {monthDayLabel(stats.firstDay)} · last {monthDayLabel(stats.lastDay)}
+            </span>
+          )}
+          <MiniBarChart points={barPoints} title="Plays per day" unit="plays" />
+          <span style={{ fontSize: '0.75rem', color: 'var(--cc-ink-soft)' }}>bars = plays, line = minutes</span>
+        </div>
+      )}
 
       {journey?.kid ? (
         <div className="cc-card" style={{ padding: '1.1rem' }}>

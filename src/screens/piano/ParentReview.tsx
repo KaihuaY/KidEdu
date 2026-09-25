@@ -8,6 +8,8 @@ import { requestJourney } from '../../store/coach'
 import { dayOffset, formatClock, localDay } from '../../store/sessions'
 import { formatBytes, getRecordingStore } from '../../store/recordings'
 import { addNote } from '../../store/notes'
+import { deleteJournalEntry, journalForDay, MOODS, useJournal } from '../../store/journal'
+import { deleteTeacherNote, useTeacherNotes } from '../../store/teacherNotes'
 import { dismiss, isRecordingActive, startTake, stopTake, useRecordingSession } from '../../audio/recordingSession'
 import { PinGate } from '../../components/PinGate'
 import { CoachNote } from '../../components/CoachNote'
@@ -208,6 +210,15 @@ function DayCard({
         <strong style={{ fontSize: '1.05rem' }}>{dayLabel(day, today)}</strong>
         <span style={{ color: 'var(--cc-ink-soft)', fontWeight: 700 }}>{formatClock(activeSec)} played</span>
       </div>
+      <button
+        type="button"
+        data-testid="open-this-day"
+        className="cc-btn cc-btn-surface"
+        style={{ alignSelf: 'flex-start', minHeight: 44, fontSize: '0.85rem' }}
+        onClick={() => navigate(`/piano/day/${day}`)}
+      >
+        📅 Open this day
+      </button>
       {takes.map((take) => (
         <TakeRow key={take.id} take={take} piece={pianoPieces.find((p) => p.id === take.pieceId)} />
       ))}
@@ -274,6 +285,88 @@ function SongJourneyCard({ piece, journeyParent, takes }: { piece: PianoPiece; j
       >
         ↻ Refresh
       </button>
+    </div>
+  )
+}
+
+/** "📓 Teacher notes": every note (any week), newest first, with a delete for each - safe here since the whole screen is already PIN-gated. */
+function TeacherNotesAdminSection() {
+  const notes = useTeacherNotes()
+  if (notes.length === 0) return null
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+      <strong style={{ fontSize: '1.05rem' }}>📓 Teacher notes</strong>
+      {notes.map((n) => (
+        <div
+          key={n.id}
+          data-testid="teacher-note-admin-row"
+          className="cc-card"
+          style={{ padding: '0.75rem 0.9rem', display: 'flex', gap: '0.75rem', alignItems: 'center' }}
+        >
+          <img src={n.thumbDataUrl} alt="Teacher note" style={{ width: 56, height: 56, borderRadius: '0.6rem', objectFit: 'cover', flexShrink: 0 }} />
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.15rem', minWidth: 0 }}>
+            <strong>{n.day}</strong>
+            {n.caption && <span style={{ color: 'var(--cc-ink-soft)' }}>{n.caption}</span>}
+            <span style={{ fontSize: '0.75rem', color: 'var(--cc-ink-soft)' }}>
+              {n.upload.status === 'done' ? '☁️ Saved to Drive' : '💾 Saved on this device · will upload'}
+            </span>
+          </div>
+          <button
+            type="button"
+            data-testid="teacher-note-admin-delete"
+            aria-label="Delete teacher note"
+            className="cc-btn"
+            style={{ minHeight: 44, minWidth: 44, background: 'var(--cc-danger)', color: '#fff', flexShrink: 0 }}
+            onClick={() => deleteTeacherNote(n.id)}
+          >
+            🗑️
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** "📔 Journal": every entry grouped by day, with a delete for each - the only place a journal entry can be removed. */
+function JournalAdminSection() {
+  const entries = useJournal()
+  const today = localDay()
+  if (entries.length === 0) return null
+  const days = Array.from(new Set(entries.map((e) => e.day))).sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+      <strong style={{ fontSize: '1.05rem' }}>📔 Journal</strong>
+      {days.map((day) => (
+        <div key={day} style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+          <span style={{ fontWeight: 700, color: 'var(--cc-ink-soft)' }}>{dayLabel(day, today)}</span>
+          {journalForDay(entries, day).map((e) => (
+            <div
+              key={e.id}
+              data-testid="journal-admin-row"
+              className="cc-card"
+              style={{ padding: '0.75rem 0.9rem', display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}
+            >
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.2rem', minWidth: 0 }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--cc-ink-soft)' }}>
+                  {e.mood ? `${MOODS.find((m) => m.value === e.mood)?.emoji} ` : ''}
+                  {new Date(e.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                </span>
+                <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{e.text}</p>
+              </div>
+              <button
+                type="button"
+                data-testid="journal-admin-delete"
+                aria-label="Delete journal entry"
+                className="cc-btn"
+                style={{ minHeight: 44, minWidth: 44, background: 'var(--cc-danger)', color: '#fff', flexShrink: 0 }}
+                onClick={() => deleteJournalEntry(e.id)}
+              >
+                🗑️
+              </button>
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   )
 }
@@ -408,6 +501,9 @@ function ParentReviewContent() {
           ))}
         </div>
       )}
+
+      <JournalAdminSection />
+      <TeacherNotesAdminSection />
 
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
         <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>

@@ -12,6 +12,8 @@ import {
   type Prize,
 } from '../store/progress'
 import { localDay } from '../store/sessions'
+import { pieceStatus } from '../store/songStats'
+import { canMovePiece, movePieceOrder, nextOrderFor } from '../store/pieceOrder'
 import { clearToken, getToken, setToken, start as startSync, stop as stopSync, useSyncStatus } from '../store/gistSync'
 import { PinGate } from '../components/PinGate'
 import { navigate } from '../router'
@@ -28,6 +30,7 @@ import { adjustTokens, markAudioPruned } from '../store/piano'
 import { addNote } from '../store/notes'
 import { APP_BUILD } from '../buildInfo'
 import { DeviceOwner } from '../components/DeviceOwner'
+import { MarksEditor } from '../components/MarksEditor'
 import { lockDevice } from '../store/kid'
 import type { Tier } from '../store/rewards'
 
@@ -35,7 +38,6 @@ import type { Tier } from '../store/rewards'
 export { PinGate } from '../components/PinGate'
 
 const CUBE_GOAL_OPTIONS = [5, 10, 15, 20]
-const PIANO_GOAL_OPTIONS = [10, 15, 20, 30]
 const RECORDING_KEEP_OPTIONS = [7, 14, 30]
 const TIERS: Array<'gold' | 'silver' | 'bronze'> = ['gold', 'silver', 'bronze']
 const TIER_LABEL: Record<(typeof TIERS)[number], string> = { gold: 'Gold', silver: 'Silver', bronze: 'Bronze' }
@@ -336,9 +338,16 @@ function LeaveNoteSection({ kidName }: { kidName: string }) {
   )
 }
 
+const PIECE_STATUS_OPTIONS: Array<{ key: 'week' | 'keep' | 'archived'; label: string }> = [
+  { key: 'week', label: 'This week' },
+  { key: 'keep', label: 'Keep' },
+  { key: 'archived', label: 'Archive' },
+]
+
 function PianoPiecesEditor() {
   const progress = useProgress()
   const pieces = progress.settings.pianoPieces
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
 
   function setPieces(next: PianoPiece[]) {
     update('settings', (s) => ({ ...s, pianoPieces: next }))
@@ -362,77 +371,174 @@ function PianoPiecesEditor() {
     updatePiece(id, { timesPerDay: next })
   }
 
+  function moveOrder(id: string, direction: 'up' | 'down') {
+    setPieces(movePieceOrder(pieces, id, direction))
+  }
+
+  function archivePiece(id: string) {
+    updatePiece(id, { status: 'archived' })
+    setConfirmingDeleteId(null)
+  }
+
+  function deletePiece(id: string) {
+    setPieces(pieces.filter((x) => x.id !== id))
+    setConfirmingDeleteId(null)
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
-      {pieces.map((p) => (
-        <div key={p.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-            <input
-              value={p.emoji}
-              onChange={(e) => updatePiece(p.id, { emoji: e.target.value })}
-              style={{ width: '3ch', textAlign: 'center' }}
-              aria-label="Piece emoji"
-            />
-            <input
-              value={p.name}
-              onChange={(e) => updatePiece(p.id, { name: e.target.value })}
-              placeholder="Piece name"
-              style={{ flex: 1, minWidth: 0 }}
-              aria-label="Piece name"
-            />
-            <button
-              type="button"
-              className="cc-btn cc-btn-surface"
-              style={{ minHeight: 40, minWidth: 40, padding: '0.3rem' }}
-              onClick={() => setPieces(pieces.filter((x) => x.id !== p.id))}
-              aria-label={`Delete ${p.name || 'piece'}`}
-            >
-              🗑️
-            </button>
+      {pieces.map((p) => {
+        const status = pieceStatus(p)
+        return (
+          <div key={p.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+              <input
+                value={p.emoji}
+                onChange={(e) => updatePiece(p.id, { emoji: e.target.value })}
+                style={{ width: '3ch', textAlign: 'center' }}
+                aria-label="Piece emoji"
+              />
+              <input
+                value={p.name}
+                onChange={(e) => updatePiece(p.id, { name: e.target.value })}
+                placeholder="Piece name"
+                style={{ flex: 1, minWidth: 0 }}
+                aria-label="Piece name"
+              />
+              <button
+                type="button"
+                data-testid={`piece-up-${p.id}`}
+                className="cc-btn cc-btn-surface"
+                style={{ minHeight: 40, minWidth: 40, padding: '0.3rem' }}
+                disabled={!canMovePiece(pieces, p.id, 'up')}
+                onClick={() => moveOrder(p.id, 'up')}
+                aria-label={`Move ${p.name || 'piece'} up`}
+              >
+                ▲
+              </button>
+              <button
+                type="button"
+                data-testid={`piece-down-${p.id}`}
+                className="cc-btn cc-btn-surface"
+                style={{ minHeight: 40, minWidth: 40, padding: '0.3rem' }}
+                disabled={!canMovePiece(pieces, p.id, 'down')}
+                onClick={() => moveOrder(p.id, 'down')}
+                aria-label={`Move ${p.name || 'piece'} down`}
+              >
+                ▼
+              </button>
+              {confirmingDeleteId !== p.id && (
+                <button
+                  type="button"
+                  className="cc-btn cc-btn-surface"
+                  style={{ minHeight: 40, minWidth: 40, padding: '0.3rem' }}
+                  onClick={() => setConfirmingDeleteId(p.id)}
+                  aria-label={`Delete ${p.name || 'piece'}`}
+                >
+                  🗑️
+                </button>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '0.4rem', paddingLeft: '0.2rem' }}>
+              {PIECE_STATUS_OPTIONS.map(({ key, label }) => (
+                <button
+                  key={key}
+                  type="button"
+                  data-testid={`piece-status-${p.id}-${key}`}
+                  className="cc-btn"
+                  style={{
+                    flex: 1,
+                    minHeight: 40,
+                    padding: '0.3rem 0.5rem',
+                    fontSize: '0.8rem',
+                    background: status === key ? 'var(--cc-primary)' : 'var(--cc-surface)',
+                    color: status === key ? '#fff' : 'var(--cc-ink)',
+                    border: status === key ? 'none' : '2px solid var(--cc-border)',
+                    boxShadow: 'none',
+                  }}
+                  onClick={() => updatePiece(p.id, { status: key })}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {confirmingDeleteId === p.id && (
+              <div className="cc-card" style={{ padding: '0.6rem 0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>Archive instead? (keeps her history)</span>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    data-testid={`piece-archive-${p.id}`}
+                    className="cc-btn cc-btn-primary"
+                    style={{ minHeight: 40, padding: '0.3rem 0.75rem' }}
+                    onClick={() => archivePiece(p.id)}
+                  >
+                    Archive
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`piece-delete-${p.id}`}
+                    className="cc-btn"
+                    style={{ minHeight: 40, padding: '0.3rem 0.75rem', background: 'var(--cc-danger)', color: '#fff' }}
+                    onClick={() => deletePiece(p.id)}
+                  >
+                    Delete anyway
+                  </button>
+                  <button
+                    type="button"
+                    className="cc-btn cc-btn-surface"
+                    style={{ minHeight: 40, padding: '0.3rem 0.75rem' }}
+                    onClick={() => setConfirmingDeleteId(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.85rem', paddingLeft: '0.2rem' }}>
+              🎯 This week&apos;s goal
+              <input
+                value={p.goal ?? ''}
+                onChange={(e) => updatePieceGoal(p.id, e.target.value)}
+                placeholder="Bars 1–8 three times without stopping"
+                maxLength={PIECE_GOAL_MAX_LENGTH}
+                aria-label={`This week's goal for ${p.name || 'piece'}`}
+              />
+            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', paddingLeft: '0.2rem' }}>
+              <span style={{ fontSize: '0.85rem' }}>Play it __ times a day</span>
+              <button
+                type="button"
+                className="cc-btn cc-btn-surface"
+                style={{ minHeight: 56, minWidth: 56, padding: 0 }}
+                disabled={(p.timesPerDay ?? 0) <= 0}
+                onClick={() => nudgeTimesPerDay(p.id, p.timesPerDay ?? 0, -1)}
+                aria-label={`Fewer times a day for ${p.name || 'piece'}`}
+              >
+                −
+              </button>
+              <span style={{ minWidth: '2.5ch', textAlign: 'center', fontWeight: 700 }}>
+                {p.timesPerDay ? p.timesPerDay : 'off'}
+              </span>
+              <button
+                type="button"
+                className="cc-btn cc-btn-surface"
+                style={{ minHeight: 56, minWidth: 56, padding: 0 }}
+                disabled={(p.timesPerDay ?? 0) >= MAX_TIMES_PER_DAY}
+                onClick={() => nudgeTimesPerDay(p.id, p.timesPerDay ?? 0, 1)}
+                aria-label={`More times a day for ${p.name || 'piece'}`}
+              >
+                ＋
+              </button>
+            </div>
           </div>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.85rem', paddingLeft: '0.2rem' }}>
-            🎯 This week&apos;s goal
-            <input
-              value={p.goal ?? ''}
-              onChange={(e) => updatePieceGoal(p.id, e.target.value)}
-              placeholder="Bars 1–8 three times without stopping"
-              maxLength={PIECE_GOAL_MAX_LENGTH}
-              aria-label={`This week's goal for ${p.name || 'piece'}`}
-            />
-          </label>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', paddingLeft: '0.2rem' }}>
-            <span style={{ fontSize: '0.85rem' }}>Play it __ times a day</span>
-            <button
-              type="button"
-              className="cc-btn cc-btn-surface"
-              style={{ minHeight: 56, minWidth: 56, padding: 0 }}
-              disabled={(p.timesPerDay ?? 0) <= 0}
-              onClick={() => nudgeTimesPerDay(p.id, p.timesPerDay ?? 0, -1)}
-              aria-label={`Fewer times a day for ${p.name || 'piece'}`}
-            >
-              −
-            </button>
-            <span style={{ minWidth: '2.5ch', textAlign: 'center', fontWeight: 700 }}>
-              {p.timesPerDay ? p.timesPerDay : 'off'}
-            </span>
-            <button
-              type="button"
-              className="cc-btn cc-btn-surface"
-              style={{ minHeight: 56, minWidth: 56, padding: 0 }}
-              disabled={(p.timesPerDay ?? 0) >= MAX_TIMES_PER_DAY}
-              onClick={() => nudgeTimesPerDay(p.id, p.timesPerDay ?? 0, 1)}
-              aria-label={`More times a day for ${p.name || 'piece'}`}
-            >
-              ＋
-            </button>
-          </div>
-        </div>
-      ))}
+        )
+      })}
       {pieces.length === 0 && <p style={{ margin: 0, color: 'var(--cc-ink-soft)' }}>No pieces added yet.</p>}
       <button
         type="button"
         className="cc-btn cc-btn-surface"
-        onClick={() => setPieces([...pieces, { id: uid(), name: '', emoji: '🎵' }])}
+        onClick={() => setPieces([...pieces, { id: uid(), name: '', emoji: '🎵', status: 'week', order: nextOrderFor(pieces, 'week') }])}
       >
         ＋ Add piece
       </button>
@@ -510,10 +616,6 @@ export function Settings() {
 
   const settings = progress.settings
   const driveCfg: DriveConfig = settings.driveUpload ?? { scriptUrl: '', secret: '', folderName: 'Nora Piano' }
-
-  function handlePianoGoalClick(minutes: number) {
-    setGoalMinutes('piano', minutes)
-  }
 
   function setDriveField(patch: Partial<DriveConfig>) {
     const next = { ...driveCfg, ...patch }
@@ -659,25 +761,7 @@ export function Settings() {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <span style={{ fontWeight: 700, color: 'var(--cc-ink-soft)' }}>🎹 Piano</span>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            {PIANO_GOAL_OPTIONS.map((minutes) => (
-              <button
-                key={minutes}
-                type="button"
-                className="cc-btn"
-                onClick={() => handlePianoGoalClick(minutes)}
-                style={{
-                  flex: 1,
-                  background: settings.goalMinutes.piano === minutes ? 'var(--cc-primary)' : 'var(--cc-surface)',
-                  color: settings.goalMinutes.piano === minutes ? '#fff' : 'var(--cc-ink)',
-                  border: settings.goalMinutes.piano === minutes ? 'none' : '2px solid var(--cc-border)',
-                  boxShadow: 'none',
-                }}
-              >
-                {minutes} min
-              </button>
-            ))}
-          </div>
+          <MarksEditor />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <span style={{ fontWeight: 700, color: 'var(--cc-ink-soft)' }}>Piano goal counts</span>

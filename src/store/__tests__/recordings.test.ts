@@ -196,7 +196,8 @@ describe('DB upgrade from v1 to v2', () => {
     })
 
     // Reopening through the library now upgrades that same physical
-    // database to v2 (creating `partials`) without touching `takes`.
+    // database straight to v3 (creating `partials` AND `photos`) without
+    // touching `takes`.
     const upgraded = openRecordingStore(factory)
     const blob = await upgraded.get('old-take')
     expect(blob).not.toBeNull()
@@ -206,9 +207,73 @@ describe('DB upgrade from v1 to v2', () => {
     const list = await upgraded.list()
     expect(list.map((m) => m.id)).toEqual(['old-take'])
 
-    // The new store works too, on the same upgraded database.
+    // The new stores work too, on the same upgraded database.
     expect(await upgraded.listPartialIds()).toEqual([])
     await upgraded.putPartial({ id: 'new-take', seq: 0, bytes: bytesOf('NEW'), mimeType: 'audio/webm', startedAt: 1, pieceId: null, deviceId: 'd' })
     expect(await upgraded.listPartialIds()).toEqual(['new-take'])
+
+    expect(await upgraded.getPhoto('missing')).toBeNull()
+    await upgraded.putPhoto('note-1', makeBlob(5, 'image/jpeg'))
+    const photo = await upgraded.getPhoto('note-1')
+    expect(photo).not.toBeNull()
+    expect(photo!.type).toBe('image/jpeg')
+  })
+
+  it('keeps existing takes AND partials when a v2 database (no photos store) is reopened at v3', async () => {
+    const factory = new IDBFactory()
+
+    // Recreate the pre-photos (v2) schema by hand.
+    await new Promise<void>((resolve, reject) => {
+      const req = factory.open(RECORDINGS_DB, 2)
+      req.onupgradeneeded = () => {
+        const db = req.result
+        const takesStore = db.createObjectStore('takes', { keyPath: 'id' })
+        takesStore.createIndex('savedAt', 'savedAt')
+        const partialsStore = db.createObjectStore('partials', { keyPath: ['id', 'seq'] })
+        partialsStore.createIndex('id', 'id')
+      }
+      req.onsuccess = () => {
+        req.result.close()
+        resolve()
+      }
+      req.onerror = () => reject(req.error)
+    })
+
+    const upgraded = openRecordingStore(factory)
+    // No photos store existed before - a fresh lookup is simply null, not an error.
+    expect(await upgraded.getPhoto('anything')).toBeNull()
+    await upgraded.putPhoto('note-1', makeBlob(3, 'image/jpeg'))
+    expect(await upgraded.getPhoto('note-1')).not.toBeNull()
+    // Existing takes/partials machinery is untouched by the v2 -> v3 bump.
+    await upgraded.put('t', makeBlob(1))
+    expect((await upgraded.list()).map((m) => m.id)).toEqual(['t'])
+  })
+})
+
+describe('photos store (teacher-note full photos)', () => {
+  it('round-trips a photo blob keyed by note id', async () => {
+    await store.putPhoto('note-1', makeBlob(20, 'image/jpeg'))
+    const back = await store.getPhoto('note-1')
+    expect(back).not.toBeNull()
+    expect(back!.type).toBe('image/jpeg')
+    expect((await back!.arrayBuffer()).byteLength).toBe(20)
+  })
+
+  it('resolves null for a missing id', async () => {
+    await expect(store.getPhoto('missing')).resolves.toBeNull()
+  })
+
+  it('removePhoto deletes it; removing a missing id is a harmless no-op', async () => {
+    await store.putPhoto('note-1', makeBlob(5))
+    await store.removePhoto('note-1')
+    expect(await store.getPhoto('note-1')).toBeNull()
+    await expect(store.removePhoto('note-1')).resolves.toBeUndefined()
+  })
+
+  it('keeps photos independent from the takes store (same-id collision is fine)', async () => {
+    await store.put('shared-id', makeBlob(10, 'audio/mp4'))
+    await store.putPhoto('shared-id', makeBlob(4, 'image/jpeg'))
+    expect((await store.get('shared-id'))!.type).toBe('audio/mp4')
+    expect((await store.getPhoto('shared-id'))!.type).toBe('image/jpeg')
   })
 })

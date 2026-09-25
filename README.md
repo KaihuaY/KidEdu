@@ -350,20 +350,22 @@ an iPad propped on the music stand, microphone only - no MIDI, no teaching.
   audio is stitched back together into a normal take automatically (see
   "Your data is safe" below).
 
-### Three tiers of daily reward
+### Three daily marks, each with its own prizes
 
-The ring goal (**Settings → Daily goals**, 10 or 15 minutes) still earns a
-bronze token and keeps the streak going. Two more marks sit above it, per kid
-and adjustable in the same section:
+Piano home shows three minute marks under the ring. Reaching a mark during
+the day hands out the box tokens set for it, once per day. Defaults:
 
-- **Gold token at 20 minutes** of playing in a day (guaranteed).
-- **Bonus at 30 minutes**: one more token, gold or silver by coin toss, shown
-  with a little "🎲 The coin landed on…" on the done screen.
+| mark | minutes | prize |
+|---|---|---|
+| 1 (the ring goal, keeps the streak) | 10 | 🟡 gold |
+| 2 | 20 | 🟡 gold + 🟤 bronze |
+| 3 | 30 | 🟡 gold + ⚪ silver + 🟤 bronze |
 
-Each tier is awarded once per day, the moment a take pushes the day's total
-past the mark (the same counting mode as the ring: whole recording by
-default, or "heard" seconds). Piano home shows the three marks under the ring
-with ✓ for those reached and "N more min" to the next one.
+**Settings (PIN) → Daily goals → Marks** lets you change each mark's minutes
+(they stay in ascending order) and how many gold, silver and bronze tokens it
+gives (0 to 3 each), per kid, with "Reset to default". The counting mode is
+the same as the ring (whole recording, or "heard" seconds). The done screen
+celebrates each mark crossed by that take with its token emojis.
 
 ### Personal records
 
@@ -380,6 +382,51 @@ on the family board.
 bronze tokens with + and − buttons: give a box for chores or kindness, or
 take one away (− asks for a second tap within four seconds). Tokens never go
 below zero and XP is untouched.
+
+### Songs: stats, organisation, and the Songs overview
+
+- **What are you playing?** shows this week's pieces as big chips, the rest
+  under "More songs", and never archived pieces. **Settings → This week's
+  piano pieces** sets each piece to This week / Keep / Archive, reorders with
+  ▲▼, and offers "Archive instead?" before a delete so history is kept.
+- **🎵 My songs** (from Piano home) lists every song with how many times it
+  was played (a take counts once, or as many times as "Played it! +1" was
+  tapped), total time, last played, and a 21-day sparkline; sortable by most
+  played, most time, recent, or A-Z; archived songs under a fold.
+- Each song's journey page starts with the same numbers and a plays-per-day
+  bar chart (bars = plays, line = minutes).
+
+### Teacher notes, Nora's journal, and the day view
+
+- **📓 Teacher notes.** The teacher writes in her notebook each week; a
+  grown-up photographs the page from Piano home (📷 Add note, with the lesson
+  date and an optional caption). A small thumbnail is kept in the synced
+  progress so every device shows it offline; the full photo goes to Google
+  Drive through the same script as the recordings, into "<folder> - Teacher
+  notes". Deleting needs the PIN (the Drive copy stays).
+- **📔 My journal.** Nora writes a line about her practice: a mood (😫 😐 🙂
+  🤩), a prompt chip to start from ("The tricky part was…", "I felt proud
+  when…", "Tomorrow I want to…", "My favourite song today was…") and a short
+  text. Two gentle nudges, once a day each: after her third take, and when
+  the ring goal is reached. Entries are visible to both of you; deleting is
+  behind the PIN in Grown-up review. The coach reads today's entry and can
+  respond to it.
+- **📅 Days.** A date strip (dots for played / ring / journal / teacher note,
+  plus a date picker) opens any day: the songs and takes played with their
+  coach notes, marks reached, journal entries, that week's teacher note,
+  records set that day and parent stars. The week dots on Piano home open the
+  same view.
+
+### The coach stays fresh
+
+Each note is written with a theme of the day (rhythm and flow, quiet and
+loud, the tricky spot, stamina, a fun challenge, listening to yourself,
+confidence) and a voice (playful coach, curious scientist, storyteller,
+sports commentator, gentle encourager), and Claude is given her last five
+notes with the instruction not to reuse their phrasing or "try next" ideas. A
+note that still comes back too similar is asked again once, then the built-in
+phrases are used. Song totals ("your 20th play") and today's journal line are
+part of what the coach sees.
 
 ### Song repeat targets
 

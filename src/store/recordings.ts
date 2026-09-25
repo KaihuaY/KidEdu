@@ -60,18 +60,33 @@ export interface RecordingStore {
   assemblePartial(id: string): Promise<AssembledPartial | null>
   /** Removes every partial chunk for `id`. Safe to call when there are none. */
   deletePartial(id: string): Promise<void>
+  /** Writes (or overwrites) the full-size photo for a teacher note, keyed by the note's own id. */
+  putPhoto(id: string, blob: Blob): Promise<void>
+  /** The full-size photo for a teacher note, or null once it's been uploaded and pruned (or never existed on this device). */
+  getPhoto(id: string): Promise<Blob | null>
+  /** Removes a teacher note's local photo. Safe to call when there is none. */
+  removePhoto(id: string): Promise<void>
 }
 
 export const RECORDINGS_DB = 'cubeclimb.recordings'
 
 const STORE_NAME = 'takes'
 const PARTIALS_STORE = 'partials'
-const DB_VERSION = 2
+const PHOTOS_STORE = 'photos'
+// v2 added `partials`; v3 (round 9) adds `photos` for teacher-note full
+// photos. Each bump only ever *adds* a missing store - see onupgradeneeded.
+const DB_VERSION = 3
 
 interface StoredRecord {
   id: string
   savedAt: number
   sizeBytes: number
+  mimeType: string
+  bytes: ArrayBuffer
+}
+
+interface StoredPhoto {
+  id: string
   mimeType: string
   bytes: ArrayBuffer
 }
@@ -108,9 +123,9 @@ class IndexedDbRecordingStore implements RecordingStore {
         // migration; anyone else gets her own `.{kid}`-suffixed database.
         const request = this.factory.open(kidKey(RECORDINGS_DB), DB_VERSION)
         // Only ever creates whatever store is missing - a v1 database
-        // upgrading to v2 keeps its existing `takes` untouched and just
-        // gains `partials`; this callback also runs (harmlessly, both
-        // conditions already true) on a fresh v1 -> v2 database.
+        // upgrading to v3 keeps its existing `takes` untouched and just
+        // gains `partials` and `photos`; this callback also runs (harmlessly,
+        // every condition already true) on a fresh v1 -> v3 database.
         request.onupgradeneeded = () => {
           const db = request.result
           if (!db.objectStoreNames.contains(STORE_NAME)) {
@@ -120,6 +135,9 @@ class IndexedDbRecordingStore implements RecordingStore {
           if (!db.objectStoreNames.contains(PARTIALS_STORE)) {
             const store = db.createObjectStore(PARTIALS_STORE, { keyPath: ['id', 'seq'] })
             store.createIndex('id', 'id')
+          }
+          if (!db.objectStoreNames.contains(PHOTOS_STORE)) {
+            db.createObjectStore(PHOTOS_STORE, { keyPath: 'id' })
           }
         }
         request.onsuccess = () => resolve(request.result)
@@ -229,6 +247,34 @@ class IndexedDbRecordingStore implements RecordingStore {
     for (const key of keys) store.delete(key)
     await promisifyTx(writeTx)
   }
+
+  async putPhoto(id: string, blob: Blob): Promise<void> {
+    const db = await this.openDb()
+    const bytes = await blob.arrayBuffer()
+    const record: StoredPhoto = { id, mimeType: blob.type, bytes }
+    const tx = db.transaction(PHOTOS_STORE, 'readwrite')
+    tx.objectStore(PHOTOS_STORE).put(record)
+    await promisifyTx(tx)
+  }
+
+  async getPhoto(id: string): Promise<Blob | null> {
+    try {
+      const db = await this.openDb()
+      const tx = db.transaction(PHOTOS_STORE, 'readonly')
+      const record = await promisifyRequest<StoredPhoto | undefined>(tx.objectStore(PHOTOS_STORE).get(id))
+      if (!record) return null
+      return new Blob([record.bytes], { type: record.mimeType })
+    } catch {
+      return null
+    }
+  }
+
+  async removePhoto(id: string): Promise<void> {
+    const db = await this.openDb()
+    const tx = db.transaction(PHOTOS_STORE, 'readwrite')
+    tx.objectStore(PHOTOS_STORE).delete(id)
+    await promisifyTx(tx)
+  }
 }
 
 /** A store that quietly does nothing, for platforms without IndexedDB. */
@@ -259,6 +305,11 @@ function createNoopRecordingStore(): RecordingStore {
       return null
     },
     async deletePartial(_id: string): Promise<void> {},
+    async putPhoto(_id: string, _blob: Blob): Promise<void> {},
+    async getPhoto(_id: string): Promise<Blob | null> {
+      return null
+    },
+    async removePhoto(_id: string): Promise<void> {},
   }
 }
 
@@ -364,6 +415,17 @@ function wrapWithIdTracking(store: RecordingStore): RecordingStore {
     },
     deletePartial(id) {
       return store.deletePartial(id)
+    },
+    // Photos never affect the "does this take have local audio" tracking
+    // above (a photo isn't a take) - passed straight through.
+    putPhoto(id, blob) {
+      return store.putPhoto(id, blob)
+    },
+    getPhoto(id) {
+      return store.getPhoto(id)
+    },
+    removePhoto(id) {
+      return store.removePhoto(id)
     },
   }
 }

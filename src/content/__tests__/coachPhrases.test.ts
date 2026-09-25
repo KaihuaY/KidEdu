@@ -143,6 +143,52 @@ describe('ruleFeedback', () => {
     const r = ruleFeedback(m, [], { ...CTX, isNewReference: true })
     expect(r.parent.note.toLowerCase()).toContain('reference')
   })
+
+  describe('recentNotes exclusion', () => {
+    // A very short take always lands in the 'thin' situation, which has 3 praise variants -
+    // enough room to prove pickFresh actually skips a recently-used one.
+    const thin = metrics({ playedSec: 4, hesitations: 0 })
+
+    it('skips a praise variant that was just used, given no other recent notes', () => {
+      const base = ruleFeedback(thin, [], CTX)
+      const again = ruleFeedback(thin, [], {
+        ...CTX,
+        recentNotes: [{ praise: base.kid.praise, tryNext: 'something unrelated entirely' }],
+      })
+      expect(again.kid.praise).not.toBe(base.kid.praise)
+    })
+
+    it('falls back to the plain seeded pick once every variant reads as a repeat of a recent note', () => {
+      const base = ruleFeedback(thin, [], CTX)
+      const allThinPraiseVariants = [
+        `You sat down and got started today, Nora - that is the hardest part!`,
+        `Showing up to practice counts, Nora, even on a short one like this.`,
+        `Every time you sit down at the piano it adds up, Nora - nice job starting today.`,
+      ]
+      const exhausted = ruleFeedback(thin, [], {
+        ...CTX,
+        recentNotes: allThinPraiseVariants.map((praise) => ({ praise, tryNext: 'irrelevant' })),
+      })
+      // Every candidate reads as a repeat, so pickFresh gives up and returns the same seeded pick as with no recent notes at all.
+      expect(exhausted.kid.praise).toBe(base.kid.praise)
+    })
+
+    it('skips a tryNext idea that was just used', () => {
+      const withPauses = metrics({ playedSec: 42, hesitations: 2 })
+      const base = ruleFeedback(withPauses, [], CTX)
+      const again = ruleFeedback(withPauses, [], {
+        ...CTX,
+        recentNotes: [{ praise: 'unrelated praise text entirely', tryNext: base.kid.tryNext }],
+      })
+      expect(again.kid.tryNext).not.toBe(base.kid.tryNext)
+    })
+
+    it('is deterministic: the same recentNotes always produce the same skip', () => {
+      const a = ruleFeedback(thin, [], { ...CTX, recentNotes: [{ praise: 'Showing up to practice counts, Nora, even on a short one like this.', tryNext: 'x' }] })
+      const b = ruleFeedback(thin, [], { ...CTX, recentNotes: [{ praise: 'Showing up to practice counts, Nora, even on a short one like this.', tryNext: 'x' }] })
+      expect(a).toEqual(b)
+    })
+  })
 })
 
 const JOURNEY_CTX: RuleJourneyContext = { pieceId: 'piece-1', kidFirstName: 'Nora', pieceName: 'Twinkle Twinkle' }

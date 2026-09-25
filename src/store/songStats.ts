@@ -90,8 +90,9 @@ export function sortSongs(pieces: PianoPiece[], stats: Map<string, SongStats>, b
 
 export type PieceStatus = 'week' | 'keep' | 'archived'
 
+/** A piece that was never given a status (every piece from before round 9) stays a big chip, as it always was. */
 export function pieceStatus(p: PianoPiece): PieceStatus {
-  return p.status ?? 'keep'
+  return p.status ?? 'week'
 }
 
 export interface PieceGroups {

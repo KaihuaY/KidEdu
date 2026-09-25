@@ -13,6 +13,7 @@ import { getDoc, resetAll, update, type PianoTake, type TakeMetrics } from '../p
 import { saveTake, setTakeAi } from '../piano'
 import { clearKid } from '../kid'
 import { getAnalysisStore } from '../analysisStore'
+import { localDay } from '../sessions'
 
 vi.mock('../../audio/takeAnalysis', () => ({
   decodeToMono: vi.fn(),
@@ -412,6 +413,124 @@ describe('requestFeedback', () => {
     expect(getDoc().piano.journeys?.[pieceId]).toBeDefined()
     expect(getDoc().piano.journeys?.[pieceId]?.takeCount).toBe(3)
   })
+
+  it('sends theme, voice, and her last kid notes of ANY piece (newest first) in the request to Claude', async () => {
+    enableDrive()
+    saveTake(makeTake({ id: 'past-1', pieceId: 'piece-a', startedAt: 3000 }))
+    setTakeAi('past-1', { metrics: makeMetrics(), kid: { praise: 'Praise A', tryNext: 'Try A' }, parent: { note: 'n' }, source: 'claude', at: 1 })
+    saveTake(makeTake({ id: 'past-2', pieceId: 'piece-b', startedAt: 4000 }))
+    setTakeAi('past-2', { metrics: makeMetrics(), kid: { praise: 'Praise B', tryNext: 'Try B' }, parent: { note: 'n' }, source: 'claude', at: 1 })
+
+    saveTake(makeTake({ id: 'theme-1', pieceId: 'piece-c', startedAt: 5000 }))
+    setTakeAi('theme-1', { metrics: makeMetrics(), at: 1 })
+
+    const fetchFn = okFetch(claudeFeedbackBody())
+    vi.stubGlobal('fetch', fetchFn)
+
+    await requestFeedback('theme-1')
+
+    const [, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit]
+    const payload = JSON.parse(init.body as string)
+    const userObj = JSON.parse(payload.user) as Record<string, unknown>
+    expect(typeof userObj.theme).toBe('string')
+    expect((userObj.theme as string).length).toBeGreaterThan(0)
+    expect(typeof userObj.voice).toBe('string')
+    expect((userObj.voice as string).length).toBeGreaterThan(0)
+    expect(userObj.recentKidNotes).toEqual([
+      { praise: 'Praise B', tryNext: 'Try B' },
+      { praise: 'Praise A', tryNext: 'Try A' },
+    ])
+    vi.unstubAllGlobals()
+  })
+
+  it("includes songSoFar (plays/minutes/days) and today's journal text when present", async () => {
+    enableDrive()
+    const pieceId = 'song-piece'
+    const today = localDay()
+    saveTake(makeTake({ id: 'song-take-1', pieceId, day: today, startedAt: 1000 }))
+    setTakeAi('song-take-1', { metrics: makeMetrics(), kid: { praise: 'p', tryNext: 't' }, parent: { note: 'n' }, source: 'rules', at: 1 })
+    saveTake(makeTake({ id: 'song-take-2', pieceId, day: today, startedAt: 2000 }))
+    setTakeAi('song-take-2', { metrics: makeMetrics(), at: 1 })
+
+    update('piano', (p) => ({ ...p, journal: [...(p.journal ?? []), { id: 'j1', day: today, at: Date.now(), text: 'Piano was so fun today!' }] }))
+
+    const fetchFn = okFetch(claudeFeedbackBody())
+    vi.stubGlobal('fetch', fetchFn)
+
+    await requestFeedback('song-take-2')
+
+    const [, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit]
+    const payload = JSON.parse(init.body as string)
+    const userObj = JSON.parse(payload.user) as { songSoFar: { totalPlays: number; totalMinutes: number; daysPracticed: number }; journalToday: string }
+    expect(userObj.songSoFar.totalPlays).toBeGreaterThanOrEqual(1)
+    expect(userObj.songSoFar.daysPracticed).toBe(1)
+    expect(userObj.journalToday).toBe('Piano was so fun today!')
+    vi.unstubAllGlobals()
+  })
+
+  it('retries once when Claude\'s note is too similar to a recent one, then falls back to rules if it is still too similar', async () => {
+    enableDrive()
+    const repeated = 'You played so steadily today, Nora, with such nice calm focus throughout the whole piece!'
+    saveTake(makeTake({ id: 'recent-1', pieceId: 'other-piece', startedAt: 1000 }))
+    setTakeAi('recent-1', {
+      metrics: makeMetrics(),
+      kid: { praise: repeated, tryNext: 'Try counting out loud next time you play.' },
+      parent: { note: 'n' },
+      source: 'claude',
+      at: 1,
+    })
+    saveTake(makeTake({ id: 'sim-1', pieceId: 'piece-x', startedAt: 2000 }))
+    setTakeAi('sim-1', { metrics: makeMetrics(), at: 1 })
+
+    const fetchFn = vi.fn(async () => new Response(JSON.stringify(claudeFeedbackBody({ praise: repeated })), { status: 200 })) as unknown as typeof fetch
+    vi.stubGlobal('fetch', fetchFn)
+
+    await requestFeedback('sim-1')
+
+    expect(fetchFn).toHaveBeenCalledTimes(2) // the original request, plus one retry
+    // The retry's user text explains why, quoting the too-similar recent note.
+    const [, retryInit] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[1] as [string, RequestInit]
+    const retryPayload = JSON.parse(retryInit.body as string)
+    expect(retryPayload.user).toContain('too similar to a recent note')
+    expect(retryPayload.user).toContain(repeated)
+
+    expect(getDoc().piano.takes.find((t) => t.id === 'sim-1')?.ai?.source).toBe('rules')
+    vi.unstubAllGlobals()
+  })
+
+  it('retries once and uses the retried note when it is genuinely different from the recent one', async () => {
+    enableDrive()
+    const repeated = 'You played so steadily today, Nora, with such nice calm focus!'
+    saveTake(makeTake({ id: 'recent-2', pieceId: 'other-piece', startedAt: 1000 }))
+    setTakeAi('recent-2', {
+      metrics: makeMetrics(),
+      kid: { praise: repeated, tryNext: 'Try counting out loud next time you play.' },
+      parent: { note: 'n' },
+      source: 'claude',
+      at: 1,
+    })
+    saveTake(makeTake({ id: 'sim-2', pieceId: 'piece-y', startedAt: 2000 }))
+    setTakeAi('sim-2', { metrics: makeMetrics(), at: 1 })
+
+    let call = 0
+    const fetchFn = vi.fn(async () => {
+      call += 1
+      const body =
+        call === 1
+          ? claudeFeedbackBody({ praise: repeated })
+          : claudeFeedbackBody({ praise: 'The quiet parts and loud parts made such a fun contrast this time!', tryNext: 'Maybe try a tiny concert for someone at home next time.' })
+      return new Response(JSON.stringify(body), { status: 200 })
+    }) as unknown as typeof fetch
+    vi.stubGlobal('fetch', fetchFn)
+
+    await requestFeedback('sim-2')
+
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    const take = getDoc().piano.takes.find((t) => t.id === 'sim-2')!
+    expect(take.ai?.source).toBe('claude')
+    expect(take.ai?.kid?.praise).toBe('The quiet parts and loud parts made such a fun contrast this time!')
+    vi.unstubAllGlobals()
+  })
 })
 
 describe('requestJourney', () => {
@@ -478,6 +597,32 @@ describe('requestJourney', () => {
     vi.stubGlobal('fetch', okFetch({ ok: true, result: { kid: 'only kid, no parent' } }))
     await requestJourney(pieceId2)
     expect(getDoc().piano.journeys?.[pieceId2]?.source).toBe('rules')
+    vi.unstubAllGlobals()
+  })
+
+  it('sends the previous journey text so a forced rewrite can be told to add something new', async () => {
+    enableDrive()
+    seedTakes(3, 3)
+    vi.stubGlobal(
+      'fetch',
+      okFetch({ ok: true, result: { kid: 'First journey summary for the kid.', parent: 'First journey summary for the parent, with numbers.' } }),
+    )
+    await requestJourney(pieceId)
+    vi.unstubAllGlobals()
+
+    saveTake(makeTake({ id: 'extra-journey', pieceId, day: '2026-09-20', startedAt: 9000 }))
+    setTakeAi('extra-journey', { metrics: makeMetrics({ hesitations: 0 }), at: 9000 })
+
+    const fetchFn = okFetch({ ok: true, result: { kid: 'Second journey summary, something new.', parent: 'Second parent summary, something new.' } })
+    vi.stubGlobal('fetch', fetchFn)
+
+    await requestJourney(pieceId, { force: true })
+
+    const [, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit]
+    const payload = JSON.parse(init.body as string)
+    const userObj = JSON.parse(payload.user) as { previousJourneySummary: string }
+    expect(userObj.previousJourneySummary).toContain('First journey summary for the kid.')
+    expect(userObj.previousJourneySummary).toContain('First journey summary for the parent, with numbers.')
     vi.unstubAllGlobals()
   })
 })

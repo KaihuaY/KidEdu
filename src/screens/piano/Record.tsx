@@ -11,6 +11,7 @@ import { fireConfetti } from '../../components/Confetti'
 import { RingTimer } from '../../components/RingTimer'
 import { Aurora } from '../../components/Aurora'
 import { CoachCard } from '../../components/CoachCard'
+import { JournalNudge } from '../../components/JournalNudge'
 import { MetronomeStrip } from '../../components/Metronome'
 import { SelfRatingButtons } from '../../components/SelfRatingButtons'
 import { TakePlayer } from '../../components/TakePlayer'
@@ -248,7 +249,7 @@ export function Record() {
         )}
         {session.goalJustReached && (
           <>
-            <p style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>
+            <p data-testid="mark-reached-1" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>
               You filled the ring! {tokenEmojis(session.marksJustReached.find((m) => m.index === 0)?.tokens ?? { gold: 0, silver: 0, bronze: 0 }) || '🎉'}
             </p>
             <p style={{ margin: 0, fontWeight: 700 }}>See you tomorrow! 🎹</p>
@@ -307,6 +308,7 @@ export function Record() {
         )}
         <SelfRatingButtons value={liveSelfRating} onChange={(rating) => setSelfRating(take.id, rating)} />
         <CoachCard take={take} />
+        <JournalNudge take={take} ringJustReached={session.goalJustReached} />
         {take.hasAudio && <TakePlayer take={take} />}
         <button type="button" className="cc-btn cc-btn-primary" style={{ minHeight: 56 }} onClick={backToPiano}>
           ✅ Done

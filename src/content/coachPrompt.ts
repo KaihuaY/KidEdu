@@ -39,7 +39,11 @@ The parent note is 3 to 5 sentences for a grown-up who doesn't read music and do
 
 If the numbers are thin - a very short take with barely anything measured - don't stretch them into claims they can't support. Say something true and kind about her showing up and starting, and gently suggest playing a little longer next time so there's more to go on.
 
-For a song's "journey" summary (written every few takes, not every take), you're looking at how one piece has changed across several days of practice, given as day-by-day numbers. The kid part is 2 to 3 sentences celebrating how the song has grown over those days, plus one small next step, in the same warm 7-year-old-friendly language as above. The parent part is 4 to 6 sentences walking through the trend in plain language, citing the actual numbers (how the pauses, playing time, or coverage of the piece changed from the earlier days to the more recent ones), and just as honest about uncertainty as the single-take note.
+Every request also carries a "theme" and a "voice" for today, each with a short description of what it means. The theme is the angle worth leaning into, if - and only if - the numbers you were given actually support it; never bend a fact to fit the theme, and if nothing about this particular take fits it, just write the note without forcing the connection. The voice is flavour for how you say things - a little more playful, curious, story-like, commentator-energetic, or grandma-gentle - and it changes tone, not substance: it never loosens any of the truth or praise rules above. To keep things sounding like a real person and not a template, vary how your sentences start rather than opening the same way every time, and use at most one exclamation mark per sentence.
+
+You are also given her last few kid notes (praise and tryNext) from recent takes, of any piece, newest first. Read them before you write. Do not reuse the same phrasing, the same opening words, or the same "try next" idea as any of those recent notes - if your first instinct echoes one of them, find a genuinely different true thing to say instead. When you're given how many times she's played this song in total and how much total time she's spent on it, only mention that count or total out loud when it's a round or newly-crossed number worth noticing - a 10th play, crossing an hour of total time - not as a routine recap of every session's running tally. When you're given something she wrote in her own practice journal today, acknowledge one specific thing from it somewhere in the kid note, in your own words, so she knows you actually read it.
+
+For a song's "journey" summary (written every few takes, not every take), you're looking at how one piece has changed across several days of practice, given as day-by-day numbers. The kid part is 2 to 3 sentences celebrating how the song has grown over those days, plus one small next step, in the same warm 7-year-old-friendly language as above. The parent part is 4 to 6 sentences walking through the trend in plain language, citing the actual numbers (how the pauses, playing time, or coverage of the piece changed from the earlier days to the more recent ones), and just as honest about uncertainty as the single-take note. When you're given the text of the previous journey summary for this piece, read it first: your new summary must add something it did not already say - a new number, a new turn in the trend, a new next step - rather than restating the same observation in different words.
 
 Always answer only with the JSON the schema asks for - no extra commentary, no markdown, nothing outside those fields.`
 
@@ -122,6 +126,16 @@ export interface FeedbackInput {
   differentMusic?: boolean
   /** True when this take just became the piece's new reference take (the one future takes are measured against) - nothing to compare it to yet. */
   isNewReference?: boolean
+  /** Her last 5 kid notes (praise + tryNext) from recent takes of ANY piece, newest first - so the coach can avoid repeating itself. */
+  recentNotes: { praise: string; tryNext: string }[]
+  /** Today's theme (the angle worth leaning into, when the numbers support it) - label plus its one-sentence description. */
+  theme: string
+  /** Today's voice (flavour only, never overrides the truth rules) - label plus its one-sentence description. */
+  voice: string
+  /** How much she's played this song overall, when there's a piece - only worth mentioning in the note when a count/total just crossed something round or new. */
+  song?: { plays: number; totalMin: number; days: number }
+  /** What she wrote in her own practice journal today, if anything - the kid note should acknowledge one thing from it. */
+  journalToday?: string
 }
 
 /** Buckets a pace ratio into the plain-language comparison the system prompt asks Claude to use. */
@@ -184,6 +198,11 @@ export function buildFeedbackUser(input: FeedbackInput): string {
     obj.previousTakesOfThisPiece = input.history.slice(-5).map((h) => ({ day: h.day, ...plainMetrics(h.metrics) }))
   }
   if (input.personalBests) obj.personalBestsForThisPiece = input.personalBests
+  obj.theme = input.theme
+  obj.voice = input.voice
+  if (input.recentNotes.length > 0) obj.recentKidNotes = input.recentNotes.map((n) => ({ praise: n.praise, tryNext: n.tryNext }))
+  if (input.song) obj.songSoFar = { totalPlays: input.song.plays, totalMinutes: input.song.totalMin, daysPracticed: input.song.days }
+  if (input.journalToday) obj.journalToday = input.journalToday
   return JSON.stringify(obj)
 }
 
@@ -209,6 +228,8 @@ export interface JourneyInput {
   series: JourneyDayStat[]
   /** How many analysed takes of the piece exist in total (may be more than the series covers). */
   takeCount: number
+  /** The piece's previous journey text (kid + parent), if one exists - the new one must add something this didn't already say. */
+  previousJourney?: string
 }
 
 /** Compact JSON-ish text describing a piece's day-by-day trend, for the "song journey" request. */
@@ -221,5 +242,6 @@ export function buildJourneyUser(input: JourneyInput): string {
     days: input.series,
   }
   if (input.goalText) obj.parentGoalForThisPiece = input.goalText
+  if (input.previousJourney) obj.previousJourneySummary = input.previousJourney
   return JSON.stringify(obj)
 }

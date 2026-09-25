@@ -17,6 +17,7 @@
 // are never read here - see coachPrompt.ts's header comment for why.
 
 import type { HistoryTake, JourneyDayStat, SelfRatingLabel } from './coachPrompt'
+import { tooSimilar } from './coachVariety'
 import type { TakeMetrics } from '../store/progress'
 
 export interface RuleFeedbackContext {
@@ -30,6 +31,8 @@ export interface RuleFeedbackContext {
   differentMusic?: boolean
   /** True when this take just became the piece's new reference take. */
   isNewReference?: boolean
+  /** Her last few kid notes (of any piece) - variant picks that would read as a repeat of one of these are skipped. */
+  recentNotes?: { praise: string; tryNext: string }[]
 }
 
 export interface RuleJourneyContext {
@@ -59,6 +62,22 @@ function stableHash(s: string): number {
 
 function pick<T>(variants: readonly T[], seed: number): T {
   return variants[seed % variants.length]
+}
+
+/**
+ * Like `pick`, but walks forward from the seeded index (wrapping) to find a
+ * variant that doesn't read as a repeat of anything in `recent` - so the same
+ * situation doesn't keep rendering the same line back to back. Falls back to
+ * the plain seeded pick once every variant has been tried and still reads too
+ * similar (a short variants list against a long recent history).
+ */
+function pickFresh(variants: readonly string[], seed: number, recent: readonly string[]): string {
+  if (recent.length === 0) return pick(variants, seed)
+  for (let offset = 0; offset < variants.length; offset++) {
+    const candidate = variants[(seed + offset) % variants.length]
+    if (!tooSimilar(candidate, recent)) return candidate
+  }
+  return pick(variants, seed)
 }
 
 /** Plain-language bucket for a pace ratio - same rule as coachPrompt.ts's system prompt asks Claude to follow. */
@@ -121,6 +140,7 @@ function praiseFor(
   prev: HistoryTake | undefined,
   name: string,
   seed: number,
+  recentPraises: readonly string[],
 ): string {
   switch (situation) {
     case 'thin': {
@@ -129,7 +149,7 @@ function praiseFor(
         `Showing up to practice counts, ${name}, even on a short one like this.`,
         `Every time you sit down at the piano it adds up, ${name} - nice job starting today.`,
       ]
-      return pick(variants, seed)
+      return pickFresh(variants, seed, recentPraises)
     }
     case 'newReference': {
       const variants = [
@@ -137,14 +157,14 @@ function praiseFor(
         `That was a strong, complete play-through, ${name}. This one is your new best take of this song.`,
         `You just set a new personal best on this song, ${name} - nice and complete from start to finish.`,
       ]
-      return pick(variants, seed)
+      return pickFresh(variants, seed, recentPraises)
     }
     case 'differentMusic': {
       const variants = [
         `You played for ${metrics.playedSec} seconds today, ${name} - nice work at the piano.`,
         `You spent good time at the keys today, ${name}.`,
       ]
-      return `${pick(variants, seed)} Keep exploring - it all helps.`
+      return `${pickFresh(variants, seed, recentPraises)} Keep exploring - it all helps.`
     }
     case 'fewerPauses': {
       const before = prev!.metrics.hesitations
@@ -154,7 +174,7 @@ function praiseFor(
           ? `You played all the way through with no long pauses this time, ${name}!`
           : `Only ${now} long ${now === 1 ? 'pause' : 'pauses'} this time - last time there were ${before}.`
       const variants = [`${lead} That takes real focus.`, `${lead} You kept right on going.`]
-      return pick(variants, seed)
+      return pickFresh(variants, seed, recentPraises)
     }
     case 'cleanRun': {
       const variants = [
@@ -162,95 +182,95 @@ function praiseFor(
         `No long pauses at all this time, ${name} - you just kept on playing. Your practice is paying off.`,
         `You played it through without stopping, ${name}. All those tries are adding up.`,
       ]
-      return pick(variants, seed)
+      return pickFresh(variants, seed, recentPraises)
     }
     case 'fewerSticky': {
       const variants = [
         `The sticky spots are getting smoother, ${name} - there were fewer of them this time. Your careful practice is working.`,
         `Fewer tricky spots slowed you down today, ${name}. That comes from going over them again and again.`,
       ]
-      return pick(variants, seed)
+      return pickFresh(variants, seed, recentPraises)
     }
     case 'moreCoverage': {
       const variants = [
         `You played more of the song than last time, ${name} - you're getting further each time!`,
         `You made it further through the piece today than before, ${name}.`,
       ]
-      return `${pick(variants, seed)} That is real progress.`
+      return `${pickFresh(variants, seed, recentPraises)} That is real progress.`
     }
     case 'slowPractice': {
       const variants = [
         `You took it slow and careful today, ${name} - that is exactly how tricky spots get easier.`,
         `You played it slower on purpose today, ${name}. Slow practice is one of the best ways to learn a piece.`,
       ]
-      return pick(variants, seed)
+      return pickFresh(variants, seed, recentPraises)
     }
     case 'longer': {
       const variants = [
         `You played for longer today than last time, ${name} - you kept going! That is real practice muscle.`,
         `You stuck with it longer this time than before. Nice work sticking with it.`,
       ]
-      return pick(variants, seed)
+      return pickFresh(variants, seed, recentPraises)
     }
     case 'dynamics': {
       const variants = [
         `You played some parts loud and some parts soft today, ${name} - nice contrast! That makes the music way more interesting.`,
         `You made the quiet parts really quiet and the loud parts loud. That is a great strategy.`,
       ]
-      return pick(variants, seed)
+      return pickFresh(variants, seed, recentPraises)
     }
     default: {
       const variants = [
         `You practiced for ${metrics.playedSec} seconds today, ${name} - nice work sticking with it. Keep at it and it will keep getting smoother.`,
         `You put in real effort today, ${name}. Every practice like this one adds up.`,
       ]
-      return pick(variants, seed)
+      return pickFresh(variants, seed, recentPraises)
     }
   }
 }
 
-function tryNextFor(metrics: TakeMetrics, ctx: RuleFeedbackContext, seed: number): string {
+function tryNextFor(metrics: TakeMetrics, ctx: RuleFeedbackContext, seed: number, recentTryNexts: readonly string[]): string {
   if (isThin(metrics)) {
     const variants = [
       `Next time, want to try playing for a little longer before you stop?`,
       `How about picking one more minute to play through next time?`,
     ]
-    return pick(variants, seed)
+    return pickFresh(variants, seed, recentTryNexts)
   }
   if (metrics.hesitations > 0) {
     const variants = [
       `Want to try playing the tricky spot slowly a few times before speeding it back up?`,
       `Maybe pick the part where you paused and practice just that bit slowly?`,
     ]
-    return pick(variants, seed)
+    return pickFresh(variants, seed, recentTryNexts)
   }
   if (!ctx.differentMusic && !ctx.isNewReference && metrics.coverage !== undefined && metrics.coverage < 0.5) {
     const variants = [
       `Want to try playing all the way to the end next time, even if it gets a little wobbly?`,
       `How about trying to make it further through the song next time before stopping?`,
     ]
-    return pick(variants, seed)
+    return pickFresh(variants, seed, recentTryNexts)
   }
   if (metrics.dynamicRangeDb < 8) {
     const variants = [
       `Next time, want to try making the quiet parts even quieter?`,
       `How about picking one spot to play extra soft next time?`,
     ]
-    return pick(variants, seed)
+    return pickFresh(variants, seed, recentTryNexts)
   }
   if ((metrics.stumbles?.length ?? 0) >= 2) {
     const variants = [
       `Want to pick one sticky spot and play just that bit slowly three times?`,
       `How about finding the trickiest spot and giving it a slow, careful turn next time?`,
     ]
-    return pick(variants, seed)
+    return pickFresh(variants, seed, recentTryNexts)
   }
   const variants = [
     `Want to play it for someone at home next time, like a tiny concert?`,
     `How about choosing one part to play extra softly and one part nice and strong?`,
     `Want to try it once more at a calm walking speed and listen to how even it sounds?`,
   ]
-  return pick(variants, seed)
+  return pickFresh(variants, seed, recentTryNexts)
 }
 
 /** Where most of the sticky spots were, in plain words. */
@@ -352,10 +372,12 @@ export function ruleFeedback(metrics: TakeMetrics, history: HistoryTake[], ctx: 
   const seed = stableHash(ctx.takeId)
   const prev = history.at(-1)
   const situation = pickSituation(metrics, prev, ctx)
+  const recentPraises = ctx.recentNotes?.map((n) => n.praise) ?? []
+  const recentTryNexts = ctx.recentNotes?.map((n) => n.tryNext) ?? []
   return {
     kid: {
-      praise: praiseFor(situation, metrics, prev, ctx.kidFirstName, seed),
-      tryNext: tryNextFor(metrics, ctx, seed + 1),
+      praise: praiseFor(situation, metrics, prev, ctx.kidFirstName, seed, recentPraises),
+      tryNext: tryNextFor(metrics, ctx, seed + 1, recentTryNexts),
     },
     parent: { note: parentNoteFor(metrics, history, ctx) },
   }

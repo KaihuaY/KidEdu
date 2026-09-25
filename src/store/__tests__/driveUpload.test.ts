@@ -85,7 +85,7 @@ function fakeStore(blobs: Record<string, Blob> = {}): RecordingStore {
     async clear() {
       map.clear()
     },
-    // driveUpload.ts never touches partials - stubbed only to satisfy RecordingStore.
+    // driveUpload.ts never touches partials or photos - stubbed only to satisfy RecordingStore.
     async putPartial() {},
     async listPartialIds() {
       return []
@@ -94,6 +94,11 @@ function fakeStore(blobs: Record<string, Blob> = {}): RecordingStore {
       return null
     },
     async deletePartial() {},
+    async putPhoto() {},
+    async getPhoto() {
+      return null
+    },
+    async removePhoto() {},
   }
 }
 

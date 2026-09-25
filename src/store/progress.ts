@@ -30,7 +30,7 @@ export interface PianoPiece {
   goalSetOn?: string
   /** Grown-up target: play this piece this many times a day (counted by the "+1" tap while recording). 0/undefined = off. */
   timesPerDay?: number
-  /** 'week' = this week's pieces (big chips), 'keep' (default) = under "More songs", 'archived' = hidden from the kid, history kept. */
+  /** 'week' (default, so older pieces stay visible) = big chips, 'keep' = under "More songs", 'archived' = hidden from the kid, history kept. */
   status?: 'week' | 'keep' | 'archived'
   /** Manual order within a status group (lower first). */
   order?: number

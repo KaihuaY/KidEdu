@@ -5,6 +5,7 @@ import { useProgress, type PianoPiece, type PianoTake } from '../../store/progre
 import { allSongTargetsMet, pruneRecordings, setSelfRating, songTargetsForDay, usePiano } from '../../store/piano'
 import { goalProgress, pianoDaysDone, practiceSecondsForDay, steadyBeatDots } from '../../store/pianoRewards'
 import { formatClock, lastNDays, localDay } from '../../store/sessions'
+import { groupPieces, pieceStatus } from '../../store/songStats'
 import { getAudioBackend, startTake } from '../../audio/recordingSession'
 import { getRecordingStore, useLocalAudioIds } from '../../store/recordings'
 import { buildFileName, processUploadQueue } from '../../store/driveUpload'
@@ -19,6 +20,7 @@ import { RecordsCard } from '../../components/RecordsCard'
 import { SayIt } from '../../components/SayIt'
 import { SelfRatingButtons } from '../../components/SelfRatingButtons'
 import { TakePlayer } from '../../components/TakePlayer'
+import { TeacherNotesCard } from '../../components/TeacherNotesCard'
 import { TierStrip } from '../../components/TierStrip'
 import { UploadChip } from '../../components/UploadChip'
 
@@ -167,6 +169,7 @@ export function PianoHome() {
   const { kidName, pianoPieces, goalMinutes, recordingKeepDays } = progress.settings
   const [selectedPieceId, setSelectedPieceId] = useState<string | null>(() => readStoredPieceId())
   const [metronomeOpen, setMetronomeOpen] = useState<boolean>(() => readMetronomeOpen())
+  const [moreSongsOpen, setMoreSongsOpen] = useState(false)
 
   useEffect(() => {
     void pruneRecordings(recordingKeepDays)
@@ -211,6 +214,18 @@ export function PianoHome() {
   const recoveredCount = useRecoveredTakeNotice()
 
   const selectedPiece = pianoPieces.find((p) => p.id === selectedPieceId)
+  const groups = useMemo(() => groupPieces(pianoPieces, piano.takes), [pianoPieces, piano.takes])
+
+  // A selected piece that got archived (or removed) since she last picked it
+  // falls back to Free play - never silently records against a hidden piece.
+  useEffect(() => {
+    if (selectedPieceId === null) return
+    const piece = pianoPieces.find((p) => p.id === selectedPieceId)
+    if (!piece || pieceStatus(piece) === 'archived') {
+      setSelectedPieceId(null)
+      storePieceId(null)
+    }
+  }, [selectedPieceId, pianoPieces])
 
   // How many takes exist of each piece (all-time, not just today) - a "📈
   // Journey" button only makes sense once there's more than one take to
@@ -273,17 +288,16 @@ export function PianoHome() {
       <div className="cc-card" style={{ padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <strong>What are you playing?</strong>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {pianoPieces.map((piece) => (
-            <div key={piece.id} style={{ display: 'flex', gap: '0.35rem' }}>
-              <button
-                type="button"
-                className={`cc-btn ${selectedPieceId === piece.id ? 'cc-btn-primary' : 'cc-btn-surface'}`}
-                style={{ minHeight: 56 }}
-                onClick={() => pickPiece(piece.id)}
-              >
-                {piece.emoji} {piece.name}
-              </button>
-            </div>
+          {groups.week.map((piece) => (
+            <button
+              key={piece.id}
+              type="button"
+              className={`cc-btn ${selectedPieceId === piece.id ? 'cc-btn-primary' : 'cc-btn-surface'}`}
+              style={{ minHeight: 56 }}
+              onClick={() => pickPiece(piece.id)}
+            >
+              {piece.emoji} {piece.name}
+            </button>
           ))}
           <button
             type="button"
@@ -294,6 +308,36 @@ export function PianoHome() {
             🎵 Free play
           </button>
         </div>
+        {groups.more.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <button
+              type="button"
+              data-testid="more-songs"
+              className="cc-btn cc-btn-surface"
+              style={{ minHeight: 56, justifyContent: 'space-between', display: 'flex' }}
+              onClick={() => setMoreSongsOpen((open) => !open)}
+              aria-expanded={moreSongsOpen}
+            >
+              <span>More songs ({groups.more.length})</span>
+              <span aria-hidden>{moreSongsOpen ? '▲' : '▼'}</span>
+            </button>
+            {moreSongsOpen && (
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                {groups.more.map((piece) => (
+                  <button
+                    key={piece.id}
+                    type="button"
+                    className={`cc-btn ${selectedPieceId === piece.id ? 'cc-btn-primary' : 'cc-btn-surface'}`}
+                    style={{ minHeight: 56, padding: '0.5rem 0.85rem', fontSize: '0.9rem' }}
+                    onClick={() => pickPiece(piece.id)}
+                  >
+                    {piece.emoji} {piece.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {selectedPiece && (pieceTakeCounts.get(selectedPiece.id) ?? 0) >= 2 && (
           <button
             type="button"
@@ -370,6 +414,38 @@ export function PianoHome() {
       </div>
 
       <RecordsCard />
+
+      <TeacherNotesCard />
+
+      <button
+        type="button"
+        data-testid="my-journal"
+        className="cc-btn cc-btn-surface"
+        style={{ minHeight: 56 }}
+        onClick={() => navigate('/piano/journal')}
+      >
+        📔 My journal
+      </button>
+
+      <button
+        type="button"
+        data-testid="my-days"
+        className="cc-btn cc-btn-surface"
+        style={{ minHeight: 56 }}
+        onClick={() => navigate(`/piano/day/${today}`)}
+      >
+        📅 Days
+      </button>
+
+      <button
+        type="button"
+        data-testid="my-songs"
+        className="cc-btn cc-btn-surface"
+        style={{ minHeight: 56 }}
+        onClick={() => navigate('/piano/songs')}
+      >
+        🎵 My songs
+      </button>
 
       <button type="button" className="cc-btn cc-btn-surface" style={{ alignSelf: 'center' }} onClick={() => navigate('/piano/review')}>
         👀 Grown-up review

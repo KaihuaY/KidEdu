@@ -55,6 +55,31 @@ describe('COACH_SYSTEM', () => {
     expect(COACH_SYSTEM).toContain('differentMusic')
     expect(COACH_SYSTEM.toLowerCase()).toContain('reference take')
   })
+
+  it('explains theme (angle, only when the numbers support it) and voice (flavour, never overrides truth rules)', () => {
+    const lower = COACH_SYSTEM.toLowerCase()
+    expect(lower).toContain('"theme"')
+    expect(lower).toContain('"voice"')
+    expect(lower).toMatch(/voice.{0,80}(flavour|flavor)/s)
+    expect(lower).toMatch(/never (loosens|override|bend)/s)
+  })
+
+  it('tells the model not to reuse the phrasing/opener/try-next idea of recent notes, and to vary sentence openers', () => {
+    const lower = COACH_SYSTEM.toLowerCase()
+    expect(lower).toMatch(/do not reuse the same phrasing/)
+    expect(lower).toMatch(/vary how your sentences start/)
+    expect(lower).toContain('one exclamation mark per sentence')
+  })
+
+  it('explains plays/time are only mentioned when round or new, and journal acknowledgement', () => {
+    const lower = COACH_SYSTEM.toLowerCase()
+    expect(lower).toMatch(/round or newly-crossed number/)
+    expect(lower).toMatch(/practice journal today/)
+  })
+
+  it('requires the journey to add something the previous journey did not already say', () => {
+    expect(COACH_SYSTEM.toLowerCase()).toMatch(/previous journey.{0,120}must add something/s)
+  })
 })
 
 describe('FEEDBACK_SCHEMA / JOURNEY_SCHEMA', () => {
@@ -89,6 +114,9 @@ describe('buildFeedbackUser', () => {
     metrics: metrics(),
     history: [],
     takeNumber: 1,
+    recentNotes: [],
+    theme: 'rhythm & flow - notice how evenly the playing moved.',
+    voice: 'playful coach - warm and upbeat.',
   }
 
   it('produces valid JSON carrying the kid name, age, piece and this take\'s metrics', () => {
@@ -181,6 +209,40 @@ describe('buildFeedbackUser', () => {
     expect(parsed.referenceStatus).toBe('this take is now her reference take')
     expect(Object.keys(parsed.thisTake)).toEqual(['secondsPlayed', 'pauseCount', 'longestPauseSeconds', 'loudToSoftRangeDb'])
   })
+
+  it('always includes theme and voice', () => {
+    const parsed = JSON.parse(buildFeedbackUser(base)) as Record<string, unknown>
+    expect(parsed.theme).toBe(base.theme)
+    expect(parsed.voice).toBe(base.voice)
+  })
+
+  it('omits recentKidNotes when there are none, includes them (praise + tryNext) when there are', () => {
+    const empty = JSON.parse(buildFeedbackUser(base)) as Record<string, unknown>
+    expect(empty.recentKidNotes).toBeUndefined()
+
+    const withRecent = JSON.parse(
+      buildFeedbackUser({ ...base, recentNotes: [{ praise: 'You played so steadily!', tryNext: 'Try counting out loud.' }] }),
+    ) as { recentKidNotes: { praise: string; tryNext: string }[] }
+    expect(withRecent.recentKidNotes).toEqual([{ praise: 'You played so steadily!', tryNext: 'Try counting out loud.' }])
+  })
+
+  it('includes songSoFar only when song is given', () => {
+    const noSong = JSON.parse(buildFeedbackUser(base)) as Record<string, unknown>
+    expect(noSong.songSoFar).toBeUndefined()
+
+    const withSong = JSON.parse(buildFeedbackUser({ ...base, song: { plays: 10, totalMin: 62.5, days: 6 } })) as {
+      songSoFar: { totalPlays: number; totalMinutes: number; daysPracticed: number }
+    }
+    expect(withSong.songSoFar).toEqual({ totalPlays: 10, totalMinutes: 62.5, daysPracticed: 6 })
+  })
+
+  it('includes journalToday only when given', () => {
+    const noJournal = JSON.parse(buildFeedbackUser(base)) as Record<string, unknown>
+    expect(noJournal.journalToday).toBeUndefined()
+
+    const withJournal = JSON.parse(buildFeedbackUser({ ...base, journalToday: 'Piano was fun today!' })) as Record<string, unknown>
+    expect(withJournal.journalToday).toBe('Piano was fun today!')
+  })
 })
 
 describe('buildJourneyUser', () => {
@@ -205,5 +267,13 @@ describe('buildJourneyUser', () => {
   it('includes the parent goal when present', () => {
     const parsed = JSON.parse(buildJourneyUser({ ...base, goalText: 'Play it smoothly' })) as Record<string, unknown>
     expect(parsed.parentGoalForThisPiece).toBe('Play it smoothly')
+  })
+
+  it('omits previousJourneySummary when absent, includes it when given', () => {
+    const noPrevious = JSON.parse(buildJourneyUser(base)) as Record<string, unknown>
+    expect(noPrevious.previousJourneySummary).toBeUndefined()
+
+    const withPrevious = JSON.parse(buildJourneyUser({ ...base, previousJourney: 'Last time: pauses dropped from 3 to 1.' })) as Record<string, unknown>
+    expect(withPrevious.previousJourneySummary).toBe('Last time: pauses dropped from 3 to 1.')
   })
 })

@@ -17,7 +17,7 @@ const takes = [
 ]
 const pieces: PianoPiece[] = [
   { id: 'a', name: 'Twinkle', emoji: '⭐', status: 'week', order: 2 },
-  { id: 'b', name: 'Ode', emoji: '🎵' },
+  { id: 'b', name: 'Ode', emoji: '🎵', status: 'keep' },
   { id: 'c', name: 'Old song', emoji: '🎵', status: 'archived' },
   { id: 'd', name: 'Puff', emoji: '🐉', status: 'week', order: 1 },
 ]

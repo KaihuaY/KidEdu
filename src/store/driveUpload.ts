@@ -15,6 +15,7 @@ import { getDoc, subscribe, update, exportJson, type PianoTake, type Settings } 
 import { getRecordingStore, type RecordingStore } from './recordings'
 import { localDay } from './sessions'
 import { kidKey } from './kid'
+import { processPhotoQueue, retryFailedPhotoUploads } from './photoUpload'
 
 export interface DriveConfig {
   scriptUrl: string
@@ -66,7 +67,12 @@ export function enqueueUpload(takeId: string): void {
   })
 }
 
-/** Sets every 'failed' take back to 'pending' with a clean attempt count, so the queue retries them right away. */
+/**
+ * Sets every 'failed' take back to 'pending' with a clean attempt count, so
+ * the queue retries them right away. Also resets any failed teacher-note
+ * photo upload (see photoUpload.ts) - this is the one "retry everything"
+ * entry point Settings' upload summary chip calls, so it covers both queues.
+ */
 export function retryFailedUploads(): void {
   update('piano', (piano) => ({
     ...piano,
@@ -76,6 +82,7 @@ export function retryFailedUploads(): void {
         : t,
     ),
   }))
+  retryFailedPhotoUploads()
 }
 
 export interface UploadDeps {
@@ -145,12 +152,41 @@ function stringToBase64(text: string): string {
   return arrayBufferToBase64(bytes.buffer as ArrayBuffer)
 }
 
-interface UploadResponse {
+export interface UploadResponse {
   ok: boolean
   fileId?: string
   url?: string
   downloadUrl?: string
   error?: string
+}
+
+/**
+ * The bare Apps Script POST, extracted from the take-upload path so the
+ * teacher-note photo queue (photoUpload.ts) can send the same request shape
+ * without duplicating it. Never throws on a bad/missing JSON body - that
+ * becomes `{ ok: false, error: 'HTTP <status>' }`, same as the take path
+ * always treated it.
+ */
+export async function postToDrive(
+  cfg: DriveConfig,
+  input: { fileName: string; mimeType: string; description: string; dataBase64: string },
+  doFetch: typeof fetch = fetch,
+): Promise<UploadResponse> {
+  const res = await doFetch(cfg.scriptUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    redirect: 'follow',
+    body: JSON.stringify({
+      secret: cfg.secret,
+      folderName: cfg.folderName,
+      ...input,
+    }),
+  })
+  try {
+    return (await res.json()) as UploadResponse
+  } catch {
+    return { ok: false, error: `HTTP ${res.status}` }
+  }
 }
 
 let uploading = false
@@ -250,30 +286,12 @@ async function uploadOne(
 
   try {
     const dataBase64 = arrayBufferToBase64(await blob.arrayBuffer())
-    const res = await doFetch(cfg.scriptUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      redirect: 'follow',
-      body: JSON.stringify({
-        secret: cfg.secret,
-        folderName: cfg.folderName,
-        fileName,
-        mimeType: take.mimeType,
-        description,
-        dataBase64,
-      }),
-    })
-    let parsed: UploadResponse | null = null
-    try {
-      parsed = (await res.json()) as UploadResponse
-    } catch {
-      parsed = null
-    }
+    const parsed = await postToDrive(cfg, { fileName, mimeType: take.mimeType, description, dataBase64 }, doFetch)
 
     const latest = getDoc().piano.takes.find((t) => t.id === takeId)
     if (!latest || !latest.upload) return
 
-    if (parsed?.ok) {
+    if (parsed.ok) {
       setTakeUpload(takeId, {
         status: 'done',
         attempts: latest.upload.attempts,
@@ -282,7 +300,7 @@ async function uploadOne(
         updatedAt: now(),
       })
     } else {
-      const lastError = parsed?.error ?? `HTTP ${res.status}`
+      const lastError = parsed.error ?? 'upload failed'
       setTakeUpload(takeId, {
         status: 'pending',
         attempts: latest.upload.attempts + 1,
@@ -476,6 +494,7 @@ export function startUploadWorker(): () => void {
 
   const tick = () => {
     void processUploadQueue()
+    void processPhotoQueue()
     void backupProgressToDrive()
   }
   const interval = window.setInterval(tick, 30_000)
