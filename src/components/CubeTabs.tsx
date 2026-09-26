@@ -25,7 +25,7 @@ export function CubeTabs() {
               minHeight: 56,
               padding: '0.6rem 0.5rem',
               background: active ? 'var(--cc-primary)' : 'var(--cc-surface)',
-              color: active ? '#fff' : 'var(--cc-ink)',
+              color: active ? 'var(--cc-primary-ink)' : 'var(--cc-ink)',
               border: active ? 'none' : '2px solid var(--cc-border)',
               boxShadow: 'none',
             }}

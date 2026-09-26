@@ -109,7 +109,7 @@ export function ScanHelp({ mission, tempoScale, onPassed, onWalkedThrough, onCan
         position: 'fixed',
         inset: 0,
         zIndex: 900,
-        background: 'var(--cc-bg, #fff)',
+        background: 'var(--cc-bg)',
         overflowY: 'auto',
         padding: '1rem',
         paddingTop: 'max(1rem, var(--cc-safe-top))',

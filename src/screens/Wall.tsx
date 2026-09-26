@@ -193,7 +193,7 @@ export function Wall() {
         className="cc-card"
         style={{
           padding: '1.25rem 1rem',
-          background: 'linear-gradient(180deg, #cfe8ff 0%, #eef4ff 55%, #f7efe0 100%)',
+          background: 'var(--cc-sky)',
           display: 'flex',
           flexDirection: 'column',
           gap: 0,
@@ -234,7 +234,7 @@ export function Wall() {
                     justifyContent: 'center',
                     fontWeight: 900,
                     fontSize: '0.85rem',
-                    color: state === 'locked' ? 'var(--cc-ink-soft)' : '#fff',
+                    color: state === 'locked' ? 'var(--cc-ink-soft)' : 'var(--cc-primary-ink)',
                     background:
                       state === 'mastered'
                         ? 'var(--cc-success)'
@@ -312,7 +312,7 @@ export function Wall() {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(16,18,43,0.55)',
+            background: 'var(--cc-scrim)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

@@ -219,7 +219,7 @@ function MissionList({ lesson, hold }: { lesson: LessonContent; hold: HoldProgre
                 justifyContent: 'center',
                 fontWeight: 900,
                 fontSize: '0.85rem',
-                color: unlocked ? '#fff' : 'var(--cc-ink-soft)',
+                color: unlocked ? 'var(--cc-primary-ink)' : 'var(--cc-ink-soft)',
                 background: doneThis ? 'var(--cc-success)' : unlocked ? 'var(--cc-primary)' : 'var(--cc-border)',
               }}
             >
@@ -432,7 +432,7 @@ export function Lesson() {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(16,18,43,0.55)',
+            background: 'var(--cc-scrim)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

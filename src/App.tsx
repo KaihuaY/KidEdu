@@ -5,6 +5,7 @@ import { useProgress } from './store/progress'
 import { useSyncStatus, type SyncStatus } from './store/gistSync'
 import { RecordingBanner } from './components/RecordingBanner'
 import { UpdateBanner } from './components/UpdateBanner'
+import { ThemeToggle } from './components/ThemeToggle'
 import { Home } from './screens/Home'
 import { Wall } from './screens/Wall'
 import { Lesson } from './screens/Lesson'
@@ -39,13 +40,13 @@ const NAV_ITEMS: NavItem[] = [
 ]
 
 const SYNC_DOT_COLOR: Record<SyncStatus, string> = {
-  off: '#c7cad9',
-  loading: '#ff8a00',
-  saving: '#ff8a00',
-  saved: '#1fa953',
-  offline: '#c7cad9',
-  expired: '#e62b2b',
-  error: '#e62b2b',
+  off: 'var(--cc-muted)',
+  loading: 'var(--cc-accent)',
+  saving: 'var(--cc-accent)',
+  saved: 'var(--cc-success)',
+  offline: 'var(--cc-muted)',
+  expired: 'var(--cc-danger)',
+  error: 'var(--cc-danger)',
 }
 
 // The Cube and Piano tabs go back to wherever she was inside that area
@@ -139,6 +140,8 @@ function App() {
         <strong style={{ fontSize: '1.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {progress.settings.kidName}&apos;s Practice
         </strong>
+
+        <ThemeToggle />
 
         <span
           title={`Sync: ${syncStatus}`}

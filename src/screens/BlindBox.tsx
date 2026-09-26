@@ -15,7 +15,7 @@ import { PinGate } from './Settings'
 
 const TIER_META: Record<Tier, { label: string; emoji: string; color: string }> = {
   gold: { label: 'Gold Box', emoji: '🟡', color: '#f5d91a' },
-  silver: { label: 'Silver Box', emoji: '⚪', color: '#c7cad9' },
+  silver: { label: 'Silver Box', emoji: '⚪', color: '#c7cad9' }, // theme-ok: the box is silver in both themes
   bronze: { label: 'Bronze Box', emoji: '🟤', color: '#c98a4b' },
 }
 
@@ -67,7 +67,7 @@ function BoxResultCard({ result, onOpenAnother, onSeeCards }: { result: OpenResu
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(16,18,43,0.55)',
+        background: 'var(--cc-scrim)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -274,7 +274,7 @@ function TicketsTab() {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(16,18,43,0.55)',
+            background: 'var(--cc-scrim)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -376,7 +376,7 @@ export function BlindBox() {
                 flexDirection: 'column',
                 gap: '0.1rem',
                 background: active ? 'var(--cc-primary)' : 'var(--cc-surface)',
-                color: active ? '#fff' : 'var(--cc-ink)',
+                color: active ? 'var(--cc-primary-ink)' : 'var(--cc-ink)',
                 border: active ? 'none' : '2px solid var(--cc-border)',
                 boxShadow: 'none',
               }}

@@ -8,6 +8,9 @@ import { recoverUnfinishedTakes } from './audio/recordingSession'
 import { getKid, isKidId, setKid } from './store/kid'
 import { backfillLocalFingerprints } from './store/coach'
 import { getRecordingStore } from './store/recordings'
+import { applyTheme, getTheme } from './store/theme'
+
+applyTheme(getTheme())
 
 // One-tap household setup link: https://<app>/#/setup?token=<gist-only token>[&kid=amelia|nora]
 // Stores the sync token (and unlocks the secret-word gate) on this device,

@@ -20,7 +20,7 @@ export function NoteCard() {
   return (
     <div
       className="cc-card"
-      style={{ padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', background: '#fff4f8' }}
+      style={{ padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', background: 'var(--cc-tint-pink)' }}
     >
       <strong style={{ fontSize: '1.05rem' }}>💌 A note from your grown-up</strong>
       {note.text && <p style={{ margin: 0 }}>{note.text}</p>}

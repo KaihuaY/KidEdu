@@ -148,7 +148,7 @@ export function ColorNet({
                   gridRow: row + 1,
                   background: hex,
                   borderRadius: 6,
-                  border: '2px solid rgba(16,18,43,0.25)',
+                  border: '2px solid var(--cc-border)',
                 }}
               />
             )
@@ -165,7 +165,7 @@ export function ColorNet({
                 gridRow: row + 1,
                 background: hex,
                 borderRadius: 6,
-                border: invalid ? '3px solid var(--cc-danger)' : '2px solid rgba(16,18,43,0.15)',
+                border: invalid ? '3px solid var(--cc-danger)' : '2px solid var(--cc-border)',
                 boxShadow: invalid ? '0 0 0 2px rgba(230,43,43,0.35)' : 'none',
                 cursor: 'pointer',
                 padding: 0,
@@ -190,7 +190,7 @@ export function ColorNet({
               onClick={() => setSelected(face)}
               style={{
                 background: color.hex,
-                color: face === 'D' || face === 'U' ? '#10122b' : '#fff',
+                color: face === 'D' || face === 'U' ? '#10122b' : '#fff', // theme-ok: text sits on a fixed sticker colour
                 flexDirection: 'column',
                 minWidth: 72,
                 minHeight: 64,

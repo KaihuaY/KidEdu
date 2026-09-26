@@ -130,7 +130,7 @@ export function SolveLog() {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(16,18,43,0.55)',
+            background: 'var(--cc-scrim)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

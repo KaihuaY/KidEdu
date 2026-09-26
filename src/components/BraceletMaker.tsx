@@ -74,7 +74,7 @@ function FlowerPetals({ cx, cy, r, colour }: { cx: number; cy: number; r: number
         const angle = ((2 * Math.PI) / 5) * i - Math.PI / 2
         return <circle key={i} cx={cx + dist * Math.cos(angle)} cy={cy + dist * Math.sin(angle)} r={petalR} fill={colour} />
       })}
-      <circle cx={cx} cy={cy} r={r * 0.32} fill="#fff7d6" />
+      <circle cx={cx} cy={cy} r={r * 0.32} fill="var(--cc-tint-warm)" />
     </g>
   )
 }
@@ -92,7 +92,7 @@ export function BeadGlyph({ bead, cx, cy, r }: { bead: BeadDef; cx: number; cy: 
       return (
         <g>
           <circle cx={cx} cy={cy} r={r} fill={bead.colour} stroke="#00000022" />
-          <text x={cx} y={cy + r * 0.08} textAnchor="middle" dominantBaseline="middle" fontSize={r * 1.15} fontWeight={800} fill="#3b2f0a">
+          <text x={cx} y={cy + r * 0.08} textAnchor="middle" dominantBaseline="middle" fontSize={r * 1.15} fontWeight={800} fill="var(--cc-accent-ink)">
             {bead.letter}
           </text>
         </g>
@@ -109,11 +109,11 @@ export function BraceletStrand({ bracelet, width }: { bracelet: Bracelet; width:
   const positions = slotPositions(bracelet.beads.length, width, height)
   return (
     <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img" aria-label={`${bracelet.name} bracelet`}>
-      <path d={strandPath(width, height)} stroke="#c7cad9" strokeWidth={3} fill="none" strokeLinecap="round" />
+      <path d={strandPath(width, height)} stroke="var(--cc-muted)" strokeWidth={3} fill="none" strokeLinecap="round" />
       {bracelet.beads.map((beadId, i) => {
         const pos = positions[i]
         const bead = beadId ? findBead(beadId) : undefined
-        if (!bead) return <circle key={i} cx={pos.x} cy={pos.y} r={width * 0.02} fill="#e1e3f5" />
+        if (!bead) return <circle key={i} cx={pos.x} cy={pos.y} r={width * 0.02} fill="var(--cc-border)" />
         return <BeadGlyph key={i} bead={bead} cx={pos.x} cy={pos.y} r={width * 0.032} />
       })}
     </svg>
@@ -201,7 +201,7 @@ function BraceletEditor({ bracelet }: { bracelet: Bracelet }) {
   return (
     <div className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
       <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height} style={{ maxWidth: '100%' }}>
-        <path d={strandPath(width, height)} stroke="#c7cad9" strokeWidth={3} fill="none" strokeLinecap="round" />
+        <path d={strandPath(width, height)} stroke="var(--cc-muted)" strokeWidth={3} fill="none" strokeLinecap="round" />
         {bracelet.beads.map((beadId, i) => {
           const pos = positions[i]
           const bead = beadId ? findBead(beadId) : undefined
@@ -218,7 +218,7 @@ function BraceletEditor({ bracelet }: { bracelet: Bracelet }) {
               {bead ? (
                 <BeadGlyph bead={bead} cx={pos.x} cy={pos.y} r={SLOT_R} />
               ) : (
-                <circle cx={pos.x} cy={pos.y} r={SLOT_R} fill="none" stroke="#c7cad9" strokeWidth={2} strokeDasharray="3 3" />
+                <circle cx={pos.x} cy={pos.y} r={SLOT_R} fill="none" stroke="var(--cc-muted)" strokeWidth={2} strokeDasharray="3 3" />
               )}
             </g>
           )

@@ -671,3 +671,11 @@ browser's site data by hand, or a full device wipe still removes local
 audio and any progress that never made it to a sync. Keep GitHub sync and/or
 Drive upload configured on at least one device so there's always an
 off-device copy.
+
+## Dark mode
+
+The 🌙/☀️ button in the header flips between Light and Dark. It's a
+per-device preference, not a per-kid one: it's stored in `localStorage`
+under `cubeclimb.theme` on whichever device is tapped, is never synced, and
+is never part of the progress document. Tokens for the dark palette live in
+`src/index.css` under `:root[data-theme="dark"]`.

@@ -2,8 +2,9 @@
 
 /*
  * CubeClimb theme: playful, bright, high-contrast, big touch targets.
- * Light-only (this is a kids' app meant to be cheerful in daylight), so we
- * do not define a prefers-color-scheme: dark branch on purpose.
+ * Light by default; a dark set lives under :root[data-theme="dark"] below,
+ * switched on per device (never per kid, never synced) via
+ * src/store/theme.ts and its 🌙/☀️ header toggle.
  */
 :root {
   /* Brand */
@@ -14,9 +15,16 @@
   --cc-primary: #6d28f6;
   --cc-primary-ink: #ffffff;
   --cc-accent: #ff8a00;
+  --cc-accent-ink: #2b1900;
   --cc-success: #1fa953;
   --cc-danger: #e62b2b;
+  --cc-danger-ink: #ffffff;
   --cc-border: #e1e3f5;
+  --cc-muted: #c7cad9;
+  --cc-scrim: rgba(16, 18, 43, 0.55);
+  --cc-tint-warm: #fff8e6;
+  --cc-tint-pink: #fff4f8;
+  --cc-sky: linear-gradient(180deg, #cfe8ff 0%, #eef4ff 55%, #f7efe0 100%);
   --cc-shadow: 0 10px 24px -8px rgba(16, 18, 43, 0.18);
 
   /* The six Rubik's cube sticker colors, in the app's solver frame:
@@ -47,6 +55,28 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+}
+
+:root[data-theme="dark"] {
+  --cc-bg: #0b122e;
+  --cc-surface: #171f45;
+  --cc-ink: #eef0ff;
+  --cc-ink-soft: #aab0d6;
+  --cc-primary: #9d7bff;
+  --cc-primary-ink: #12102b;
+  --cc-accent: #ffa033;
+  --cc-accent-ink: #2b1900;
+  --cc-success: #3fcf74;
+  --cc-danger: #ff5c5c;
+  --cc-danger-ink: #2b0000;
+  --cc-border: #2b3466;
+  --cc-muted: #4b5280;
+  --cc-scrim: rgba(0, 0, 0, 0.7);
+  --cc-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.55);
+  --cc-tint-warm: #2a2340;
+  --cc-tint-pink: #2d1f33;
+  --cc-sky: linear-gradient(180deg, #0f1a4a 0%, #131c3f 55%, #241c33 100%);
+  color-scheme: dark;
 }
 
 * {
@@ -92,6 +122,16 @@ button {
   font-family: inherit;
 }
 
+/* Native text controls follow the theme (they otherwise keep the browser's own
+   light look); range/checkbox/radio keep their own styling (.cc-seek etc.). */
+input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+select,
+textarea {
+  background: var(--cc-surface);
+  color: var(--cc-ink);
+  font-family: inherit;
+}
+
 /* Utility layer: big, friendly, tappable buttons everywhere by default. */
 @layer components {
   .cc-btn {
@@ -131,7 +171,7 @@ button {
 
   .cc-btn-accent {
     background: var(--cc-accent);
-    color: #2b1900;
+    color: var(--cc-accent-ink);
   }
 
   .cc-btn-surface {

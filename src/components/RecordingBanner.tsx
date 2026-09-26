@@ -31,7 +31,7 @@ export function RecordingBanner({ path }: { path: string }) {
         flexWrap: 'wrap',
         padding: '0.6rem 1rem',
         background: 'var(--cc-accent)',
-        color: '#2b1900',
+        color: 'var(--cc-accent-ink)',
       }}
     >
       <strong style={{ fontSize: '0.95rem' }}>🎙️ Still recording… ⏹ Stop</strong>
@@ -47,7 +47,7 @@ export function RecordingBanner({ path }: { path: string }) {
         <button
           type="button"
           className="cc-btn"
-          style={{ minHeight: 44, padding: '0.4rem 0.9rem', background: '#2b1900', color: '#fff' }}
+          style={{ minHeight: 44, padding: '0.4rem 0.9rem', background: 'var(--cc-accent-ink)', color: '#fff' /* theme-ok: dark-brown chip in both themes */ }}
           onClick={handleStop}
         >
           ⏹ Stop

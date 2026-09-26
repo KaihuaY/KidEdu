@@ -273,7 +273,7 @@ function BoxTokensSection() {
                 minWidth: 56,
                 padding: '0 0.5rem',
                 background: isConfirming ? 'var(--cc-danger)' : undefined,
-                color: isConfirming ? '#fff' : undefined,
+                color: isConfirming ? 'var(--cc-danger-ink)' : undefined,
               }}
               disabled={count <= 0}
               onClick={() => handleMinusClick(tier)}
@@ -452,7 +452,7 @@ function PianoPiecesEditor() {
                     padding: '0.3rem 0.5rem',
                     fontSize: '0.8rem',
                     background: status === key ? 'var(--cc-primary)' : 'var(--cc-surface)',
-                    color: status === key ? '#fff' : 'var(--cc-ink)',
+                    color: status === key ? 'var(--cc-primary-ink)' : 'var(--cc-ink)',
                     border: status === key ? 'none' : '2px solid var(--cc-border)',
                     boxShadow: 'none',
                   }}
@@ -479,7 +479,7 @@ function PianoPiecesEditor() {
                     type="button"
                     data-testid={`piece-delete-${p.id}`}
                     className="cc-btn"
-                    style={{ minHeight: 40, padding: '0.3rem 0.75rem', background: 'var(--cc-danger)', color: '#fff' }}
+                    style={{ minHeight: 40, padding: '0.3rem 0.75rem', background: 'var(--cc-danger)', color: 'var(--cc-danger-ink)' }}
                     onClick={() => deletePiece(p.id)}
                   >
                     Delete anyway
@@ -749,7 +749,7 @@ export function Settings() {
                 style={{
                   flex: 1,
                   background: settings.goalMinutes.cube === minutes ? 'var(--cc-primary)' : 'var(--cc-surface)',
-                  color: settings.goalMinutes.cube === minutes ? '#fff' : 'var(--cc-ink)',
+                  color: settings.goalMinutes.cube === minutes ? 'var(--cc-primary-ink)' : 'var(--cc-ink)',
                   border: settings.goalMinutes.cube === minutes ? 'none' : '2px solid var(--cc-border)',
                   boxShadow: 'none',
                 }}
@@ -780,7 +780,7 @@ export function Settings() {
                   flex: 1,
                   minHeight: 56,
                   background: (settings.pianoCountMode ?? 'recording') === mode ? 'var(--cc-primary)' : 'var(--cc-surface)',
-                  color: (settings.pianoCountMode ?? 'recording') === mode ? '#fff' : 'var(--cc-ink)',
+                  color: (settings.pianoCountMode ?? 'recording') === mode ? 'var(--cc-primary-ink)' : 'var(--cc-ink)',
                   border: (settings.pianoCountMode ?? 'recording') === mode ? 'none' : '2px solid var(--cc-border)',
                   boxShadow: 'none',
                 }}
@@ -831,7 +831,7 @@ export function Settings() {
                 style={{
                   flex: 1,
                   background: settings.recordingKeepDays === days ? 'var(--cc-primary)' : 'var(--cc-surface)',
-                  color: settings.recordingKeepDays === days ? '#fff' : 'var(--cc-ink)',
+                  color: settings.recordingKeepDays === days ? 'var(--cc-primary-ink)' : 'var(--cc-ink)',
                   border: settings.recordingKeepDays === days ? 'none' : '2px solid var(--cc-border)',
                   boxShadow: 'none',
                 }}
@@ -868,7 +868,7 @@ export function Settings() {
             <button
               type="button"
               className="cc-btn"
-              style={{ background: 'var(--cc-danger)', color: '#fff' }}
+              style={{ background: 'var(--cc-danger)', color: 'var(--cc-danger-ink)' }}
               onClick={() => void handleDeleteAllRecordings()}
             >
               Really delete?
@@ -1240,7 +1240,7 @@ export function Settings() {
                     <button
                       type="button"
                       className="cc-btn"
-                      style={{ minHeight: 36, padding: '0.3rem 0.75rem', background: 'var(--cc-danger)', color: '#fff' }}
+                      style={{ minHeight: 36, padding: '0.3rem 0.75rem', background: 'var(--cc-danger)', color: 'var(--cc-danger-ink)' }}
                       onClick={() => handleRestoreBackup(index)}
                     >
                       Really restore?
@@ -1281,7 +1281,7 @@ export function Settings() {
           <button
             type="button"
             className="cc-btn"
-            style={{ background: 'var(--cc-danger)', color: '#fff' }}
+            style={{ background: 'var(--cc-danger)', color: 'var(--cc-danger-ink)' }}
             onClick={() => setConfirmingReset(true)}
           >
             Reset all progress
@@ -1295,7 +1295,7 @@ export function Settings() {
               <button
                 type="button"
                 className="cc-btn"
-                style={{ background: 'var(--cc-danger)', color: '#fff' }}
+                style={{ background: 'var(--cc-danger)', color: 'var(--cc-danger-ink)' }}
                 onClick={() => {
                   resetAll()
                   setConfirmingReset(false)

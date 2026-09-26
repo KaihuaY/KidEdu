@@ -266,7 +266,7 @@ export function PianoHome() {
       </div>
 
       {recoveredCount > 0 && (
-        <div className="cc-card" style={{ padding: '0.85rem 1rem', fontWeight: 700, background: '#fff8e6' }}>
+        <div className="cc-card" style={{ padding: '0.85rem 1rem', fontWeight: 700, background: 'var(--cc-tint-warm)' }}>
           💾 We saved {recoveredCount === 1 ? 'an unfinished recording' : `${recoveredCount} unfinished recordings`} from earlier. It is in today&apos;s list.
         </div>
       )}

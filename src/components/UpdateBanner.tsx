@@ -77,7 +77,7 @@ export function UpdateBanner({ path }: { path: string }) {
         minHeight: 56,
         padding: '0.6rem 1rem',
         background: 'var(--cc-primary)',
-        color: '#fff',
+        color: 'var(--cc-primary-ink)',
       }}
     >
       <strong style={{ fontSize: '0.95rem' }}>✨ New version ready</strong>
@@ -93,7 +93,7 @@ export function UpdateBanner({ path }: { path: string }) {
         <button
           type="button"
           className="cc-btn"
-          style={{ minHeight: 44, padding: '0.4rem 0.9rem', background: '#fff', color: 'var(--cc-primary)' }}
+          style={{ minHeight: 44, padding: '0.4rem 0.9rem', background: 'var(--cc-surface)', color: 'var(--cc-primary)' }}
           onClick={() => void updateServiceWorker(true)}
         >
           ⬆ Update

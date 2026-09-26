@@ -160,7 +160,7 @@ function DayNoteComposer({ day, kidName }: { day: string; kidName: string }) {
           <button
             type="button"
             className="cc-btn"
-            style={{ background: 'var(--cc-danger)', color: '#fff' }}
+            style={{ background: 'var(--cc-danger)', color: 'var(--cc-danger-ink)' }}
             disabled={session.status !== 'recording'}
             onClick={() => void stopTake('user')}
           >
@@ -316,7 +316,7 @@ function TeacherNotesAdminSection() {
             data-testid="teacher-note-admin-delete"
             aria-label="Delete teacher note"
             className="cc-btn"
-            style={{ minHeight: 44, minWidth: 44, background: 'var(--cc-danger)', color: '#fff', flexShrink: 0 }}
+            style={{ minHeight: 44, minWidth: 44, background: 'var(--cc-danger)', color: 'var(--cc-danger-ink)', flexShrink: 0 }}
             onClick={() => deleteTeacherNote(n.id)}
           >
             🗑️
@@ -358,7 +358,7 @@ function JournalAdminSection() {
                 data-testid="journal-admin-delete"
                 aria-label="Delete journal entry"
                 className="cc-btn"
-                style={{ minHeight: 44, minWidth: 44, background: 'var(--cc-danger)', color: '#fff', flexShrink: 0 }}
+                style={{ minHeight: 44, minWidth: 44, background: 'var(--cc-danger)', color: 'var(--cc-danger-ink)', flexShrink: 0 }}
                 onClick={() => deleteJournalEntry(e.id)}
               >
                 🗑️
@@ -519,7 +519,7 @@ function ParentReviewContent() {
             <button
               type="button"
               className="cc-btn"
-              style={{ background: 'var(--cc-danger)', color: '#fff' }}
+              style={{ background: 'var(--cc-danger)', color: 'var(--cc-danger-ink)' }}
               onClick={() => void handleDeleteAll()}
             >
               Really delete?

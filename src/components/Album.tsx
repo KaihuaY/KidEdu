@@ -53,7 +53,7 @@ function ItemCardModal({ item, onClose }: { item: CollectionItem; onClose: () =>
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(16,18,43,0.55)',
+        background: 'var(--cc-scrim)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -125,7 +125,7 @@ export function Album() {
                 flexDirection: 'column',
                 gap: '0.15rem',
                 background: active ? 'var(--cc-primary)' : 'var(--cc-surface)',
-                color: active ? '#fff' : 'var(--cc-ink)',
+                color: active ? 'var(--cc-primary-ink)' : 'var(--cc-ink)',
                 border: active ? 'none' : '2px solid var(--cc-border)',
                 boxShadow: 'none',
               }}

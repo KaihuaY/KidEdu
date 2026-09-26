@@ -285,7 +285,7 @@ export const TwistyCube = forwardRef<TwistyCubeHandle, TwistyCubeProps>(
               bottom: 0,
               // The bar is two grid rows: minmax(1.5em,.5fr) + minmax(2em,1fr) of the player height.
               height: 'max(60px, 18%)',
-              background: 'var(--cc-surface, #fff)',
+              background: 'var(--cc-surface)',
             }}
           />
         )}

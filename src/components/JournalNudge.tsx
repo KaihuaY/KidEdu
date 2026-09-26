@@ -86,7 +86,7 @@ export function JournalNudge({ take, ringJustReached }: { take: PianoTake; ringJ
               padding: '0.35rem 0.6rem',
               fontSize: '0.8rem',
               background: prompt === p ? 'var(--cc-primary)' : 'var(--cc-surface)',
-              color: prompt === p ? '#fff' : 'var(--cc-ink)',
+              color: prompt === p ? 'var(--cc-primary-ink)' : 'var(--cc-ink)',
               border: prompt === p ? 'none' : '2px solid var(--cc-border)',
             }}
             onClick={() => setPrompt(prompt === p ? undefined : p)}

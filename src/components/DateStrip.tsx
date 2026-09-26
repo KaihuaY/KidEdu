@@ -66,7 +66,7 @@ export function DateStrip({ selected, onSelect }: { selected: string; onSelect: 
                   borderRadius: '0.75rem',
                   border: isSelected ? '2px solid var(--cc-primary)' : '1px solid var(--cc-border)',
                   background: isSelected ? 'var(--cc-primary)' : 'var(--cc-surface)',
-                  color: isSelected ? '#fff' : 'var(--cc-ink)',
+                  color: isSelected ? 'var(--cc-primary-ink)' : 'var(--cc-ink)',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -78,10 +78,10 @@ export function DateStrip({ selected, onSelect }: { selected: string; onSelect: 
               >
                 <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>{dayNum}</span>
                 <span style={{ display: 'flex', gap: '2px', minHeight: 4 }}>
-                  {d.played && <Dot color={isSelected ? '#fff' : 'var(--cc-success)'} />}
-                  {d.ring && <Dot color={isSelected ? '#fff' : 'var(--cc-primary)'} />}
-                  {d.journal && <Dot color={isSelected ? '#fff' : '#a566ff'} />}
-                  {d.teacherNote && <Dot color={isSelected ? '#fff' : '#ff8a00'} />}
+                  {d.played && <Dot color={isSelected ? 'var(--cc-primary-ink)' : 'var(--cc-success)'} />}
+                  {d.ring && <Dot color={isSelected ? 'var(--cc-primary-ink)' : 'var(--cc-primary)'} />}
+                  {d.journal && <Dot color={isSelected ? 'var(--cc-primary-ink)' : 'var(--cc-primary)'} />}
+                  {d.teacherNote && <Dot color={isSelected ? 'var(--cc-primary-ink)' : 'var(--cc-accent)'} />}
                 </span>
               </button>
             )

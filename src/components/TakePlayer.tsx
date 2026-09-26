@@ -13,7 +13,7 @@ const bigButtonStyle = {
   height: 72,
   borderRadius: '50%',
   background: 'var(--cc-primary)',
-  color: '#fff',
+  color: 'var(--cc-primary-ink)',
   border: 'none',
   display: 'flex',
   alignItems: 'center',
