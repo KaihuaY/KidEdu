@@ -20,7 +20,7 @@ export const MOODS: { value: 1 | 2 | 3 | 4; emoji: string; label: string }[] = [
   { value: 4, emoji: '🤩', label: 'Amazing' },
 ]
 
-export type NudgeId = 'third-take' | 'mark-1'
+export type NudgeId = 'third-take' | 'mark-1' | 'feeling'
 
 export interface Nudge {
   id: NudgeId

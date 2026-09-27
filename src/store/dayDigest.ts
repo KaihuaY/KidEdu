@@ -21,6 +21,7 @@ export interface DayDigest {
   parentStars?: ParentStars
   /** Piece ids played that day with their play counts, most played first. */
   songs: { pieceId: string | null; plays: number; sec: number }[]
+  feeling?: number
 }
 
 const STAMPS = ['goalReachedAt', 'goldReachedAt', 'bonusReachedAt'] as const
@@ -52,6 +53,7 @@ export function dayDigest(doc: ProgressDoc, day: string): DayDigest {
     records,
     parentStars: state?.parentStars,
     songs: [...songs.values()].sort((a, b) => b.plays - a.plays || b.sec - a.sec),
+    feeling: state?.feeling,
   }
 }
 

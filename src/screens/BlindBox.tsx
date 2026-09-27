@@ -152,6 +152,7 @@ function BoxesTab({ onResultShown }: { onResultShown: () => void }) {
   const profile = progress.profiles.kid
   const [opening, setOpening] = useState<Tier | null>(null)
   const [result, setResult] = useState<OpenResult | null>(null)
+  const [pendingTier, setPendingTier] = useState<Tier | null>(null)
 
   function openBox(tier: Tier) {
     if (profile.tokens[tier] <= 0 || opening) return
@@ -230,7 +231,7 @@ function BoxesTab({ onResultShown }: { onResultShown: () => void }) {
                 type="button"
                 className="cc-btn cc-btn-primary"
                 disabled={count <= 0 || opening !== null}
-                onClick={() => openBox(tier)}
+                onClick={() => setPendingTier(tier)}
                 style={{ width: '100%', animation: opening === tier ? 'cc-shake 400ms infinite' : undefined }}
               >
                 {opening === tier ? 'Opening...' : 'Open'}
@@ -239,6 +240,50 @@ function BoxesTab({ onResultShown }: { onResultShown: () => void }) {
           )
         })}
       </div>
+
+      {pendingTier && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'var(--cc-scrim)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1.5rem',
+            zIndex: 50,
+          }}
+        >
+          <div
+            data-testid="box-pin"
+            className="cc-card"
+            style={{ padding: '1.25rem', maxWidth: 420, width: '100%', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}
+          >
+            <h2 style={{ margin: 0, fontSize: '1.15rem' }}>Grown-up, unlock the {TIER_META[pendingTier].label}</h2>
+            <p style={{ margin: 0, color: 'var(--cc-ink-soft)' }}>A grown-up enters the PIN to open this box.</p>
+            <PinGate
+              pin={progress.settings.pin}
+              title="Open the box"
+              onUnlock={() => {
+                const t = pendingTier
+                setPendingTier(null)
+                openBox(t)
+              }}
+            />
+            <button
+              type="button"
+              className="cc-btn cc-btn-surface"
+              style={{ minHeight: 56 }}
+              data-testid="box-pin-cancel"
+              onClick={() => setPendingTier(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {result && (
         <BoxResultCard

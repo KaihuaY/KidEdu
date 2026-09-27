@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { navigate } from '../../router'
 import { useProgress, type ParentStars, type PianoPiece, type PianoSection, type PianoTake, type SelfRating } from '../../store/progress'
 import { markAudioPruned, setParentStars, usePiano } from '../../store/piano'
+import { averageFeeling, feelingSeries } from '../../store/feeling'
 import { daysNeedingParentRating, heardSecondsForDay, steadyBeatDots, takesForDay } from '../../store/pianoRewards'
 import { pieceSeries, trend, type SeriesKey } from '../../store/songProgress'
 import { requestJourney } from '../../store/coach'
-import { dayOffset, formatClock, localDay } from '../../store/sessions'
+import { dayOffset, formatClock, lastNDays, localDay } from '../../store/sessions'
 import { formatBytes, getRecordingStore } from '../../store/recordings'
 import { addNote } from '../../store/notes'
 import { deleteJournalEntry, journalForDay, MOODS, useJournal } from '../../store/journal'
@@ -13,6 +14,7 @@ import { deleteTeacherNote, useTeacherNotes } from '../../store/teacherNotes'
 import { dismiss, isRecordingActive, startTake, stopTake, useRecordingSession } from '../../audio/recordingSession'
 import { PinGate } from '../../components/PinGate'
 import { CoachNote } from '../../components/CoachNote'
+import { MiniLineChart } from '../../components/MiniLineChart'
 import { TakePlayer } from '../../components/TakePlayer'
 import { UploadChip } from '../../components/UploadChip'
 import { BadgeToast } from '../../components/BadgeToast'
@@ -208,7 +210,10 @@ function DayCard({
     <div className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem' }}>
         <strong style={{ fontSize: '1.05rem' }}>{dayLabel(day, today)}</strong>
-        <span style={{ color: 'var(--cc-ink-soft)', fontWeight: 700 }}>{formatClock(activeSec)} played</span>
+        <span style={{ color: 'var(--cc-ink-soft)', fontWeight: 700 }}>
+          {formatClock(activeSec)} played
+          {piano.days[day]?.feeling !== undefined && ` · 💗 ${piano.days[day]?.feeling}/10`}
+        </span>
       </div>
       <button
         type="button"
@@ -397,6 +402,11 @@ function ParentReviewContent() {
     [piano],
   )
 
+  const feeling30Days = useMemo(() => lastNDays(30, today), [today])
+  const feeling30 = useMemo(() => feelingSeries(piano, feeling30Days), [piano, feeling30Days])
+  const hasFeeling30 = feeling30.some((p) => p.value !== undefined)
+  const avgFeeling30 = useMemo(() => averageFeeling(piano, feeling30Days), [piano, feeling30Days])
+
   const [justRated, setJustRated] = useState<Record<string, string>>({})
   function handleRated(day: string, message: string) {
     setJustRated((prev) => ({ ...prev, [day]: message }))
@@ -442,6 +452,16 @@ function ParentReviewContent() {
       <p style={{ margin: 0, color: 'var(--cc-ink-soft)' }}>
         Give each day 1–3 stars. 2 stars = a silver token, 3 stars = a gold token.
       </p>
+
+      {hasFeeling30 && (
+        <div className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <strong>💗 How {kidName} felt after practice (30 days)</strong>
+          <MiniLineChart points={feeling30} min={1} max={10} title="Feeling after practice" goodDirection="up" format={(v) => `${v}/10`} />
+          {avgFeeling30 !== undefined && (
+            <span style={{ color: 'var(--cc-ink-soft)', fontSize: '0.85rem' }}>Average, last 30 days: {avgFeeling30}/10</span>
+          )}
+        </div>
+      )}
 
       {visibleDays.length === 0 ? (
         <div className="cc-card" style={{ padding: '1.25rem', textAlign: 'center' }}>

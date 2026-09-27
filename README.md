@@ -679,3 +679,34 @@ per-device preference, not a per-kid one: it's stored in `localStorage`
 under `cubeclimb.theme` on whichever device is tapped, is never synced, and
 is never part of the progress document. Tokens for the dark palette live in
 `src/index.css` under `:root[data-theme="dark"]`.
+
+## Round 11
+
+- **Compact song chips**: the "What are you playing?" row on Piano home (and
+  the "More songs" fold) now lays songs out as a two-column grid of
+  `SongChip`s, each clamped to two lines, so long song names no longer wrap
+  the whole row.
+- **How do you feel?**: once the daily ring is filled, she's asked once a day
+  to rate how she feels, 1 (😫) to 10 (🤩) - on the Record done screen, and
+  again on the Journal page if she skipped it there. Stored as
+  `piano.days[day].feeling` / `feelingAt`. A trend chart shows it on the
+  Journal page (last 14 days), the Day view (that day's number), and
+  Grown-up review (each day's header, plus a 30-day trend above the day
+  queue).
+- **PIN to open a box**: tapping "Open" on a gold/silver/bronze box now asks
+  for the grown-up PIN before opening it (tokens are only deducted after the
+  PIN is entered) - "Open another" still just clears the result, and the next
+  Open asks again.
+
+- **Streak calendar**: a collapsible month-view card (`StreakCalendar`) shows
+  the piano chain over time - ring days, "played but no ring" days, ❄️ frozen
+  days and today, with a connecting line through consecutive ring/frozen days.
+  Tap any past or today's day to open it in Day view; the month nav is capped
+  to the first month she ever practiced through the current month.
+- **Streak freeze**: missing one practice day in a Monday-Sunday week no
+  longer breaks the piano chain - the missed day is stamped ❄️ (once per
+  week) and the chain keeps counting through it. See `store/streakFreeze.ts`.
+- **Tomorrow's first song**: on the done screen she can pick which of this
+  week's songs leads off tomorrow's practice (`TomorrowFirstPicker`); the
+  choice is remembered per day in `piano.tomorrowFirst` and applied once,
+  per device, the next time she opens the app.

@@ -381,8 +381,13 @@ export interface PianoDay {
   /** Tier 3: the bonus token for reaching `settings.pianoTiers.bonusMin` minutes, and which tier the coin toss gave. */
   bonusReachedAt?: number
   bonusTier?: 'gold' | 'silver'
-  /** Journal nudges already shown today ('third-take', 'mark-1'), so each appears once a day. */
+  /** Journal nudges already shown today ('third-take', 'mark-1', 'feeling'), so each appears once a day. */
   nudges?: string[]
+  /** How she felt after filling the ring today, 1 (😫) to 10 (🤩), asked once a day (see store/feeling.ts). */
+  feeling?: number
+  feelingAt?: number
+  /** This day was skipped but a weekly streak freeze covered it, so the piano chain continued (see store/streakFreeze.ts). */
+  streakFreeze?: true
 }
 
 /** One entry in the kid's own practice journal (typed by her; a grown-up can delete behind the PIN). */
@@ -456,6 +461,8 @@ export interface PianoSection {
   records?: Records
   /** The kid's own practice journal, newest last. */
   journal?: JournalEntry[]
+  /** "Tomorrow, start with…" chosen on the done screen; applies only on `forDay` (see store/tomorrowFirst.ts). */
+  tomorrowFirst?: { pieceId: string; forDay: string; setAt: number }
   updatedAt: number
 }
 

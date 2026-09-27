@@ -6,12 +6,15 @@ import { allSongTargetsMet, pruneRecordings, setSelfRating, songTargetsForDay, u
 import { goalProgress, pianoDaysDone, practiceSecondsForDay, steadyBeatDots } from '../../store/pianoRewards'
 import { formatClock, lastNDays, localDay } from '../../store/sessions'
 import { groupPieces, pieceStatus } from '../../store/songStats'
+import { claimTomorrowFirstApply, tomorrowFirstFor } from '../../store/tomorrowFirst'
+import { StreakCalendar } from '../../components/StreakCalendar'
 import { getAudioBackend, startTake } from '../../audio/recordingSession'
 import { getRecordingStore, useLocalAudioIds } from '../../store/recordings'
 import { buildFileName, processUploadQueue } from '../../store/driveUpload'
 import { extensionFor } from '../../audio/mime'
 import { kidKey } from '../../store/kid'
 import { RingTimer } from '../../components/RingTimer'
+import { SongChip, SONG_GRID_STYLE } from '../../components/SongChip'
 import { WeekDots } from '../../components/WeekDots'
 import { BadgeToast } from '../../components/BadgeToast'
 import { CoachCard } from '../../components/CoachCard'
@@ -244,6 +247,16 @@ export function PianoHome() {
     storePieceId(id)
   }
 
+  // "Tomorrow, start with…" chosen on yesterday's done screen: pre-select it
+  // the first time Piano home opens on that day (once per device), so a
+  // later manual pick is never undone by a reload.
+  const firstSongToday = tomorrowFirstFor(progress, today)
+  useEffect(() => {
+    if (firstSongToday && claimTomorrowFirstApply(today)) pickPiece(firstSongToday.id)
+    // On mount only - the claim is what makes this a one-time nudge.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   function toggleMetronomeOpen() {
     const next = !metronomeOpen
     setMetronomeOpen(next)
@@ -285,28 +298,31 @@ export function PianoHome() {
 
       <TierStrip />
 
+      <StreakCalendar />
+
       <div className="cc-card" style={{ padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <strong>What are you playing?</strong>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        {firstSongToday && selectedPieceId === firstSongToday.id && (
+          <p data-testid="tomorrow-banner" style={{ margin: 0, fontWeight: 700, color: 'var(--cc-primary)' }}>
+            ⭐ You chose to start with {firstSongToday.name.trim()} today!
+          </p>
+        )}
+        <div style={SONG_GRID_STYLE} data-testid="week-songs">
           {groups.week.map((piece) => (
-            <button
+            <SongChip
               key={piece.id}
-              type="button"
-              className={`cc-btn ${selectedPieceId === piece.id ? 'cc-btn-primary' : 'cc-btn-surface'}`}
-              style={{ minHeight: 56 }}
+              piece={piece}
+              selected={selectedPieceId === piece.id}
               onClick={() => pickPiece(piece.id)}
-            >
-              {piece.emoji} {piece.name}
-            </button>
+              testId={`song-chip-${piece.id}`}
+            />
           ))}
-          <button
-            type="button"
-            className={`cc-btn ${selectedPieceId === null ? 'cc-btn-primary' : 'cc-btn-surface'}`}
-            style={{ minHeight: 56 }}
+          <SongChip
+            piece={{ id: 'free', name: 'Free play', emoji: '🎵' }}
+            selected={selectedPieceId === null}
             onClick={() => pickPiece(null)}
-          >
-            🎵 Free play
-          </button>
+            testId="song-chip-free"
+          />
         </div>
         {groups.more.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -322,17 +338,16 @@ export function PianoHome() {
               <span aria-hidden>{moreSongsOpen ? '▲' : '▼'}</span>
             </button>
             {moreSongsOpen && (
-              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+              <div style={SONG_GRID_STYLE}>
                 {groups.more.map((piece) => (
-                  <button
+                  <SongChip
                     key={piece.id}
-                    type="button"
-                    className={`cc-btn ${selectedPieceId === piece.id ? 'cc-btn-primary' : 'cc-btn-surface'}`}
-                    style={{ minHeight: 56, padding: '0.5rem 0.85rem', fontSize: '0.9rem' }}
+                    piece={piece}
+                    selected={selectedPieceId === piece.id}
                     onClick={() => pickPiece(piece.id)}
-                  >
-                    {piece.emoji} {piece.name}
-                  </button>
+                    small
+                    testId={`song-chip-${piece.id}`}
+                  />
                 ))}
               </div>
             )}

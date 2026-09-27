@@ -70,7 +70,7 @@ function SongRow({ piece, stats, today }: { piece: PianoPiece; stats: SongStats;
       onClick={() => navigate(`/piano/song/${piece.id}`)}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', flex: 1, minWidth: 0 }}>
-        <strong>
+        <strong className="cc-clamp-2">
           {piece.emoji} {piece.name}
         </strong>
         <span style={{ fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>

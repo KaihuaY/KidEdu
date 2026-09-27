@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { navigate, useRoute } from '../../router'
 import { useProgress, type PianoPiece, type PianoTake } from '../../store/progress'
 import { dayDigest } from '../../store/dayDigest'
+import { feelingEmoji } from '../../store/feeling'
 import { tokenEmojis } from '../../store/piano'
 import { RECORD_LABELS, type RecordKey } from '../../store/records'
 import { MOODS } from '../../store/journal'
@@ -73,7 +74,8 @@ export function DayView() {
   const digest = useMemo(() => dayDigest(progress, day), [progress, day])
   const [noteViewerIndex, setNoteViewerIndex] = useState<number | null>(null)
 
-  const isEmpty = digest.takes.length === 0 && digest.journal.length === 0 && digest.records.length === 0 && !digest.parentStars
+  const isEmpty =
+    digest.takes.length === 0 && digest.journal.length === 0 && digest.records.length === 0 && !digest.parentStars && digest.feeling === undefined
 
   return (
     <div data-testid="day-view" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1rem 1rem 2rem' }}>
@@ -124,9 +126,14 @@ export function DayView() {
         </div>
       )}
 
-      {digest.journal.length > 0 && (
+      {(digest.journal.length > 0 || digest.feeling !== undefined) && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <strong style={{ fontSize: '1.05rem' }}>📔 Journal</strong>
+          {digest.feeling !== undefined && (
+            <p data-testid="day-feeling" style={{ margin: 0, fontWeight: 700 }}>
+              💗 Feeling: {digest.feeling}/10 {feelingEmoji(digest.feeling)}
+            </p>
+          )}
           {digest.journal.map((e) => (
             <div key={e.id} data-testid="day-journal-entry" className="cc-card" style={{ padding: '0.75rem 0.9rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
               <span style={{ color: 'var(--cc-ink-soft)', fontSize: '0.8rem' }}>

@@ -20,6 +20,7 @@ import {
   type TakeCoach,
 } from './progress'
 import { bumpStreak, dayOffset, localDay } from './sessions'
+import { applyFreezeIfNeeded } from './streakFreeze'
 import { TIERS, xpForTier, type Tier } from './rewards'
 import { practiceSecondsForDay, tokenForParentStars } from './pianoRewards'
 import { getRecordingStore } from './recordings'
@@ -233,6 +234,8 @@ export interface MarkReached {
   index: number
   minutes: number
   tokens: TokenCounts
+  /** Set on the index-0 entry when reaching the ring today also applied a weekly streak freeze to a missed day. */
+  frozenDay?: string
 }
 
 /** Which PianoDay stamp records mark `index` (kept from rounds 5 and 8 so old days still read correctly). */
@@ -254,13 +257,23 @@ export function awardMarksIfReached(day: string): MarkReached[] {
   marks.forEach((mark, index) => {
     const stamp = MARK_STAMPS[index]
     if (dayState?.[stamp] || minutes < mark.minutes) return
-    update('piano', (piano) => ({
-      ...piano,
-      days: { ...piano.days, [day]: { ...piano.days[day], [stamp]: Date.now() } },
-      streak: index === 0 ? bumpStreak(piano.streak, day) : piano.streak,
-    }))
+    let frozenDay: string | null = null
+    update('piano', (piano) => {
+      const daysWithStamp = { ...piano.days, [day]: { ...piano.days[day], [stamp]: Date.now() } }
+      if (index !== 0) return { ...piano, days: daysWithStamp }
+      const frozen = applyFreezeIfNeeded(piano, day)
+      frozenDay = frozen.frozenDay
+      if (!frozenDay) return { ...piano, days: daysWithStamp, streak: bumpStreak(piano.streak, day) }
+      return {
+        ...piano,
+        days: { ...daysWithStamp, [frozenDay]: frozen.piano.days[frozenDay] },
+        streak: bumpStreak({ ...frozen.piano.streak, lastDay: dayOffset(day, -1) }, day),
+      }
+    })
     if (totalTokens(mark.tokens) > 0) grantTokens(mark.tokens)
-    reached.push({ index, minutes: mark.minutes, tokens: { ...mark.tokens } })
+    const entry: MarkReached = { index, minutes: mark.minutes, tokens: { ...mark.tokens } }
+    if (frozenDay) entry.frozenDay = frozenDay
+    reached.push(entry)
   })
   return reached
 }

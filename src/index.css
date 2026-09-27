@@ -300,6 +300,14 @@ textarea {
   animation: cc-pulse 1.1s ease-in-out infinite;
 }
 
+.cc-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
 /* A note bubble drifting up and fading out - used by the piano Aurora
    visualizer's onset "note" spawns on the Record screen. */
 @keyframes cc-float {

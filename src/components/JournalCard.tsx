@@ -1,5 +1,8 @@
 import { useState } from 'react'
+import { FeelingPicker } from './FeelingPicker'
+import { shouldAskFeeling } from '../store/feeling'
 import { addJournalEntry, appendJournalEntry, journalForDay, JOURNAL_MAX_CHARS, JOURNAL_PROMPTS, MOODS, useJournal } from '../store/journal'
+import { useProgress } from '../store/progress'
 import { localDay } from '../store/sessions'
 
 /** "9:41 AM" from a timestamp. */
@@ -15,6 +18,8 @@ function formatTime(at: number): string {
  * nudge, owned elsewhere) from Piano home.
  */
 export function JournalCard({ day = localDay() }: { day?: string }) {
+  const progress = useProgress()
+  const today = localDay()
   const allEntries = useJournal()
   const entries = journalForDay(allEntries, day)
 
@@ -46,8 +51,12 @@ export function JournalCard({ day = localDay() }: { day?: string }) {
   }
 
   return (
-    <div data-testid="journal-card" className="cc-card" style={{ padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-      <strong>📔 My journal</strong>
+    <>
+      {shouldAskFeeling(progress, today, false) && (
+        <FeelingPicker day={today} title="How do you feel after today's practice?" />
+      )}
+      <div data-testid="journal-card" className="cc-card" style={{ padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <strong>📔 My journal</strong>
 
       <div role="group" aria-label="How did practice feel?" style={{ display: 'flex', gap: '0.5rem' }}>
         {MOODS.map((m) => (
@@ -149,6 +158,7 @@ export function JournalCard({ day = localDay() }: { day?: string }) {
           ))}
         </div>
       )}
-    </div>
+      </div>
+    </>
   )
 }

@@ -7,11 +7,14 @@ import { useRecords, type RecordKey } from '../../store/records'
 import { formatClock, localDay } from '../../store/sessions'
 import { bumpLiveRepetition, dismiss, stopTake, useRecordingSession } from '../../audio/recordingSession'
 import { getLastTakeBpm, nudgeBpm, setRememberedBpm } from '../../audio/metronome'
+import { shouldAskFeeling } from '../../store/feeling'
 import { fireConfetti } from '../../components/Confetti'
 import { RingTimer } from '../../components/RingTimer'
 import { Aurora } from '../../components/Aurora'
 import { CoachCard } from '../../components/CoachCard'
+import { FeelingPicker } from '../../components/FeelingPicker'
 import { JournalNudge } from '../../components/JournalNudge'
+import { TomorrowFirstPicker } from '../../components/TomorrowFirstPicker'
 import { MetronomeStrip } from '../../components/Metronome'
 import { SelfRatingButtons } from '../../components/SelfRatingButtons'
 import { TakePlayer } from '../../components/TakePlayer'
@@ -67,6 +70,19 @@ export function Record() {
   const todayBeforeThisTake = useMemo(
     () => practiceSecondsForDay(piano.takes, today, countMode),
     [piano.takes, today, countMode],
+  )
+
+  // Whether to show the feeling picker on the done screen - memoised the same
+  // way JournalNudge memoises nudgeFor, keyed on the finished take's id, so
+  // answering (or "not now") doesn't hide it again on an unrelated re-render.
+  const doneInfo =
+    session.status === 'done' && !session.discarded
+      ? { take: piano.takes.find((t) => t.id === session.take.id) ?? session.take, goalJustReached: session.goalJustReached }
+      : null
+  const askFeeling = useMemo(
+    () => (doneInfo ? shouldAskFeeling(progress, doneInfo.take.day, doneInfo.goalJustReached, doneInfo.take.isNote ?? false) : false),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [doneInfo?.take.id],
   )
 
   // Song repeat target for the piece being recorded, if it has one - "today"
@@ -255,6 +271,11 @@ export function Record() {
             <p style={{ margin: 0, fontWeight: 700 }}>See you tomorrow! 🎹</p>
           </>
         )}
+        {session.marksJustReached.find((m) => m.index === 0)?.frozenDay && (
+          <p data-testid="streak-frozen" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>
+            ❄️ Your streak freeze kept your {piano.streak.current}-day chain going!
+          </p>
+        )}
         {session.marksJustReached
           .filter((m) => m.index > 0)
           .map((m) => (
@@ -308,7 +329,11 @@ export function Record() {
         )}
         <SelfRatingButtons value={liveSelfRating} onChange={(rating) => setSelfRating(take.id, rating)} />
         <CoachCard take={take} />
+        {askFeeling && <FeelingPicker day={take.day} />}
         <JournalNudge take={take} ringJustReached={session.goalJustReached} />
+        {!take.isNote && (session.goalJustReached || progress.piano.days[take.day]?.goalReachedAt) && (
+          <TomorrowFirstPicker today={take.day} />
+        )}
         {take.hasAudio && <TakePlayer take={take} />}
         <button type="button" className="cc-btn cc-btn-primary" style={{ minHeight: 56 }} onClick={backToPiano}>
           ✅ Done

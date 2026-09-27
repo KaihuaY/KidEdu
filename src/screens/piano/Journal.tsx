@@ -1,6 +1,9 @@
 import { navigate } from '../../router'
 import { JournalCard } from '../../components/JournalCard'
+import { MiniLineChart } from '../../components/MiniLineChart'
+import { averageFeeling, feelingSeries } from '../../store/feeling'
 import { journalForDay, MOODS, useJournal } from '../../store/journal'
+import { usePiano } from '../../store/piano'
 import { dayOffset, lastNDays, localDay } from '../../store/sessions'
 
 /** "Today", "Yesterday", or "Monday, Sep 1" for any other local day. */
@@ -23,14 +26,35 @@ function formatTime(at: number): string {
  */
 export function Journal() {
   const entries = useJournal()
+  const piano = usePiano()
   const today = localDay()
   const days = lastNDays(14, today).slice().reverse()
+  const feeling14 = lastNDays(14, today)
+  const hasFeeling = feeling14.some((d) => piano.days[d]?.feeling !== undefined)
+  const avgFeeling7 = averageFeeling(piano, lastNDays(7, today))
 
   return (
     <div data-testid="journal-screen" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1rem 1rem 2rem' }}>
       <h1 style={{ margin: 0, fontSize: '1.3rem' }}>📔 My journal</h1>
 
       <JournalCard />
+
+      {hasFeeling && (
+        <div data-testid="feeling-trend" className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <strong>💗 How I felt after practice</strong>
+          <MiniLineChart
+            points={feelingSeries(piano, feeling14)}
+            min={1}
+            max={10}
+            title="Feeling after practice"
+            goodDirection="up"
+            format={(v) => `${v}/10`}
+          />
+          {avgFeeling7 !== undefined && (
+            <span style={{ color: 'var(--cc-ink-soft)', fontSize: '0.85rem' }}>Average, last 7 days: {avgFeeling7}/10</span>
+          )}
+        </div>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         {days.map((day) => {
