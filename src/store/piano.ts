@@ -278,7 +278,8 @@ export function awardMarksIfReached(day: string): MarkReached[] {
   return reached
 }
 
-function grantTokens(counts: TokenCounts): void {
+/** Adds box tokens (and their XP) to the kid. Exported for the Teacher's star (store/teacherNotes.ts). */
+export function grantTokens(counts: TokenCounts): void {
   update('profiles', (profiles) => {
     const kid = profiles.kid
     let xp = kid.xp

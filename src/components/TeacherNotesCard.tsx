@@ -1,9 +1,10 @@
 import { useRef, useState, type ChangeEvent } from 'react'
 import { blobToDataUrl, downscaleToJpeg } from '../utils/image'
-import { addTeacherNote, useTeacherNotes } from '../store/teacherNotes'
+import { addTeacherNote, confirmedDaysFor, currentTeacherNote, teacherStarTarget, useTeacherNotes } from '../store/teacherNotes'
 import { enqueuePhotoUpload, processPhotoQueue } from '../store/photoUpload'
 import { getRecordingStore } from '../store/recordings'
 import { localDay } from '../store/sessions'
+import { useProgress } from '../store/progress'
 import { TeacherNoteViewer } from './TeacherNoteViewer'
 
 const THUMB_PX = 240
@@ -25,16 +26,20 @@ function formatDay(day: string): string {
  * caption before it's saved locally and queued for Drive.
  */
 export function TeacherNotesCard() {
+  const progress = useProgress()
   const notes = useTeacherNotes()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [pendingDay, setPendingDay] = useState(() => localDay())
   const [pendingCaption, setPendingCaption] = useState('')
+  const [pendingItems, setPendingItems] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [viewerIndex, setViewerIndex] = useState<number | null>(null)
 
   const newest = notes[0]
+  const current = currentTeacherNote(notes, localDay())
+  const target = teacherStarTarget(progress.settings)
 
   function openPicker() {
     fileInputRef.current?.click()
@@ -48,6 +53,7 @@ export function TeacherNotesCard() {
     setPendingFile(file)
     setPendingDay(localDay())
     setPendingCaption('')
+    setPendingItems('')
   }
 
   function cancelPending() {
@@ -65,7 +71,7 @@ export function TeacherNotesCard() {
         downscaleToJpeg(pendingFile, FULL_PX, FULL_QUALITY),
       ])
       const thumbDataUrl = await blobToDataUrl(thumbBlob)
-      const id = addTeacherNote({ day: pendingDay, thumbDataUrl, caption: pendingCaption })
+      const id = addTeacherNote({ day: pendingDay, thumbDataUrl, caption: pendingCaption, items: pendingItems.split('\n') })
       await getRecordingStore().putPhoto(id, fullBlob)
       enqueuePhotoUpload(id)
       void processPhotoQueue()
@@ -115,6 +121,24 @@ export function TeacherNotesCard() {
         <span style={{ color: 'var(--cc-ink-soft)', fontSize: '0.85rem' }}>No notes yet - take a photo of your lesson notebook!</span>
       )}
 
+      {current && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+          {current.items && current.items.length > 0 && (
+            <ul
+              data-testid="teacher-items-list"
+              style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}
+            >
+              {current.items.map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+          )}
+          <span data-testid="teacher-week-progress" style={{ fontSize: '0.8rem', fontWeight: 700 }}>
+            {current.starAwardedAt ? "⭐ Teacher's star earned!" : `⭐ ${confirmedDaysFor(progress, current).length} of ${target} days confirmed this week`}
+          </span>
+        </div>
+      )}
+
       <input
         ref={fileInputRef}
         type="file"
@@ -152,6 +176,18 @@ export function TeacherNotesCard() {
               onChange={(e) => setPendingCaption(e.target.value)}
               placeholder="Bars 1-8, slow and steady"
               style={{ minHeight: 44 }}
+            />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.85rem' }}>
+            What did the teacher ask this week? (optional)
+            <textarea
+              data-testid="teacher-items"
+              rows={3}
+              maxLength={260}
+              value={pendingItems}
+              onChange={(e) => setPendingItems(e.target.value)}
+              placeholder="What did the teacher ask this week? One per line (up to 3)"
+              style={{ width: '100%', resize: 'vertical' }}
             />
           </label>
           {error && <span style={{ color: 'var(--cc-danger)', fontWeight: 700 }}>{error}</span>}

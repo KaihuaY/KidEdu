@@ -4,6 +4,7 @@
 // newly-earned ids and fires toasts.
 
 import { isMissionDone } from '../store/missions'
+import { teacherStarsCount } from '../store/teacherNotes'
 import { findItem, itemsInSet, type CollectionSet } from './collection'
 import type { ProgressDoc } from '../store/progress'
 
@@ -40,6 +41,9 @@ export const BADGES: Badge[] = [
   { id: 'set-space', title: 'Space explorer', emoji: '🪐', how: 'Collect every card in the Space set.' },
   { id: 'first-legendary', title: 'Legendary!', emoji: '🌟', how: 'Win a legendary collection card.' },
   { id: 'first-bracelet', title: 'Bracelet maker', emoji: '📿', how: 'Finish your first bead bracelet.' },
+  { id: 'teacher-star-1', title: "Teacher's star", emoji: '⭐', how: 'Followed the teacher\'s note all week.' },
+  { id: 'teacher-star-4', title: "4 Teacher's stars", emoji: '⭐', how: 'Earn 4 Teacher\'s stars.' },
+  { id: 'teacher-star-10', title: "10 Teacher's stars", emoji: '⭐', how: 'Earn 10 Teacher\'s stars.' },
 ]
 
 /** Whether every card in `set` is owned (count >= 1) in `doc.collection`. */
@@ -92,6 +96,11 @@ export function earnedBadges(doc: ProgressDoc): string[] {
   if (setComplete(doc, 'space')) out.push('set-space')
   if (doc.collection.items.some((i) => findItem(i.id)?.rarity === 'legendary')) out.push('first-legendary')
   if (doc.collection.bracelets.some((b) => b.finishedAt)) out.push('first-bracelet')
+
+  const teacherStars = teacherStarsCount(doc.teacherNotes.items)
+  if (teacherStars >= 1) out.push('teacher-star-1')
+  if (teacherStars >= 4) out.push('teacher-star-4')
+  if (teacherStars >= 10) out.push('teacher-star-10')
 
   return out
 }

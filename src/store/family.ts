@@ -31,6 +31,8 @@ export interface KidSummary {
   bestDaySec: number
   /** Local YYYY-MM-DD of the most recent cube/piano activity, or null if none yet. */
   lastActiveDay: string | null
+  /** Teacher's stars earned in the last 7 days (by the awarded note's own `day`). */
+  teacherStars: number
 }
 
 export interface FamilyMember {
@@ -88,6 +90,9 @@ export function summarize(doc: ProgressDoc, today: string = localDay()): KidSumm
   // Cached records when the kid's build has written them, else computed from her takes.
   const records = doc.piano.records ?? computeRecords(doc.piano.takes, doc.piano.streak, doc.settings.pianoCountMode ?? 'recording')
 
+  const daySet = new Set(days)
+  const teacherStars = doc.teacherNotes.items.filter((n) => n.starAwardedAt && daySet.has(n.day)).length
+
   return {
     cubeStreak: profile.streak.current,
     pianoStreak: doc.piano.streak.current,
@@ -103,6 +108,7 @@ export function summarize(doc: ProgressDoc, today: string = localDay()): KidSumm
     longestTakeSec: records.longestTakeSec?.value ?? 0,
     bestDaySec: records.mostSecondsInDay?.value ?? 0,
     lastActiveDay,
+    teacherStars,
   }
 }
 

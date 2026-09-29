@@ -710,3 +710,31 @@ is never part of the progress document. Tokens for the dark palette live in
   week's songs leads off tomorrow's practice (`TomorrowFirstPicker`); the
   choice is remembered per day in `piano.tomorrowFirst` and applied once,
   per device, the next time she opens the app.
+
+## Round 12
+
+- **Songs played today**: the ring card on Piano home now shows a
+  "🎵 N songs played today" line (repetitions count as extra plays, same rule
+  as everywhere else - `store/songStats.ts`'s new `playsForDay`) right under
+  the week dots; tapping it jumps to the Songs overview.
+- **Teacher-note photo fix**: the full-size photo is no longer deleted from
+  the device after it uploads to Drive - the device that took it (usually
+  the iPad) keeps its own copy, so it still has something to show even if
+  Drive's copy becomes unreachable. The viewer also stopped linking straight
+  to Drive's `uc?export=download` URL (blocked as a cross-origin image by
+  newer browsers) and instead uses Drive's embeddable
+  `drive.google.com/thumbnail?id=…` endpoint, with an "Open in Drive ↗" link
+  alongside it and a local → Drive → stored-thumbnail fallback chain if any
+  one candidate fails to load.
+
+- **Teacher's star**: after the daily ring is filled, a reminder card shows
+  what the teacher asked this week - typed one-liners entered alongside the
+  photo (**Piano home → 📓 Add note → up to 3 short lines**), falling back to
+  the caption or the photo itself for older notes. A grown-up confirms with
+  the PIN ("Grown-up: she worked on this ✅") that she worked on it that day;
+  Nora can say it aloud or tap "Not today" instead (asked once a day). Once
+  enough days in the note's week are confirmed (**Settings → ⭐ Teacher's
+  star**, 1-7, default 3), she earns the Teacher's star - one gold token plus
+  badges at 1, 4 and 10 stars. Piano home and Grown-up review both show the
+  week's confirmed-day count; the family board adds a "⭐ Teacher's stars"
+  row for the last 7 days.

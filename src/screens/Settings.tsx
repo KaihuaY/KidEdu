@@ -28,6 +28,7 @@ import {
 import { coachStatus } from '../store/coach'
 import { adjustTokens, markAudioPruned } from '../store/piano'
 import { addNote } from '../store/notes'
+import { teacherStarTarget } from '../store/teacherNotes'
 import { APP_BUILD } from '../buildInfo'
 import { DeviceOwner } from '../components/DeviceOwner'
 import { MarksEditor } from '../components/MarksEditor'
@@ -815,6 +816,44 @@ export function Settings() {
           Nora picks one of these before she records.
         </p>
         <PianoPiecesEditor />
+      </section>
+
+      <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>⭐ Teacher's star: confirmed days per week</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <button
+            type="button"
+            data-testid="teacher-star-minus"
+            className="cc-btn cc-btn-surface"
+            style={{ minHeight: 56, minWidth: 56, padding: 0 }}
+            disabled={teacherStarTarget(settings) <= 1}
+            onClick={() =>
+              update('settings', (s) => ({ ...s, teacherStarDays: Math.max(1, teacherStarTarget(s) - 1) }))
+            }
+            aria-label="Fewer confirmed days per week"
+          >
+            −
+          </button>
+          <span data-testid="teacher-star-days" style={{ minWidth: '2.5ch', textAlign: 'center', fontWeight: 700, fontSize: '1.1rem' }}>
+            {teacherStarTarget(settings)}
+          </span>
+          <button
+            type="button"
+            data-testid="teacher-star-plus"
+            className="cc-btn cc-btn-surface"
+            style={{ minHeight: 56, minWidth: 56, padding: 0 }}
+            disabled={teacherStarTarget(settings) >= 7}
+            onClick={() =>
+              update('settings', (s) => ({ ...s, teacherStarDays: Math.min(7, teacherStarTarget(s) + 1) }))
+            }
+            aria-label="More confirmed days per week"
+          >
+            ＋
+          </button>
+        </div>
+        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+          A grown-up confirms with the PIN after the ring each day. Reaching the target earns a gold box.
+        </p>
       </section>
 
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>

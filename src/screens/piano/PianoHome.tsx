@@ -5,7 +5,7 @@ import { useProgress, type PianoPiece, type PianoTake } from '../../store/progre
 import { allSongTargetsMet, pruneRecordings, setSelfRating, songTargetsForDay, usePiano } from '../../store/piano'
 import { goalProgress, pianoDaysDone, practiceSecondsForDay, steadyBeatDots } from '../../store/pianoRewards'
 import { formatClock, lastNDays, localDay } from '../../store/sessions'
-import { groupPieces, pieceStatus } from '../../store/songStats'
+import { groupPieces, pieceStatus, playsForDay } from '../../store/songStats'
 import { claimTomorrowFirstApply, tomorrowFirstFor } from '../../store/tomorrowFirst'
 import { StreakCalendar } from '../../components/StreakCalendar'
 import { getAudioBackend, startTake } from '../../audio/recordingSession'
@@ -194,6 +194,7 @@ export function PianoHome() {
   const goalMin = goalMinutes.piano
   const week = lastNDays(7, today)
   const daysDone = useMemo(() => pianoDaysDone(piano), [piano])
+  const playsToday = useMemo(() => playsForDay(piano.takes, today), [piano.takes, today])
   const songTargets = useMemo(
     () => songTargetsForDay(pianoPieces, piano.takes, today),
     [pianoPieces, piano.takes, today],
@@ -288,6 +289,14 @@ export function PianoHome() {
         <RingTimer size={120} progress={goalProgress(countedSec, goalMin)} label={formatClock(countedSec)} sublabel={`of ${goalMin} min`} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
           <WeekDots days={week} done={daysDone} />
+          <button
+            type="button"
+            data-testid="plays-today"
+            onClick={() => navigate('/piano/songs')}
+            style={{ minHeight: 44, background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer', font: 'inherit', fontWeight: 700, color: 'var(--cc-ink)' }}
+          >
+            {playsToday === 0 ? '🎵 No songs yet today' : `🎵 ${playsToday} song${playsToday === 1 ? '' : 's'} played today`}
+          </button>
           {todayParentStars && (
             <span style={{ fontWeight: 700 }}>
               {'⭐'.repeat(todayParentStars)} from your grown-up

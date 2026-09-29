@@ -10,7 +10,7 @@ import { dayOffset, formatClock, lastNDays, localDay } from '../../store/session
 import { formatBytes, getRecordingStore } from '../../store/recordings'
 import { addNote } from '../../store/notes'
 import { deleteJournalEntry, journalForDay, MOODS, useJournal } from '../../store/journal'
-import { deleteTeacherNote, useTeacherNotes } from '../../store/teacherNotes'
+import { confirmedDaysFor, deleteTeacherNote, useTeacherNotes } from '../../store/teacherNotes'
 import { dismiss, isRecordingActive, startTake, stopTake, useRecordingSession } from '../../audio/recordingSession'
 import { PinGate } from '../../components/PinGate'
 import { CoachNote } from '../../components/CoachNote'
@@ -296,6 +296,7 @@ function SongJourneyCard({ piece, journeyParent, takes }: { piece: PianoPiece; j
 
 /** "📓 Teacher notes": every note (any week), newest first, with a delete for each - safe here since the whole screen is already PIN-gated. */
 function TeacherNotesAdminSection() {
+  const progress = useProgress()
   const notes = useTeacherNotes()
   if (notes.length === 0) return null
   return (
@@ -314,6 +315,8 @@ function TeacherNotesAdminSection() {
             {n.caption && <span style={{ color: 'var(--cc-ink-soft)' }}>{n.caption}</span>}
             <span style={{ fontSize: '0.75rem', color: 'var(--cc-ink-soft)' }}>
               {n.upload.status === 'done' ? '☁️ Saved to Drive' : '💾 Saved on this device · will upload'}
+              {' · '}
+              {confirmedDaysFor(progress, n).length} days confirmed{n.starAwardedAt ? ' · ⭐' : ''}
             </span>
           </div>
           <button

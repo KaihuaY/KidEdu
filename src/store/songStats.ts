@@ -2,6 +2,7 @@
 // grouping of the song list for Piano home. Pure functions over the doc.
 
 import type { PianoCountMode, PianoPiece, PianoTake, ProgressDoc } from './progress'
+import { takesForDay } from './pianoRewards'
 import { playsInTake } from './records'
 import { dayOffset } from './sessions'
 
@@ -26,6 +27,11 @@ export interface SongStats {
 
 function takeSec(t: PianoTake, mode: PianoCountMode): number {
   return mode === 'heard' ? t.activeSec : t.durationSec
+}
+
+/** Sum of playsInTake() over every real take on `day` - the count behind Piano home's "songs played today" line. */
+export function playsForDay(takes: PianoTake[], day: string): number {
+  return takesForDay(takes, day).reduce((sum, t) => sum + playsInTake(t), 0)
 }
 
 export function songStats(takes: PianoTake[], pieceId: string, mode: PianoCountMode = 'recording'): SongStats {

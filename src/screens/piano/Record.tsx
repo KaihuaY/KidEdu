@@ -15,6 +15,7 @@ import { CoachCard } from '../../components/CoachCard'
 import { FeelingPicker } from '../../components/FeelingPicker'
 import { JournalNudge } from '../../components/JournalNudge'
 import { TomorrowFirstPicker } from '../../components/TomorrowFirstPicker'
+import { TeacherReminder } from '../../components/TeacherReminder'
 import { MetronomeStrip } from '../../components/Metronome'
 import { SelfRatingButtons } from '../../components/SelfRatingButtons'
 import { TakePlayer } from '../../components/TakePlayer'
@@ -330,6 +331,11 @@ export function Record() {
         <SelfRatingButtons value={liveSelfRating} onChange={(rating) => setSelfRating(take.id, rating)} />
         <CoachCard take={take} />
         {askFeeling && <FeelingPicker day={take.day} />}
+        <TeacherReminder
+          day={take.day}
+          ringDone={session.goalJustReached || Boolean(progress.piano.days[take.day]?.goalReachedAt)}
+          isNote={take.isNote ?? false}
+        />
         <JournalNudge take={take} ringJustReached={session.goalJustReached} />
         {!take.isNote && (session.goalJustReached || progress.piano.days[take.day]?.goalReachedAt) && (
           <TomorrowFirstPicker today={take.day} />

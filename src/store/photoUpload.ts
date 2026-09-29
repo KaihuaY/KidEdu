@@ -140,8 +140,9 @@ async function uploadOnePhoto(
     if (parsed.ok) {
       const driveUrl = parsed.downloadUrl ?? parsed.url
       setTeacherNoteUpload(id, { status: 'done', attempts: latest.upload.attempts, driveFileId: parsed.fileId, driveUrl })
-      // Free the local copy only once the Drive copy is confirmed reachable.
-      if (driveUrl) await store.removePhoto(id)
+      // The local copy is kept: the device that took the photo (usually the
+      // iPad) keeps its full-size original, and the Drive copy is what lets
+      // other devices see it too.
     } else {
       setTeacherNoteUpload(id, { status: 'pending', attempts: latest.upload.attempts + 1, lastError: parsed.error ?? 'upload failed' })
     }

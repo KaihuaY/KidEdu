@@ -101,16 +101,17 @@ describe('enqueuePhotoUpload', () => {
 })
 
 describe('processPhotoQueue', () => {
-  it('uploads a pending note into the "- Teacher notes" subfolder, marks it done, and clears the local photo', async () => {
+  it('uploads a pending note into the "- Teacher notes" subfolder, marks it done, and keeps the local photo (the iPad keeps its full-size copy)', async () => {
     const id = addTeacherNote({ day: '2026-09-20', thumbDataUrl: 'data:,', caption: 'Week 3' })
     const fetchFn = okFetch({ ok: true, fileId: 'f1', downloadUrl: 'https://drive/dl' })
-    const store = fakePhotoStore({ [id]: new Blob([new Uint8Array(10)], { type: 'image/jpeg' }) })
+    const blob = new Blob([new Uint8Array(10)], { type: 'image/jpeg' })
+    const store = fakePhotoStore({ [id]: blob })
 
     await processPhotoQueue({ fetch: fetchFn, store, online: () => true })
 
     const note = getDoc().teacherNotes.items[0]
     expect(note.upload).toMatchObject({ status: 'done', driveFileId: 'f1', driveUrl: 'https://drive/dl' })
-    expect(await store.getPhoto(id)).toBeNull()
+    expect(await store.getPhoto(id)).toBe(blob)
 
     const [, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit]
     const payload = JSON.parse(init.body as string)

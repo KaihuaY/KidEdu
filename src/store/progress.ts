@@ -81,6 +81,8 @@ export interface Settings {
    * 30 = 🟡⚪🟤 (minutes taken from `pianoTiers` when that older setting exists).
    */
   pianoMarks?: PianoMark[]
+  /** Confirmed days per week needed for the Teacher's star; default 3 (see store/teacherNotes.ts). */
+  teacherStarDays?: number
   prizePools: {
     gold: Prize[]
     silver: Prize[]
@@ -388,6 +390,8 @@ export interface PianoDay {
   feelingAt?: number
   /** This day was skipped but a weekly streak freeze covered it, so the piano chain continued (see store/streakFreeze.ts). */
   streakFreeze?: true
+  /** A grown-up confirmed (PIN) that she worked on the teacher's note this day. */
+  teacherConfirmed?: { noteId: string; at: number }
 }
 
 /** One entry in the kid's own practice journal (typed by her; a grown-up can delete behind the PIN). */
@@ -412,6 +416,10 @@ export interface TeacherNote {
   /** Small JPEG data URL (<= 240 px, ~15 KB) so every device shows it offline. */
   thumbDataUrl: string
   caption?: string
+  /** What the teacher asked this week, one short line each (1-3). */
+  items?: string[]
+  /** Teacher's star: the week's confirmed-days target was met (see store/teacherNotes.ts). */
+  starAwardedAt?: number
   upload: {
     status: 'pending' | 'uploading' | 'done' | 'failed'
     attempts: number

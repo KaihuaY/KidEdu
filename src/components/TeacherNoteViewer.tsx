@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useProgress, type TeacherNote } from '../store/progress'
-import { deleteTeacherNote, setTeacherNoteCaption } from '../store/teacherNotes'
+import { deleteTeacherNote, driveImageUrl, driveViewUrl, setTeacherNoteCaption } from '../store/teacherNotes'
 import { getRecordingStore } from '../store/recordings'
 import { PinGate } from './PinGate'
 
@@ -10,14 +11,22 @@ function formatDay(day: string): string {
   return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+interface PhotoCandidate {
+  kind: 'local' | 'drive' | 'thumb'
+  src: string
+}
+
 /**
  * The photo itself: the local full-size copy if this device still has one,
- * else the Drive copy, else the small thumbnail. Mounted fresh (`key={note.id}`
- * by the parent) for every note, so its own photoUrl state starts clean
+ * else Drive's embeddable thumbnail endpoint, else the small stored
+ * thumbnail - falling through to the next candidate if one fails to load
+ * (e.g. a stale/unreachable Drive link). Mounted fresh (`key={note.id}` by
+ * the parent) for every note, so this component's own state starts clean
  * without needing an effect to reset it.
  */
 function NotePhoto({ note }: { note: TeacherNote }) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
+  const [failed, setFailed] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     let cancelled = false
@@ -38,8 +47,27 @@ function NotePhoto({ note }: { note: TeacherNote }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const src = photoUrl ?? note.upload.driveUrl ?? note.thumbDataUrl
-  return <img src={src} alt="Teacher note" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '0.75rem' }} />
+  const driveUrl = driveImageUrl(note)
+  const candidates: PhotoCandidate[] = [
+    photoUrl ? { kind: 'local', src: photoUrl } : undefined,
+    driveUrl ? { kind: 'drive', src: driveUrl } : undefined,
+    { kind: 'thumb', src: note.thumbDataUrl },
+  ].filter((c): c is PhotoCandidate => !!c)
+  const current = candidates.find((c) => !failed.has(c.src))
+  if (!current) return null
+
+  return (
+    <div style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, alignSelf: 'stretch' }}>
+      <img
+        data-testid="teacher-note-photo"
+        data-src-kind={current.kind}
+        src={current.src}
+        alt="Teacher note"
+        onError={() => setFailed((f) => new Set(f).add(current.src))}
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', borderRadius: '0.75rem' }}
+      />
+    </div>
+  )
 }
 
 /** The editable caption + save-state chip, same fresh-mount-per-note trick as NotePhoto above. */
@@ -94,6 +122,7 @@ export function TeacherNoteViewer({
   }, [note, onClose])
 
   if (!note) return null
+  if (typeof document === 'undefined') return null
 
   function goto(delta: number) {
     setIndex((i) => Math.max(0, Math.min(notes.length - 1, i + delta)))
@@ -106,26 +135,42 @@ export function TeacherNoteViewer({
     else setIndex((i) => Math.min(i, notes.length - 2))
   }
 
-  return (
+  const driveLink = driveViewUrl(note)
+
+  return createPortal(
     <div
       data-testid="teacher-note-viewer"
       style={{ position: 'fixed', inset: 0, background: 'rgba(20,16,10,0.92)', zIndex: 100, display: 'flex', flexDirection: 'column' }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', gap: '0.5rem' }}>
-        <button type="button" className="cc-btn cc-btn-surface" style={{ minHeight: 56 }} onClick={onClose}>
-          ✕ Close
-        </button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.75rem 1rem' }}>
         <span style={{ color: '#fff', fontWeight: 700 }}>{formatDay(note.day)}</span>
-        <button
-          type="button"
-          data-testid="teacher-note-delete"
-          className="cc-btn"
-          style={{ minHeight: 56, minWidth: 56, background: 'var(--cc-danger)', color: '#fff' }}
-          aria-label="Delete this note"
-          onClick={() => setConfirmingDelete(true)}
-        >
-          🗑️
-        </button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+          <button type="button" className="cc-btn cc-btn-surface" style={{ minHeight: 56 }} onClick={onClose}>
+            ✕ Close
+          </button>
+          {driveLink && (
+            <a
+              className="cc-btn cc-btn-surface"
+              data-testid="teacher-note-open-drive"
+              href={driveLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ minHeight: 56, textDecoration: 'none' }}
+            >
+              Open in Drive ↗
+            </a>
+          )}
+          <button
+            type="button"
+            data-testid="teacher-note-delete"
+            className="cc-btn"
+            style={{ minHeight: 56, minWidth: 56, background: 'var(--cc-danger)', color: '#fff' }}
+            aria-label="Delete this note"
+            onClick={() => setConfirmingDelete(true)}
+          >
+            🗑️
+          </button>
+        </div>
       </div>
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0 0.5rem' }}>
@@ -169,6 +214,7 @@ export function TeacherNoteViewer({
           <PinGate pin={progress.settings.pin} title="Delete this note?" onUnlock={handleDeleted} />
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   )
 }

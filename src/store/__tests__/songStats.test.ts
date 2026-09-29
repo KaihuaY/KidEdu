@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PianoPiece, PianoTake } from '../progress'
-import { formatTotal, groupPieces, recentSeries, songStats, sortSongs } from '../songStats'
+import { formatTotal, groupPieces, playsForDay, recentSeries, songStats, sortSongs } from '../songStats'
 
 let n = 0
 function take(day: string, pieceId: string | null, durationSec: number, extra: Partial<PianoTake> = {}): PianoTake {
@@ -63,5 +63,22 @@ describe('songStats', () => {
     expect(formatTotal(45 * 60)).toBe('45 min')
     expect(formatTotal(72 * 60)).toBe('1 h 12 min')
     expect(formatTotal(120 * 60)).toBe('2 h')
+  })
+})
+
+describe('playsForDay', () => {
+  it('is 0 with no takes', () => {
+    expect(playsForDay([], '2026-09-20')).toBe(0)
+  })
+
+  it('sums plays (repetitions count) for the day, ignoring notes and other days', () => {
+    const day = [
+      take('2026-09-20', 'a', 60),
+      take('2026-09-20', 'a', 30),
+      take('2026-09-20', 'a', 90, { repetitions: 3 }),
+      take('2026-09-20', 'b', 20, { isNote: true }),
+      take('2026-09-21', 'a', 45),
+    ]
+    expect(playsForDay(day, '2026-09-20')).toBe(5)
   })
 })

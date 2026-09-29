@@ -53,6 +53,13 @@ const ROWS: Row[] = [
     render: (m) => `${m.summary.badges}`,
   },
   {
+    key: 'teacherStars',
+    emoji: '⭐',
+    label: "Teacher's stars",
+    compare: (m) => m.summary.teacherStars,
+    render: (m) => `${m.summary.teacherStars}`,
+  },
+  {
     key: 'cards',
     emoji: '🃏',
     label: 'Cards',

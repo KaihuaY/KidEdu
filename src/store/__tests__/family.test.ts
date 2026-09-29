@@ -40,6 +40,7 @@ describe('summarize', () => {
       longestTakeSec: 0,
       bestDaySec: 0,
       lastActiveDay: null,
+      teacherStars: 0,
     })
   })
 
