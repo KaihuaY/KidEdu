@@ -64,8 +64,8 @@ function maxDay(days: (string | null | undefined)[]): string | null {
 export function summarize(doc: ProgressDoc, today: string = localDay()): KidSummary {
   const profile = doc.profiles.kid
   let missionsDone = 0
-  for (const hold of Object.values(profile.holds)) {
-    for (const mission of Object.values(hold.missions ?? {})) {
+  for (const hold of Object.values(profile.holds ?? {})) {
+    for (const mission of Object.values(hold?.missions ?? {})) {
       if (mission.completedAt) missionsDone += 1
     }
   }
@@ -75,23 +75,25 @@ export function summarize(doc: ProgressDoc, today: string = localDay()): KidSumm
   let pianoSecondsThisWeek = 0
   let songsMetThisWeek = 0
   for (const day of days) {
-    pianoSecondsThisWeek += practiceSecondsForDay(doc.piano.takes, day, mode)
-    const pianoDay = doc.piano.days[day] as LooseSongDay | undefined
+    pianoSecondsThisWeek += practiceSecondsForDay(doc.piano.takes ?? [], day, mode)
+    const pianoDay = doc.piano.days?.[day] as LooseSongDay | undefined
     const awarded = pianoDay?.songBeadsAwarded
     if (Array.isArray(awarded) && awarded.length > 0) songsMetThisWeek += 1
   }
 
   let beads = 0
-  for (const n of Object.values(doc.collection.beads)) beads += n
-  const braceletsFinished = doc.collection.bracelets.filter((b) => b.finishedAt).length
+  // Defensive `?.` throughout: this may be another kid's doc straight from
+  // sync, and a render-time throw here blanks the whole Home screen.
+  for (const n of Object.values(doc.collection?.beads ?? {})) beads += n
+  const braceletsFinished = (doc.collection?.bracelets ?? []).filter((b) => b?.finishedAt).length
 
-  const lastTakeDay = maxDay(doc.piano.takes.map((t) => t.day))
+  const lastTakeDay = maxDay((doc.piano.takes ?? []).map((t) => t.day))
   const lastActiveDay = maxDay([profile.streak.lastDay, doc.piano.streak.lastDay, lastTakeDay])
   // Cached records when the kid's build has written them, else computed from her takes.
-  const records = doc.piano.records ?? computeRecords(doc.piano.takes, doc.piano.streak, doc.settings.pianoCountMode ?? 'recording')
+  const records = doc.piano.records ?? computeRecords(doc.piano.takes ?? [], doc.piano.streak, doc.settings.pianoCountMode ?? 'recording')
 
   const daySet = new Set(days)
-  const teacherStars = doc.teacherNotes.items.filter((n) => n.starAwardedAt && daySet.has(n.day)).length
+  const teacherStars = (doc.teacherNotes?.items ?? []).filter((n) => n?.starAwardedAt && daySet.has(n.day)).length
 
   return {
     cubeStreak: profile.streak.current,
@@ -102,7 +104,7 @@ export function summarize(doc: ProgressDoc, today: string = localDay()): KidSumm
     badges: doc.rewards.badges?.length ?? 0,
     pianoMinutesThisWeek: Math.round(pianoSecondsThisWeek / 60),
     songsMetThisWeek,
-    cardsOwned: doc.collection.items.length,
+    cardsOwned: doc.collection?.items?.length ?? 0,
     beads,
     braceletsFinished,
     longestTakeSec: records.longestTakeSec?.value ?? 0,

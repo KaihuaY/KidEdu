@@ -53,7 +53,12 @@ function matchParams(path: string): Record<string, string> {
       const part = patternSegments[i]
       const segment = pathSegments[i]
       if (part.startsWith(':')) {
-        params[part.slice(1)] = decodeURIComponent(segment)
+        try {
+          params[part.slice(1)] = decodeURIComponent(segment)
+        } catch {
+          // A stray `%` in the hash must not take the whole app down.
+          params[part.slice(1)] = segment
+        }
       } else if (part !== segment) {
         matched = false
         break

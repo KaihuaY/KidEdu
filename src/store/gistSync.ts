@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { getDoc, importJson, mergeDocs, subscribe, type ProgressDoc } from './progress'
+import { getDoc, importJson, mergeDocs, normalizeDoc, subscribe, type ProgressDoc } from './progress'
 
 /**
  * The document as it is stored in the gist: COMPACT JSON. The human export (exportJson) is
@@ -262,7 +262,10 @@ async function harvestOtherKids(detail: GistDetail): Promise<void> {
       if (!content) continue
       const parsed: unknown = JSON.parse(content)
       if (!parsed || typeof parsed !== 'object' || (parsed as { schemaVersion?: unknown }).schemaVersion !== 1) continue
-      setRemoteKid(kid, parsed as ProgressDoc, updatedAt)
+      // Her file may come from an older build that never had a section this
+      // build reads (teacherNotes, collection, ...): fill the gaps before the
+      // family board summarises it, or Home would crash on `undefined.items`.
+      setRemoteKid(kid, normalizeDoc(parsed as Partial<ProgressDoc>), updatedAt)
     } catch {
       // Malformed remote file - ignore, the family board just won't show her yet.
     }

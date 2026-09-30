@@ -737,7 +737,13 @@ function normalizePiano(parsed: Partial<PianoSection> | undefined): PianoSection
  * changes; new optional-in-spirit fields with sane defaults are handled
  * here instead so old saves keep working).
  */
-function normalizeDoc(parsed: Partial<ProgressDoc>): ProgressDoc {
+/**
+ * Fills every section a doc is missing with defaults (and runs the legacy
+ * migrations). Exported so a doc that arrives from sync for ANOTHER kid can be
+ * made whole before anything renders it - an older build's file may lack a
+ * section this build reads (see gistSync.ts harvestOtherKids).
+ */
+export function normalizeDoc(parsed: Partial<ProgressDoc>): ProgressDoc {
   const fallback = defaultDoc()
   const mergedPrizePools = { ...fallback.settings.prizePools, ...parsed.settings?.prizePools }
   // A legacy doc only ever had `sessionMinutes`; goalMinutes.cube inherits it

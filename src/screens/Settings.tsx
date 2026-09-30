@@ -33,6 +33,7 @@ import { APP_BUILD } from '../buildInfo'
 import { DeviceOwner } from '../components/DeviceOwner'
 import { MarksEditor } from '../components/MarksEditor'
 import { lockDevice } from '../store/kid'
+import { clearLastCrash, readLastCrash } from '../components/ErrorBoundary'
 import type { Tier } from '../store/rewards'
 
 // Re-exported so BlindBox.tsx's `import { PinGate } from './Settings'` keeps working.
@@ -1316,6 +1317,7 @@ export function Settings() {
 
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', border: '2px solid var(--cc-danger)' }}>
         <h2 style={{ margin: 0, fontSize: '1.05rem', color: 'var(--cc-danger)' }}>Danger zone</h2>
+        <LastCrashPanel />
         {!confirmingReset ? (
           <button
             type="button"
@@ -1349,6 +1351,35 @@ export function Settings() {
           </div>
         )}
       </section>
+    </div>
+  )
+}
+
+/** What the error boundary last caught on this device (Settings → Danger zone), so a blank-page report can be diagnosed. */
+function LastCrashPanel() {
+  const [crash, setCrash] = useState(() => readLastCrash())
+  if (!crash) return null
+  const stackLines = crash.componentStack ? crash.componentStack.trim().split(/\r?\n/).slice(0, 6) : []
+  return (
+    <div data-testid="last-crash" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.8rem', color: 'var(--cc-ink-soft)' }}>
+      <strong style={{ color: 'var(--cc-ink)' }}>Last crash on this device · {new Date(crash.at).toLocaleString()}</strong>
+      <span style={{ wordBreak: 'break-word' }}>
+        {crash.path} — {crash.message}
+      </span>
+      {stackLines.length > 0 && (
+        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '0.7rem', maxHeight: 120, overflow: 'auto' }}>{stackLines.join('\n')}</pre>
+      )}
+      <button
+        type="button"
+        className="cc-btn cc-btn-surface"
+        style={{ minHeight: 44, alignSelf: 'flex-start' }}
+        onClick={() => {
+          clearLastCrash()
+          setCrash(null)
+        }}
+      >
+        Clear
+      </button>
     </div>
   )
 }

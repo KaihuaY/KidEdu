@@ -5,6 +5,7 @@ import { useProgress } from './store/progress'
 import { useSyncStatus, type SyncStatus } from './store/gistSync'
 import { RecordingBanner } from './components/RecordingBanner'
 import { UpdateBanner } from './components/UpdateBanner'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { ThemeToggle } from './components/ThemeToggle'
 import { Home } from './screens/Home'
 import { Wall } from './screens/Wall'
@@ -76,6 +77,9 @@ function lastAreaPath(area: 'cube' | 'piano'): string | null {
 }
 
 function Screen({ path }: { path: string }) {
+  // Dev-only: lets the headless stability check prove the error boundary
+  // catches a render crash. Vite strips this branch from production builds.
+  if (import.meta.env.DEV && path === '/crash-test') throw new Error('crash test')
   if (path === '/home') return <Home />
   if (path === '/cube' || path === '/wall') return <Wall />
   if (path === '/help') return <HelpMyCube />
@@ -122,6 +126,7 @@ function App() {
   }, [path])
 
   return (
+    <ErrorBoundary level="app">
     <Gate>
     <div className="cc-app-shell">
       <header
@@ -161,7 +166,9 @@ function App() {
         ref={mainRef}
         style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: bottomHeight }}
       >
-        <Screen path={path} />
+        <ErrorBoundary resetKey={path}>
+          <Screen path={path} />
+        </ErrorBoundary>
       </main>
 
       <div ref={bottomRef} style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 40 }}>
@@ -216,6 +223,7 @@ function App() {
       </div>
     </div>
     </Gate>
+    </ErrorBoundary>
   )
 }
 
