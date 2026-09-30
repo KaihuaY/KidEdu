@@ -1,7 +1,7 @@
 import { navigate, useRoute } from '../router'
 
 const TABS = [
-  { path: '/wall', label: 'Wall', emoji: '🧗' },
+  { path: '/wall', label: 'Map', emoji: '🧗' },
   { path: '/help', label: 'Help', emoji: '🧩' },
   { path: '/solves', label: 'Solves', emoji: '⏱️' },
 ]

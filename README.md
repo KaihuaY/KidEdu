@@ -133,17 +133,32 @@ Settings.
 
 ## Cube
 
-The Rubik's cube curriculum (`src/content/lessons.ts`) is a climbing wall of
-10 holds, unlocked one at a time from the bottom up. Each hold is 2-5 tiny
+The Rubik's cube curriculum (`src/content/lessons.ts`) is a **map**: an
+11-hold summit trail up the middle, unlocked one hold at a time from the
+bottom, plus two side branches open from day one and explorable in any
+order - 💪 **Trick Gym** (every trick, one node each) and 🎨 **Pattern Lab**
+(five pretty patterns). Each trail hold or branch node is 2-5 tiny
 **missions** (3-6 minutes each) instead of one long lesson - a mission is
 **Look → Do → Check**: look at what the piece should end up like, do the
 animated steps (replayable, tap-along practice where it fits), then check
 "does yours look like this?" against her own real cube. One "✅ Yes, I did
-it!" unlocks the next mission; finishing every mission of a hold masters it.
-Most holds past the first two also open with a **Ready?** checkpoint card
-("your cube should look like this, held like this") so there's an explicit
-hand-off from the wall below, with a one-tap way back down if her cube
-doesn't match yet.
+it!" unlocks the next mission; finishing every mission masters that hold or
+node. Most trail holds past the first two, and every side-quest node, also
+open with a **Ready?** checkpoint card ("your cube should look like this,
+held like this") so there's an explicit hand-off, with a one-tap way back
+if her cube doesn't match yet.
+
+### Colour Match Bridge
+
+Between Corner Crack and Middle Traverse sits a bridge hold: sometimes white
+already covers the whole bottom **face**, but the sides don't line up with
+their neighbours yet - not a real white **layer**. Three missions cover the
+fix: **CM1 Face or layer?** teaches the difference by sight, **CM2 Fix a
+wrong edge** pops one bad edge up into a petal and tucks it back down the
+right way, and **CM3 Fix a wrong corner** rides one Elevator to fix the
+corner that gets knocked loose along the way. After the bridge, every side
+of the bottom two rows is a genuine solid colour, matching all the way
+around.
 
 ### The daily ritual
 
@@ -157,21 +172,23 @@ you" - the one frame every mission's pictures assume. She confirms
 
 ### Every day
 
-The Wall's daily card (`src/store/dailyPlan.ts`) plans exactly one warm-up
-plus one new mission per local day, frozen once computed so it can't shift
-under her mid-session: a one-minute **🔁 Warm-up** replay of whichever
-mission she most recently finished before today (skipped entirely on day
-one, or once she's replayed everything there is), then **⭐ New** - the next
-mission in curriculum order. Warming up gives +5 XP and no token (she
-already earned one the first time); it moves straight into today's new
-mission once she confirms "Still got it? ✅". Finishing today's new mission
-shows a "Tomorrow: {next mission}" teaser with a small preview of its Look
-picture instead of the usual "Next mission ▶" button, and the Wall settles
-into "That's today's climb, {name}! 🎉 Come back tomorrow." - with a smaller
-**Climb one more ▶** underneath for a kid who wants to keep going anyway
-(never locked out). Home's Cube card mirrors the same plan
-(`cubeStatusText`), and every mission celebration offers **📤 Show someone**
-to share (or copy) a one-line brag about what she just finished.
+The Wall's daily card (`src/store/dailyPlan.ts`) plans one warm-up plus
+**pick 1 of 3** per local day, frozen once computed so it can't shift under
+her mid-session: a one-minute **🔁 Warm-up** replay of whichever mission she
+most recently finished before today (skipped entirely on day one, or once
+she's replayed everything there is), then three choices - **⭐ New**, the
+next trail mission; **💪 Gym**, today's Trick Gym pick (round-robins through
+its enabled, unmastered nodes); and **🎨 Pattern**, the Pattern Lab's own
+next pattern. The two side quests need a solved cube to start from. Finishing
+*any one* of the three earns the day's star (`cubeDay.starEarned`) - only
+finishing the trail mission also shows a "Tomorrow: {next mission}" teaser
+with a small preview of its Look picture. Once the star is earned, the Wall
+settles into "That's today's climb, {name}! 🎉 Come back tomorrow." with a
+smaller **Climb one more ▶** underneath, plus any choice she hasn't gotten
+to yet, for a kid who wants to keep going anyway (never locked out). Home's
+Cube card mirrors the same plan (`cubeStatusText`), and every mission
+celebration offers **📤 Show someone** to share (or copy) a one-line brag
+about what she just finished.
 
 ### How the app remembers
 
@@ -209,11 +226,19 @@ first replays the steps she already mastered from earlier holds, with no
 effect on her token; only walking her through *this* mission's own new step
 counts as help.
 
-**Token tiers**, one per mission (plus a bonus gold for mastering the whole
-hold): 🥇 gold - no help at all; 🥈 silver - she only used the camera to
-check, no walkthrough; 🥉 bronze - the app walked her through it. A replay
-never earns a second token but can upgrade a mission's medal if she does
-better the next time.
+**Token tiers on the trail**, one per mission (plus a bonus gold for
+mastering the whole hold): 🥇 gold - no help at all; 🥈 silver - she only
+used the camera to check, no walkthrough; 🥉 bronze - the app walked her
+through it. A replay never earns a second token but can upgrade a mission's
+medal if she does better the next time.
+
+**Side quests pay differently.** A Trick Gym or Pattern Lab mission pays 🥈
+silver normally, 🥉 bronze if she needed a walkthrough - never gold on its
+own. Mastering a side-quest node (every mission of it done) pays **XP
+only**, no token; finishing a *whole branch* - every node in it mastered -
+pays one bonus 🥇 gold token. **Settings → Cube learning** has an on/off
+toggle for each branch (on by default); turning one off hides it from the
+map and from today's choices.
 
 | # | Hold | Missions | What it teaches |
 |---|------|----------|------------------|
@@ -222,11 +247,19 @@ better the next time.
 | 2 | The White Cross Bridge | 3 | Tuck the daisy down into a white cross |
 | 3 | Corner Lookout | 2 | Find a white corner's home and park it above home, front-right |
 | 4 | Corner Crack | 3 | The Elevator rides each white corner down into place |
-| 5 | Middle Traverse | 4 | Send it Right / Send it Left place the middle-layer edges |
-| 6 | Yellow Cross Ridge | 2 | Dot → L → line → a full yellow cross on top |
-| 7 | Edge Ledge | 2 | The Fish lines up the yellow edges with their centres |
-| 8 | Corner Shuffle | 2 | Corner Swap walks the yellow corners into their own spots |
-| 9 | THE SUMMIT | 2 | The Bottom Elevator twists every corner yellow-up - fully solved! |
+| 5 | Colour Match Bridge | 3 | From a white face to a white layer: fix wrong edges, then wrong corners |
+| 6 | Middle Traverse | 4 | Send it Right / Send it Left place the middle-layer edges |
+| 7 | Yellow Cross Ridge | 2 | Dot → L → line → a full yellow cross on top |
+| 8 | Edge Ledge | 2 | The Fish lines up the yellow edges with their centres |
+| 9 | Corner Shuffle | 2 | Corner Swap walks the yellow corners into their own spots |
+| 10 | THE SUMMIT | 2 | The Bottom Elevator twists every corner yellow-up - fully solved! |
+
+### Side branches
+
+| Branch | Nodes | Missions |
+|---|---|---|
+| 💪 Trick Gym | 7, one per named trick | 3 each: learn it (do it, then again until it comes back), why it works (in taught chunks, then a teach-back), from memory |
+| 🎨 Pattern Lab | 5 pretty patterns | 1 each: make it, show someone, then undo it back to solved |
 
 Holds 1-2 and 3-4 used to each be a single combined hold (`cross` covered
 daisy-growing *and* cross-tucking; `corners` covered corner-hunting *and*

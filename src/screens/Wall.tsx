@@ -3,9 +3,18 @@ import { navigate } from '../router'
 import { useProgress, type HoldProgress, type ProfileProgress } from '../store/progress'
 import { lastNDays, logCubeSession, formatClock } from '../store/sessions'
 import { estimateDaysToSummit, estimateMinutesRemaining, useSessionTimer, type HoldMissionsSpec } from '../store/planner'
-import { firstOpenMission, missionsDoneCount, missionStars, nodeState } from '../store/missions'
-import { ensureTodaysPlan, readTodaysPlan } from '../store/dailyPlan'
-import { HOLD_ORDER, LESSON_LIST, TRAIL_LESSONS, lessonById, missionById, type Lesson } from '../content/lessons'
+import { branchProgress, firstOpenMission, isBranchEnabled, missionsDoneCount, missionStars, nodeState } from '../store/missions'
+import { ensureTodaysPlan, readTodaysPlan, type DailyPlanEntry } from '../store/dailyPlan'
+import {
+  BRANCHES,
+  HOLD_ORDER,
+  LESSON_LIST,
+  TRAIL_LESSONS,
+  isTrailLesson,
+  lessonById,
+  missionById,
+  type Lesson,
+} from '../content/lessons'
 import { fireConfetti } from '../components/Confetti'
 import { CubeTabs } from '../components/CubeTabs'
 import { RingTimer } from '../components/RingTimer'
@@ -31,6 +40,32 @@ function findNextUp(profile: ProfileProgress): NextUp | undefined {
 
 function holdSpecFor(lesson: Lesson): HoldMissionsSpec {
   return { id: lesson.id, missions: lesson.missions.map((m) => ({ id: m.id, estimatedMinutes: m.estimatedMinutes })) }
+}
+
+/** One "Today's climb" choice button: trail = primary "⭐ New", gym/pattern = surface "💪 Gym"/"🎨 Pattern"; done = ✅ + surface regardless. */
+function ChoiceButton({ choice, forceSurface }: { choice: DailyPlanEntry; forceSurface?: boolean }) {
+  const lesson = lessonById(choice.holdId)
+  if (!lesson) return null
+  const trail = isTrailLesson(lesson)
+  const meta = trail ? missionById(choice.holdId, choice.missionId) : undefined
+  const label = trail
+    ? `⭐ New · ${choice.title}${meta ? ` · ~${meta.estimatedMinutes} min` : ''}`
+    : lesson.branch === 'gym'
+      ? `💪 Gym · ${choice.title}`
+      : `🎨 Pattern · ${choice.title}`
+  const done = Boolean(choice.doneAt)
+  const primary = trail && !done && !forceSurface
+  return (
+    <button
+      type="button"
+      className={primary ? 'cc-btn cc-btn-primary' : 'cc-btn cc-btn-surface'}
+      style={{ justifyContent: 'flex-start', minHeight: 56, textAlign: 'left' }}
+      onClick={() => navigate(`/lesson/${choice.holdId}/${choice.missionId}`)}
+    >
+      {done ? '✅ ' : ''}
+      {label}
+    </button>
+  )
 }
 
 export function Wall() {
@@ -64,7 +99,10 @@ export function Wall() {
     ensureTodaysPlan()
   }, [])
   const plan = readTodaysPlan()
-  const planMissionMeta = plan.mission ? missionById(plan.mission.holdId, plan.mission.missionId) : undefined
+  const hasSideChoice = plan.choices.some((c) => {
+    const l = lessonById(c.holdId)
+    return Boolean(l?.branch)
+  })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '2rem' }}>
@@ -88,7 +126,7 @@ export function Wall() {
               </button>
             </div>
           </>
-        ) : plan.mission?.doneAt ? (
+        ) : plan.starEarned ? (
           <>
             <strong style={{ fontSize: '1.05rem' }}>
               That&apos;s today&apos;s climb, {kidName}! 🎉 Come back tomorrow.
@@ -96,7 +134,7 @@ export function Wall() {
             <button
               type="button"
               className="cc-btn cc-btn-surface"
-              style={{ alignSelf: 'flex-start' }}
+              style={{ alignSelf: 'flex-start', minHeight: 56 }}
               onClick={() => {
                 const more = findNextUp(profile)
                 if (more) navigate(`/lesson/${more.lesson.id}/${more.missionId}`)
@@ -104,6 +142,11 @@ export function Wall() {
             >
               Climb one more ▶
             </button>
+            {plan.choices
+              .filter((c) => !c.doneAt)
+              .map((choice) => (
+                <ChoiceButton key={`${choice.holdId}-${choice.missionId}`} choice={choice} forceSurface />
+              ))}
           </>
         ) : (
           <>
@@ -117,16 +160,13 @@ export function Wall() {
                 {plan.warmup.doneAt ? '✅' : '🔁'} Warm-up · {plan.warmup.title} · 1 min
               </button>
             )}
-            {plan.mission && (
-              <button
-                type="button"
-                className="cc-btn cc-btn-primary"
-                style={{ justifyContent: 'flex-start', minHeight: 56, textAlign: 'left' }}
-                onClick={() => navigate(`/lesson/${plan.mission!.holdId}/${plan.mission!.missionId}`)}
-              >
-                ⭐ New · {plan.mission.title}
-                {planMissionMeta ? ` · ~${planMissionMeta.estimatedMinutes} min` : ''}
-              </button>
+            {plan.choices.map((choice) => (
+              <ChoiceButton key={`${choice.holdId}-${choice.missionId}`} choice={choice} />
+            ))}
+            {hasSideChoice && (
+              <span style={{ fontSize: '0.8rem', color: 'var(--cc-ink-soft)', fontWeight: 700 }}>
+                needs a solved cube
+              </span>
             )}
           </>
         )}
@@ -290,6 +330,66 @@ export function Wall() {
           )
         })}
       </div>
+
+      {BRANCHES.filter((branch) => isBranchEnabled(progressDoc.settings, branch.id)).map((branch) => {
+        const progress = branchProgress(profile, LESSON_LIST, branch.id)
+        const complete = Boolean(profile.branches?.[branch.id])
+        return (
+          <div
+            key={branch.id}
+            className="cc-card"
+            style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}
+          >
+            <h2 style={{ margin: 0, fontSize: '1.1rem' }}>
+              {branch.emoji} {branch.title}
+            </h2>
+            <p style={{ margin: 0, color: 'var(--cc-ink-soft)', fontWeight: 600 }}>{branch.blurb}</p>
+            <p style={{ margin: 0, fontWeight: 700 }}>
+              {complete ? 'Complete! 🥇' : `${progress.mastered}/${progress.total} · finish all for a 🥇`}
+            </p>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
+                gap: '0.5rem',
+              }}
+            >
+              {branch.nodeIds.map((nodeId) => {
+                const nodeLesson = lessonById(nodeId)
+                if (!nodeLesson) return null
+                const nodeHold = profile.holds[nodeId]
+                const nodeMissionIds = nodeLesson.missions.map((m) => m.id)
+                const nodeDone = missionsDoneCount(nodeHold, nodeMissionIds)
+                const nodeMastered = Boolean(nodeHold?.masteredAt)
+                return (
+                  <button
+                    key={nodeId}
+                    type="button"
+                    className="cc-btn cc-btn-surface"
+                    onClick={() => navigate(`/lesson/${nodeId}`)}
+                    style={{
+                      minHeight: 64,
+                      flexDirection: 'column',
+                      gap: '0.15rem',
+                      padding: '0.5rem',
+                    }}
+                  >
+                    <span aria-hidden="true" style={{ fontSize: '1.3rem' }}>
+                      {nodeLesson.emoji}
+                    </span>
+                    <span style={{ fontWeight: 800, fontSize: '0.8rem', textAlign: 'center' }}>
+                      {nodeLesson.shortTitle ?? nodeLesson.title}
+                    </span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--cc-ink-soft)', fontWeight: 700 }}>
+                      {nodeMastered ? '✓' : `${nodeDone}/${nodeMissionIds.length}`}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
       </div>
 
       {celebrating && (

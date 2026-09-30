@@ -60,10 +60,42 @@ export function readTodaysPlan(today: string = localDay()): DailyPlan {
 
   const warmup = enrichEntry(cubeDay.warmup)
   const mission = reDeriveIfNoLongerOpen(profile, enrichEntry(cubeDay.mission))
-  const choices = enrichChoices(profile, doc.settings, cubeDay.choices)
+  const choices = todaysChoices(profile, doc.settings, cubeDay.choices, mission, today)
   const starEarned = enrichStarEarned(cubeDay.starEarned)
 
   return { day: today, warmup, mission, choices, starEarned, allDone: !mission }
+}
+
+/**
+ * Today's choice list for a stored cubeDay. A plan frozen by a pre-round-13
+ * build (or synced from one) has no `choices` at all - so compute them fresh
+ * rather than showing an empty daily card for the rest of the day. Either
+ * way the trail slot always follows the (possibly re-derived) trail
+ * `mission`: if the stored trail entry no longer matches it and isn't done,
+ * it is swapped for the real one; if there is no trail entry, `mission` is
+ * put first.
+ */
+function todaysChoices(
+  profile: ProfileProgress,
+  settings: Settings,
+  stored: { holdId: string; missionId: string }[] | undefined,
+  mission: DailyPlanEntry | undefined,
+  today: string,
+): DailyPlanEntry[] {
+  const choices = stored
+    ? enrichChoices(profile, settings, stored)
+    : computePlan(profile, LESSON_LIST, today, { branches: settings.cubeBranches }).choices
+  const trailIndex = choices.findIndex((c) => {
+    const lesson = lessonById(c.holdId)
+    return lesson ? isTrailLesson(lesson) : false
+  })
+  if (!mission) return choices
+  const sameAsMission = (c: DailyPlanEntry) => c.holdId === mission.holdId && c.missionId === mission.missionId
+  if (trailIndex < 0) return [mission, ...choices]
+  if (!sameAsMission(choices[trailIndex]) && !choices[trailIndex].doneAt) {
+    return choices.map((c, i) => (i === trailIndex ? mission : c))
+  }
+  return choices
 }
 
 /** The very next open trail mission, in wall order - the same rule Wall.tsx's `findNextUp` uses. Branch nodes (Phase 3) are never today's trail mission. */
@@ -269,8 +301,24 @@ export function ensureTodaysPlan(today: string = localDay()): DailyPlan {
 
   const warmup = enrichEntry(cubeDay.warmup)
   const mission = reDeriveIfNoLongerOpen(profile, enrichEntry(cubeDay.mission))
-  const choices = enrichChoices(profile, doc.settings, cubeDay.choices)
+  const choices = todaysChoices(profile, doc.settings, cubeDay.choices, mission, today)
   const starEarned = enrichStarEarned(cubeDay.starEarned)
+
+  // A legacy plan (no `choices` stored - frozen by an older build, or synced
+  // from one) gets today's computed choices persisted once, so the gym pick
+  // stays the same all day instead of being re-rolled on every read.
+  if (!cubeDay.choices) {
+    update('profiles', (profiles) => ({
+      ...profiles,
+      kid: {
+        ...profiles.kid,
+        cubeDay: {
+          ...profiles.kid.cubeDay!,
+          choices: choices.map((c) => ({ holdId: c.holdId, missionId: c.missionId })),
+        },
+      },
+    }))
+  }
 
   return { day: today, warmup, mission, choices, starEarned, allDone: !mission }
 }

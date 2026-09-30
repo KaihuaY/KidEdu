@@ -318,6 +318,18 @@ describe('readTodaysPlan: the frozen middle/M1 plan re-derives to colourMatch/CM
     const plan = readTodaysPlan('2026-09-30')
     expect(plan.mission?.holdId).toBe('colourMatch')
     expect(plan.mission?.missionId).toBe('CM1')
+    // A legacy plan (no `choices` stored) still offers all three picks, with the trail slot following the re-derived mission.
+    expect(plan.choices.map((c) => c.holdId)).toEqual(['colourMatch', expect.stringMatching(/^gym/), 'patterns'])
+    expect(plan.choices[0].missionId).toBe('CM1')
+
+    // ensureTodaysPlan persists those choices once, so the gym pick is stable for the rest of the day.
+    const ensured = ensureTodaysPlan('2026-09-30')
+    expect(ensured.choices).toEqual(plan.choices)
+    const stored = getDoc().profiles.kid.cubeDay
+    expect(stored?.day).toBe('2026-09-30')
+    expect(stored?.mission).toEqual({ holdId: 'middle', missionId: 'M1' })
+    expect(stored?.choices?.map((c) => c.holdId)).toEqual(plan.choices.map((c) => c.holdId))
+    expect(readTodaysPlan('2026-09-30').choices).toEqual(plan.choices)
   })
 
   it('day one (nothing mastered) still gives B1', () => {

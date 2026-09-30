@@ -2167,8 +2167,8 @@ function gymNode(trickId: string, nodeId: HoldId, emoji: string, idPrefix: strin
       {
         kind: 'do',
         title: 'Do it once',
-        text: `Watch ${trick.kidName} once, right from a solved cube.`,
-        say: 'Watch it once from a solved cube.',
+        text: `Do ${trick.kidName} once, move by move, right from a solved cube.`,
+        say: 'Do it once, move by move, from a solved cube.',
         display: learnDisplay('', alg),
         namedAlgId: trickId,
       },

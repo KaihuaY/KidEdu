@@ -7,6 +7,7 @@ import { BadgeToast } from '../components/BadgeToast'
 import { OrientationRitual, hasAckedRitual } from '../components/OrientationRitual'
 import { MissionPlayer } from '../components/MissionPlayer'
 import {
+  branchById,
   lessonById,
   missionById,
   nextHoldId,
@@ -19,12 +20,14 @@ import {
 } from '../content/lessons'
 import { getDoc, useProgress, type HelpKind, type HoldProgress } from '../store/progress'
 import {
+  completeBranch,
   completeMission,
   completeWarmup,
   isMissionDone,
   isMissionUnlocked,
   masterHold,
   missionsDoneCount,
+  type RewardScheme,
 } from '../store/missions'
 import { ensureTodaysPlan, tomorrowsMission } from '../store/dailyPlan'
 import type { Tier } from '../store/rewards'
@@ -253,9 +256,12 @@ interface Celebration {
   teaser?: { title: string; look: MissionCard }
 }
 
-function tierMessage(tier: Tier, who: string): string {
+function tierMessage(tier: Tier, who: string, scheme: RewardScheme = 'trail'): string {
   if (tier === 'gold') return `Gold token! ${who}, you did it all by yourself 🥇`
-  if (tier === 'silver') return `Silver token! ${who}, you checked with the camera 🥈`
+  if (tier === 'silver') {
+    if (scheme === 'quest') return `Silver token! Side quest done, ${who} 🥈`
+    return `Silver token! ${who}, you checked with the camera 🥈`
+  }
   return `Bronze token! ${who}, we did it together 🥉`
 }
 
@@ -298,6 +304,8 @@ export function Lesson() {
   const nextHold = nextHoldId(lesson.id)
   const nextLesson = nextHold ? lessonById(nextHold) : undefined
   const showCheckpointGate = Boolean(lesson.checkpoint) && !hold?.masteredAt && !checkpointAcked
+  const branch = lesson.branch ? branchById(lesson.branch) : undefined
+  const headerTitle = branch ? `${branch.emoji} ${branch.title} · ${lesson.title}` : `Hold ${lesson.number}: ${lesson.title}`
 
   const mission = missionId ? missionById(lesson.id, missionId) : undefined
 
@@ -317,19 +325,39 @@ export function Lesson() {
       return
     }
 
-    const tier = completeMission('kid', lesson!.id, mission.id, result.help, result.tries)
+    const scheme: RewardScheme = lesson!.branch ? 'quest' : 'trail'
+    const tier = completeMission('kid', lesson!.id, mission.id, result.help, result.tries, scheme)
     const missionIds = lesson!.missions.map((m) => m.id)
     const freshHold = getDoc().profiles.kid.holds[lesson!.id]
     const allDone = missionsDoneCount(freshHold, missionIds) === missionIds.length
 
     if (allDone) {
-      masterHold('kid', lesson!.id)
-      fireConfetti('big')
-      setCelebration({
-        message: `${who} mastered ${lesson!.title}! 🏔️ A gold token is yours!`,
-        tier: 'gold',
-        holdMastered: true,
-      })
+      masterHold('kid', lesson!.id, lesson!.branch ? 'xp' : 'gold')
+      if (lesson!.branch) {
+        const branchDef = branchById(lesson!.branch)
+        const branchDone = completeBranch('kid', LESSON_LIST, lesson!.branch)
+        if (branchDone) {
+          fireConfetti('big')
+          setCelebration({
+            message: `${who} finished the whole ${branchDef?.title ?? 'branch'}! A gold token is yours 🥇`,
+            tier: 'gold',
+            holdMastered: true,
+          })
+        } else {
+          fireConfetti('small')
+          setCelebration({
+            message: `${who} mastered ${lesson!.title}! ✨ Extra XP!`,
+            holdMastered: true,
+          })
+        }
+      } else {
+        fireConfetti('big')
+        setCelebration({
+          message: `${who} mastered ${lesson!.title}! 🏔️ A gold token is yours!`,
+          tier: 'gold',
+          holdMastered: true,
+        })
+      }
     } else {
       fireConfetti(tier === 'gold' ? 'big' : 'small')
       // completeMission() already stamped cubeDay.mission.doneAt when this
@@ -337,7 +365,7 @@ export function Lesson() {
       const plan = ensureTodaysPlan()
       const isTodaysMission = plan.mission?.holdId === lesson!.id && plan.mission?.missionId === mission.id
       setCelebration({
-        message: tierMessage(tier, who),
+        message: tierMessage(tier, who, scheme),
         tier,
         holdMastered: false,
         teaser: isTodaysMission ? tomorrowsMission(plan, LESSON_LIST) : undefined,
@@ -375,9 +403,7 @@ export function Lesson() {
               ◀
             </button>
             <div>
-              <h1 style={{ margin: 0, fontSize: '1.3rem' }}>
-                Hold {lesson.number}: {lesson.title}
-              </h1>
+              <h1 style={{ margin: 0, fontSize: '1.3rem' }}>{headerTitle}</h1>
               <p style={{ margin: '0.2rem 0 0', color: 'var(--cc-ink-soft)', fontWeight: 600 }}>{lesson.goal}</p>
             </div>
           </div>
@@ -488,7 +514,7 @@ export function Lesson() {
                   >
                     Keep going
                   </button>
-                  {celebration.holdMastered && nextHold && (
+                  {celebration.holdMastered && !lesson.branch && nextHold && (
                     <button
                       type="button"
                       className="cc-btn cc-btn-primary"
@@ -500,9 +526,21 @@ export function Lesson() {
                       Next hold ▶
                     </button>
                   )}
-                  {celebration.holdMastered && !nextHold && (
+                  {celebration.holdMastered && !lesson.branch && !nextHold && (
                     <button type="button" className="cc-btn cc-btn-primary" onClick={() => navigate('/wall')}>
                       Back to the Wall
+                    </button>
+                  )}
+                  {celebration.holdMastered && lesson.branch && (
+                    <button
+                      type="button"
+                      className="cc-btn cc-btn-primary"
+                      onClick={() => {
+                        setCelebration(null)
+                        navigate('/wall')
+                      }}
+                    >
+                      Back to the map
                     </button>
                   )}
                   {!celebration.holdMastered && mission && nextMissionId(lesson, mission.id) && (

@@ -809,6 +809,31 @@ export function Settings() {
         <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
           Off by default - she learns the moves by their friendly names first.
         </p>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 700, minHeight: 56 }}>
+          <input
+            type="checkbox"
+            checked={settings.cubeBranches?.gym ?? true}
+            onChange={(e) =>
+              update('settings', (s) => ({ ...s, cubeBranches: { ...s.cubeBranches, gym: e.target.checked } }))
+            }
+            style={{ width: 24, height: 24 }}
+          />
+          💪 Trick Gym side quests
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 700, minHeight: 56 }}>
+          <input
+            type="checkbox"
+            checked={settings.cubeBranches?.patterns ?? true}
+            onChange={(e) =>
+              update('settings', (s) => ({ ...s, cubeBranches: { ...s.cubeBranches, patterns: e.target.checked } }))
+            }
+            style={{ width: 24, height: 24 }}
+          />
+          🎨 Pattern Lab side quests
+        </label>
+        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+          Off hides that branch from the map and from today&apos;s choices.
+        </p>
       </section>
 
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>

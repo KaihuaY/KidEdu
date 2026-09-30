@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { BADGES, earnedBadges } from '../badges'
 import { itemsInSet } from '../collection'
+import { branchById } from '../lessons'
 import { defaultDoc, resetAll, type Bracelet, type MissionProgress, type OwnedItem, type PianoTake, type ProgressDoc } from '../../store/progress'
 
 // Same in-memory localStorage mock used by src/store/__tests__/progress.test.ts,
@@ -183,6 +184,40 @@ describe('earnedBadges - collection', () => {
 
     doc.collection.bracelets = [bracelet({ finishedAt: 5 })]
     expect(earnedBadges(doc)).toContain('first-bracelet')
+  })
+})
+
+describe('earnedBadges - cube side branches (round 13)', () => {
+  it('first-pattern fires once any Pattern Lab mission is done, before the node is mastered', () => {
+    const doc: ProgressDoc = defaultDoc()
+    expect(earnedBadges(doc)).not.toContain('first-pattern')
+
+    doc.profiles.kid.holds.patterns = { stages: {}, missions: { PL1: doneMission() } }
+    expect(earnedBadges(doc)).toContain('first-pattern')
+    expect(earnedBadges(doc)).not.toContain('pattern-lab-all')
+  })
+
+  it('pattern-lab-all fires once the Pattern Lab node is mastered', () => {
+    const doc: ProgressDoc = defaultDoc()
+    doc.profiles.kid.holds.patterns = { stages: {}, missions: {}, masteredAt: 1 }
+    expect(earnedBadges(doc)).toContain('pattern-lab-all')
+    expect(earnedBadges(doc)).toContain('first-pattern')
+  })
+
+  it('trick-gym-all fires only once every Trick Gym node is mastered', () => {
+    const doc: ProgressDoc = defaultDoc()
+    const gym = branchById('gym')
+    expect(gym).toBeDefined()
+
+    for (const id of gym!.nodeIds.slice(0, -1)) {
+      doc.profiles.kid.holds[id] = { stages: {}, missions: {}, masteredAt: 1 }
+    }
+    expect(earnedBadges(doc)).not.toContain('trick-gym-all')
+
+    for (const id of gym!.nodeIds) {
+      doc.profiles.kid.holds[id] = { stages: {}, missions: {}, masteredAt: 1 }
+    }
+    expect(earnedBadges(doc)).toContain('trick-gym-all')
   })
 })
 

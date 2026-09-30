@@ -6,6 +6,7 @@
 import { isMissionDone } from '../store/missions'
 import { teacherStarsCount } from '../store/teacherNotes'
 import { findItem, itemsInSet, type CollectionSet } from './collection'
+import { branchById, PATTERNS } from './lessons'
 import type { ProgressDoc } from '../store/progress'
 
 export interface Badge {
@@ -44,6 +45,9 @@ export const BADGES: Badge[] = [
   { id: 'teacher-star-1', title: "Teacher's star", emoji: '⭐', how: 'Followed the teacher\'s note all week.' },
   { id: 'teacher-star-4', title: "4 Teacher's stars", emoji: '⭐', how: 'Earn 4 Teacher\'s stars.' },
   { id: 'teacher-star-10', title: "10 Teacher's stars", emoji: '⭐', how: 'Earn 10 Teacher\'s stars.' },
+  { id: 'first-pattern', title: 'Pattern maker', emoji: '🎨', how: 'Make your first pretty pattern in the Pattern Lab.' },
+  { id: 'pattern-lab-all', title: 'Pattern Lab master', emoji: '🎨', how: 'Finish every pattern in the Pattern Lab.' },
+  { id: 'trick-gym-all', title: 'Trick Gym champion', emoji: '💪', how: 'Master all seven tricks in the Trick Gym.' },
 ]
 
 /** Whether every card in `set` is owned (count >= 1) in `doc.collection`. */
@@ -68,6 +72,13 @@ export function earnedBadges(doc: ProgressDoc): string[] {
   if (isMissionDone(kid.holds.middle, 'M4')) out.push('first-middle')
   if (isMissionDone(kid.holds.yellowCross, 'Y2')) out.push('first-yellow-cross')
   if (isMissionDone(kid.holds.cornerOrient, 'S2')) out.push('summit')
+
+  const patternsHold = kid.holds.patterns
+  if (PATTERNS.missions.some((m) => isMissionDone(patternsHold, m.id))) out.push('first-pattern')
+  if (patternsHold?.masteredAt) out.push('pattern-lab-all')
+
+  const gymBranch = branchById('gym')
+  if (gymBranch && gymBranch.nodeIds.every((id) => kid.holds[id]?.masteredAt)) out.push('trick-gym-all')
 
   const cubeStreakBest = kid.streak.best
   if (cubeStreakBest >= 3) out.push('cube-streak-3')
