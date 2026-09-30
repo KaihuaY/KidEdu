@@ -3,7 +3,7 @@ import { SOLVED, applyAlg, invertAlg, isSolved, parseAlg } from '../../engine/cu
 import { CENTER_INDICES, CORNER_FACELETS, EDGE_FACELETS } from '../../engine/pieces'
 import { NAMED_ALGS, namedAlg } from '../../engine/notation'
 import { isPhaseDone } from '../../engine/solver'
-import { yellowCrossShape } from '../../engine/progress'
+import { countCrossEdges, countDaisyPetals, countWhiteCorners, yellowCrossShape } from '../../engine/progress'
 
 // Mirrors MissionPlayer's MAX_FOLLOW_ALONG_MOVES (kept as a plain number
 // here rather than imported, since this test runs under vitest's 'node'
@@ -51,20 +51,21 @@ const MOVE_ARROWS_MOVES = new Set(['R', "R'", 'L', "L'", 'U', "U'", 'F', "F'", '
 // ---------------------------------------------------------------------------
 
 describe('hold structure', () => {
-  it('has exactly the 10 documented holds, numbered 0-9 in wall order', () => {
+  it('has exactly the 11 documented holds, numbered 0-10 in wall order', () => {
     expect(HOLD_ORDER).toEqual([
       'basecamp',
       'daisy',
       'cross',
       'cornerFind',
       'corners',
+      'colourMatch',
       'middle',
       'yellowCross',
       'yellowEdges',
       'cornerPosition',
       'cornerOrient',
     ])
-    expect(LESSON_LIST).toHaveLength(10)
+    expect(LESSON_LIST).toHaveLength(11)
     LESSON_LIST.forEach((lesson, i) => {
       expect(lesson.id).toBe(HOLD_ORDER[i])
       expect(lesson.number).toBe(i)
@@ -133,6 +134,7 @@ describe('mission structure', () => {
       'C1', 'C2', 'C3',
       'K1', 'K2',
       'E1', 'E2', 'E3',
+      'CM1', 'CM2', 'CM3',
       'M1', 'M2', 'M3', 'M4',
       'Y1', 'Y2',
       'YE1', 'YE2',
@@ -270,7 +272,7 @@ describe('mission structure', () => {
 // Goal checks
 // ---------------------------------------------------------------------------
 
-const PHASE_LEVEL_MISSION_IDS = new Set(['D4', 'C3', 'E3', 'M4', 'Y2', 'YE2', 'P2', 'S2'])
+const PHASE_LEVEL_MISSION_IDS = new Set(['D4', 'C3', 'E3', 'CM2', 'CM3', 'M4', 'Y2', 'YE2', 'P2', 'S2'])
 
 describe('mission goals', () => {
   it('goalCheck(SOLVED).done is true for every mission - a fully solved cube always satisfies every mission', () => {
@@ -311,6 +313,10 @@ describe('mission goals', () => {
       expect(missionById('cross', id)!.prereqPhase, id).toBe('daisy')
     }
     expect(missionById('corners', 'E1')!.prereqPhase).toBe('cross')
+    // CM2 (Fix a wrong edge) deliberately carries no prereqPhase - a daisy
+    // prereq would make ScanHelp rebuild a daisy over an honest white face.
+    expect(missionById('colourMatch', 'CM2')!.prereqPhase).toBeUndefined()
+    expect(missionById('colourMatch', 'CM3')!.prereqPhase).toBe('cross')
     expect(missionById('middle', 'M2')!.prereqPhase).toBe('corners')
     expect(missionById('yellowCross', 'Y1')!.prereqPhase).toBe('middle')
     expect(missionById('yellowEdges', 'YE1')!.prereqPhase).toBe('yellowCross')
@@ -410,6 +416,7 @@ describe('checkpoints', () => {
     'cross',
     'cornerFind',
     'corners',
+    'colourMatch',
     'middle',
     'yellowCross',
     'yellowEdges',
@@ -694,11 +701,70 @@ describe('Corner Crack Learn cases', () => {
   })
 })
 
+describe('Colour Match Bridge', () => {
+  it('checkpoint: a white face (bottom fully white) sends her back to Corner Crack if missing', () => {
+    expect(LESSONS.colourMatch.checkpoint?.fallbackHoldId).toBe('corners')
+    const state = checkpointState(LESSONS.colourMatch.checkpoint!)
+    expect(state.slice(27, 36)).toBe(SOLVED.slice(27, 36)) // whole D face is white
+  })
+
+  it('carries prereqs = [corners], and namedAlgIds = [elevator] only (CM3 reuses it, no new trick)', () => {
+    expect(LESSONS.colourMatch.prereqs).toEqual(['corners'])
+    expect(LESSONS.colourMatch.namedAlgIds).toEqual(['elevator'])
+  })
+
+  it('WHITE_FACE_SIDES_MISMATCHED (CM1 look): cross 2/4, corners 2/4 - an honest face, not yet a layer', () => {
+    const c = card('colourMatch', 'Face or layer?')
+    const state = learnCardState(c)
+    expect(countCrossEdges(state)).toBe(2)
+    expect(countWhiteCorners(state)).toBe(2)
+    expect(state.slice(27, 36)).toBe(SOLVED.slice(27, 36)) // still all white on D
+  })
+
+  it('WRONG_EDGE_FRONT (CM2 look): cross 1/4, corners 4/4 - popping it up makes a fresh petal', () => {
+    const c = card('colourMatch', 'One broken T? Find the wrong edge')
+    const state = learnCardState(c)
+    expect(countCrossEdges(state)).toBe(1)
+    expect(countWhiteCorners(state)).toBe(4)
+
+    const popped = card('colourMatch', 'Pop it up - it becomes a petal')
+    expect(countDaisyPetals(learnCardEndState(popped))).toBe(1)
+  })
+
+  it('CM2\'s "Line it up, tuck it down" step tucks the popped edge back down, cross 2/4', () => {
+    const c = card('colourMatch', 'Line it up, tuck it down')
+    expect(countCrossEdges(learnCardEndState(c))).toBe(2)
+  })
+
+  it("CM2's whole fix (WRONG_EDGE_FIX) takes the wrong-edge case all the way to a solved cross", () => {
+    const c = card('colourMatch', 'A whole fix, start to finish')
+    const before = learnCardState(c)
+    expect(countCrossEdges(before)).toBe(1)
+    const after = learnCardEndState(c)
+    expect(isPhaseDone(after, 'cross')).toBe(true)
+  })
+
+  it('WRONG_CORNER_FRONT (CM3 look): cross 4/4, corners 1/4 - one Elevator pops it off its wrong home', () => {
+    const c = card('colourMatch', 'One corner in the wrong spot')
+    const state = learnCardState(c)
+    expect(countCrossEdges(state)).toBe(4)
+    expect(countWhiteCorners(state)).toBe(1)
+
+    const popped = card('colourMatch', 'Pop it out with one Elevator')
+    expect(learnCardState(popped)).toBe(state)
+  })
+
+  it("CM3's last step (Ride it down) ends with every corner tucked home", () => {
+    const c = card('colourMatch', 'Ride it down')
+    expect(isPhaseDone(learnCardEndState(c), 'corners')).toBe(true)
+  })
+})
+
 describe('Middle Traverse', () => {
   const UF = 1
 
-  it('checkpoint: whole bottom layer solved, top messy, sends her back to Corner Crack if missing', () => {
-    expect(LESSONS.middle.checkpoint?.fallbackHoldId).toBe('corners')
+  it('checkpoint: whole bottom layer solved, top messy, sends her back to the Colour Match Bridge if missing', () => {
+    expect(LESSONS.middle.checkpoint?.fallbackHoldId).toBe('colourMatch')
     const state = checkpointState(LESSONS.middle.checkpoint!)
     expect(state.slice(27, 36)).toBe(SOLVED.slice(27, 36))
   })

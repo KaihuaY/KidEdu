@@ -63,6 +63,8 @@ export interface Settings {
   recordingKeepDays: number
   /** Show raw notation letters (R, U, F...) in the cube missions. Default off - Nora reads the kid-friendly names first. */
   showMoveLetters?: boolean
+  /** Per-branch on/off toggle for the Trick Gym / Pattern Lab side quests (round 13). Unset/missing branch = on. */
+  cubeBranches?: { gym?: boolean; patterns?: boolean }
   /** Default 'recording': the goal ring counts the whole recording, not just "heard" seconds. */
   pianoCountMode?: PianoCountMode
   /** Parent-entered once, synced via the private gist. Undefined = uploads off. */
@@ -127,6 +129,10 @@ export interface CubeDay {
   day: string
   warmup?: { holdId: string; missionId: string; doneAt?: number }
   mission?: { holdId: string; missionId: string; doneAt?: number }
+  /** Today's side-quest picks (round 13) - trail mission first, then one gym + one pattern node, once Phase 3 ships content. */
+  choices?: { holdId: string; missionId: string }[]
+  /** Stamped once, the first time she finishes the trail mission or any of today's `choices` - any one of them earns the star. */
+  starEarned?: { holdId: string; missionId: string; doneAt: number }
 }
 
 export interface HoldProgress {
@@ -157,6 +163,8 @@ export interface ProfileProgress {
   cubeDay?: CubeDay
   /** How many times each named trick (by alg id) was completed move-by-move; drives the fading scaffolds. */
   trickReps?: Record<string, number>
+  /** Side branches (Trick Gym / Pattern Lab) whose every node is mastered, keyed by branch id, and when. */
+  branches?: Record<string, { completedAt: number }>
 }
 
 export interface Profiles {

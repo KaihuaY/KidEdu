@@ -32,6 +32,17 @@ export function lastNDays(n: number, today: string = localDay()): string[] {
 }
 
 /**
+ * A stable, monotonically increasing integer for a local day (round 13's
+ * daily plan uses it to round-robin which Trick Gym node is today's pick, so
+ * the rotation is the same for every device on the same day and moves on by
+ * exactly one each day, with no drift or repeats).
+ */
+export function dayNumber(day: string): number {
+  const [y, m, d] = day.split('-').map(Number)
+  return Math.floor(Date.UTC(y, m - 1, d) / 86400000)
+}
+
+/**
  * Advances a streak for a practice logged on `today`: continues it if the
  * last practice was yesterday, leaves it unchanged if it was already today,
  * and otherwise restarts it at 1. `best` tracks the highest `current` ever

@@ -65,11 +65,15 @@ export type HoldId =
   | 'cross'
   | 'cornerFind'
   | 'corners'
+  | 'colourMatch'
   | 'middle'
   | 'yellowCross'
   | 'yellowEdges'
   | 'cornerPosition'
   | 'cornerOrient'
+
+/** A side branch off the trunk (round 13). Content ships in Phase 3; the id space is reserved here. */
+export type BranchId = 'gym' | 'patterns'
 
 export type { PhaseId }
 
@@ -79,6 +83,7 @@ export const HOLD_ORDER: HoldId[] = [
   'cross',
   'cornerFind',
   'corners',
+  'colourMatch',
   'middle',
   'yellowCross',
   'yellowEdges',
@@ -129,7 +134,13 @@ export interface PickOption {
 
 /** One step of a mission's "Do" phase: an animated card, a tap-along practice drill, or a case picker. */
 export type MissionStep =
-  | (MissionCard & { kind: 'do'; namedAlgId?: string; followAlong?: boolean })
+  | (MissionCard & {
+      kind: 'do'
+      namedAlgId?: string
+      followAlong?: boolean
+      /** Do this from memory (no follow-along scaffold at all) - the Trick Gym's "from memory" mission (Phase 3). */
+      fromMemory?: boolean
+    })
   | { kind: 'practice'; prompt: string; say: string; sequence: string; sequences?: string[] }
   | { kind: 'pick'; title: string; text: string; say: string; options: PickOption[] }
 
@@ -200,6 +211,14 @@ export interface Lesson {
   phaseIds: PhaseId[]
   namedAlgIds: string[]
   realCubeHint: string
+  /** Which earlier holds must be mastered before this one opens (see store/missions.ts's nodeState). Basecamp: []. */
+  prereqs: HoldId[]
+  /** Present for a Trick Gym / Pattern Lab side-quest node (Phase 3); absent for every trunk hold. */
+  branch?: BranchId
+  /** A short emoji for map chips (Phase 3+). */
+  emoji?: string
+  /** A short title for a map chip, where the full `title` would not fit. */
+  shortTitle?: string
   checkpoint?: Checkpoint
   missions: Mission[]
 }
@@ -434,6 +453,25 @@ const EDGES_OPPOSITE_FIX = `${FISH} U' ${FISH} U2`
  */
 const CORNERS_NONE_HOME = "x' R U' R' D R U R' D' R U R' D R U' R' D' x"
 
+/**
+ * Colour Match Bridge cases (round 13): D face all white, centres normal, so
+ * she is looking at an honest white FACE that does not yet line up as a
+ * white LAYER. Verified against the engine (see the plan's "Verified engine
+ * facts" table and __tests__/lessons.test.ts's 'Colour Match Bridge' suite).
+ */
+const T_PERM = "x2 R U R' U' R' F R2 U' R' U' R U R' F' x2"
+const U_PERM_A = "y' x2 R U' R U R U R U' R' U' R2 x2 y"
+const A_PERM_A = "x2 x R' U R' D2 R U' R' D2 R2 x' x2"
+
+/** White face done, but the sides do not match their neighbours yet - cross 2/4, corners 2/4. */
+const WHITE_FACE_SIDES_MISMATCHED = T_PERM
+/** One wrong edge at the front, cross 1/4, corners 4/4 - a single Elevator-scale fix. */
+const WRONG_EDGE_FRONT = U_PERM_A
+/** One wrong corner at the front, cross 4/4, corners 1/4 - one Elevator pops it to URF. */
+const WRONG_CORNER_FRONT = A_PERM_A
+/** The whole wrong-edge fix, start to finish (corners get kicked out - that is why CM3 follows CM2). */
+const WRONG_EDGE_FIX = "F2 U' R2 U' B2 U2 F2"
+
 /** Bottom layer + middle band solved, only the top messy (2 of 4 middle edges tucked). */
 const BOTTOM_LAYER_DONE_TOP_MESSY = `${GO_RIGHT} U2 ${GO_LEFT} U ${GO_RIGHT}`
 
@@ -466,6 +504,7 @@ const basecamp: Lesson = {
   namedAlgIds: [],
   realCubeHint:
     'On your real cube: hold it with yellow on top and green facing you. Try each turn slowly. Watch the colours move!',
+  prereqs: [],
   missions: [
     {
       id: 'B1',
@@ -660,6 +699,7 @@ const daisy: Lesson = {
   namedAlgIds: [],
   realCubeHint:
     'On your real cube: hold it yellow on top, green facing you. Find a white edge piece. Spin it up next to the yellow centre to make a petal. Match all four petals to grow your daisy.',
+  prereqs: ['basecamp'],
   missions: [
     {
       id: 'D1',
@@ -803,6 +843,7 @@ const cross: Lesson = {
   namedAlgIds: [],
   realCubeHint:
     "On your real cube: grow your daisy first. Turn the top until a petal's side colour matches the centre under it, then turn that side twice to tuck it down. Do all four, then peek underneath to check.",
+  prereqs: ['daisy'],
   checkpoint: {
     look: 'Four white petals stand around the yellow centre on top',
     hold: 'Yellow on top, green facing you',
@@ -934,6 +975,7 @@ const cornerFind: Lesson = {
   namedAlgIds: [],
   realCubeHint:
     "On your real cube: find any white corner. It has three colours. Its home is the gap between its other two colours. Turn the TOP until it sits right above that gap, then hold that gap at the front-right.",
+  prereqs: ['cross'],
   checkpoint: {
     look: 'A white cross on the BOTTOM, and each cross edge matches the centre beside it (little upside-down T shapes on every side)',
     hold: 'White on the BOTTOM now, yellow on top',
@@ -1031,6 +1073,7 @@ const corners: Lesson = {
   namedAlgIds: ['elevator'],
   realCubeHint:
     "On your real cube: find a white corner on the top layer. Put its home spot right below it. Do the Elevator (R U R' U') again and again until the white sticker faces down.",
+  prereqs: ['cornerFind'],
   checkpoint: {
     look: 'A white cross on the BOTTOM with matching T shapes, and a white corner parked above its home at the front-right',
     hold: 'White on the BOTTOM, yellow on TOP, green facing you',
@@ -1170,9 +1213,174 @@ const corners: Lesson = {
   ],
 }
 
+const colourMatch: Lesson = {
+  id: 'colourMatch',
+  number: 5,
+  title: 'Colour Match Bridge',
+  goal: 'Turn your white FACE into a white LAYER - every side matching, all the way around. 🌉',
+  story:
+    "White already covers the whole bottom - nice! But sometimes the sides do not line up with their neighbours yet. That is a white face, not a white layer. " +
+    'Tip your cube over, find the one broken T, and fix that piece. Then your white face becomes a real white layer.',
+  phaseIds: [],
+  namedAlgIds: ['elevator'],
+  realCubeHint:
+    'On your real cube: white should already cover the whole bottom. Tip it over and check every side - is it one solid colour, matching all the way down? If a row is split in two, that piece is in the wrong spot. Fix edges first, then corners.',
+  prereqs: ['corners'],
+  checkpoint: {
+    look: 'White all over the bottom - the sides may not match yet',
+    hold: 'White on the BOTTOM, yellow on top, green facing you',
+    say: 'Check your cube. Is white covering the whole bottom, even if the sides do not match their neighbours yet? Keep white on the bottom, yellow on top, green facing you.',
+    display: learnDisplay(WHITE_FACE_SIDES_MISMATCHED, ''),
+    stickering: 'F2L',
+    backView: true,
+    fallbackHoldId: 'corners',
+  },
+  missions: [
+    {
+      id: 'CM1',
+      title: 'Face or layer?',
+      estimatedMinutes: 3,
+      look: {
+        title: 'Face or layer?',
+        text: 'White covers the whole bottom now - but the sides might not match their neighbours yet. That is a white FACE. A white LAYER means the sides match too.',
+        say: 'White covers the whole bottom, but the sides might not match yet. That is a white face. A white layer means the sides match too.',
+        display: learnDisplay(WHITE_FACE_SIDES_MISMATCHED, ''),
+        stickering: 'F2L',
+        backView: true,
+      },
+      steps: [
+        {
+          kind: 'do',
+          title: 'A white FACE',
+          text: 'Tip your cube over and peek at each side. If a row is split into two colours instead of one, that is a broken T - a piece is in the wrong spot.',
+          say: 'Tip your cube over and peek at each side. A split row, two colours instead of one, means a piece is in the wrong spot.',
+          display: learnDisplay(WHITE_FACE_SIDES_MISMATCHED, ''),
+          stickering: 'F2L',
+          followAlong: false,
+          checklist: [
+            'On your cube: tip it over and peek at each side',
+            'Is every bottom row one whole colour?',
+            'A broken T shape means a wrong piece is there',
+          ],
+        },
+        {
+          kind: 'do',
+          title: 'A white LAYER',
+          text: 'This is what you are aiming for: every side of the bottom two rows is one solid colour, matching all the way around.',
+          say: 'This is what you are aiming for: every side of the bottom two rows is one solid colour, matching all around.',
+          display: learnDisplay(CORNERS_NONE_HOME, ''),
+          stickering: 'F2L',
+          followAlong: false,
+        },
+      ],
+      check: {
+        text: 'Did you peek at every side and spot each broken T? Count them - those are the pieces we fix next.',
+        say: 'Did you peek at every side and spot each broken T? Count them. Those are the pieces we fix next.',
+        display: learnDisplay(WHITE_FACE_SIDES_MISMATCHED, ''),
+        stickering: 'F2L',
+        backView: true,
+      },
+      goalCheck: selfReport(),
+    },
+    {
+      id: 'CM2',
+      title: 'Fix a wrong edge',
+      estimatedMinutes: 5,
+      look: {
+        title: 'One broken T? Find the wrong edge',
+        text: 'Sometimes one edge piece is in the wrong spot, even though your corners are fine. Look for the one side where the T is broken.',
+        say: 'Sometimes one edge piece is in the wrong spot. Look for the one side where the T is broken.',
+        display: learnDisplay(WRONG_EDGE_FRONT, ''),
+        stickering: 'Cross',
+        backView: true,
+      },
+      steps: [
+        {
+          kind: 'do',
+          title: 'Pop it up - it becomes a petal',
+          text: 'Turn that side TWICE. The wrong edge pops right back up onto the top, like a fresh daisy petal.',
+          say: 'Turn that side twice. The wrong edge pops back up onto the top, like a fresh daisy petal.',
+          display: learnDisplay(WRONG_EDGE_FRONT, 'F2'),
+          stickering: 'Cross',
+        },
+        {
+          kind: 'do',
+          title: 'Line it up, tuck it down',
+          text: "Turn the top until that petal's colour matches the side, then turn that side twice again. It tucks back down, matching this time.",
+          say: "Turn the top until the petal's colour matches the side, then turn that side twice. It tucks back down, matching.",
+          display: learnDisplay(`${WRONG_EDGE_FRONT} F2`, "U' R2"),
+        },
+        {
+          kind: 'do',
+          title: 'A whole fix, start to finish',
+          text: 'Here is a whole fix in one go: pop it up, turn the top, tuck it down - and the same again for any other edge that came up. Do this for every broken T. A corner might pop out on the way - the next mission fixes corners.',
+          say: 'Here is a whole fix in one go. Do this for every broken T. If a corner pops out on the way, do not worry - the next mission fixes corners.',
+          display: learnDisplay(WRONG_EDGE_FRONT, WRONG_EDGE_FIX),
+        },
+      ],
+      check: {
+        text: 'Every side shows a solid matching T again - your white layer is back!',
+        say: 'Every side shows a solid matching T again.',
+        display: learnDisplay(CORNERS_NONE_HOME, ''),
+        stickering: 'Cross',
+        backView: true,
+      },
+      goalCheck: phaseDone('cross'),
+      goalPhase: 'cross',
+    },
+    {
+      id: 'CM3',
+      title: 'Fix a wrong corner',
+      estimatedMinutes: 5,
+      look: {
+        title: 'One corner in the wrong spot',
+        text: 'Sometimes a corner is stuck in the wrong spot even though your cross is perfect. Look for the corner whose colours do not match the two sides next to it.',
+        say: 'Sometimes a corner is stuck in the wrong spot even though your cross is perfect.',
+        display: learnDisplay(WRONG_CORNER_FRONT, ''),
+        stickering: 'F2L',
+        backView: true,
+      },
+      steps: [
+        {
+          kind: 'do',
+          title: 'Pop it out with one Elevator',
+          text: 'One Elevator ride pops that corner up onto the top layer, out of the way.',
+          say: 'One Elevator ride pops that corner up onto the top layer.',
+          display: learnDisplay(WRONG_CORNER_FRONT, ELEVATOR),
+          namedAlgId: 'elevator',
+        },
+        {
+          kind: 'do',
+          title: 'Park it above home, front-right',
+          text: 'Turn the TOP layer until the corner sits right above its own home, held at the front-right - just like Corner Lookout taught you.',
+          say: 'Turn the top layer until the corner sits right above its own home, at the front-right.',
+          display: learnDisplay(`${invertAlg(ELEVATOR)} U`, "U'"),
+        },
+        {
+          kind: 'do',
+          title: 'Ride it down',
+          text: 'One more Elevator ride and it drops home, matching all around.',
+          say: 'One more Elevator ride and it drops home, matching all around.',
+          display: caseDisplay(ELEVATOR),
+          namedAlgId: 'elevator',
+        },
+      ],
+      check: {
+        text: 'A full white layer again, every corner and edge matching all the way around.',
+        say: 'A full white layer again, matching all the way around.',
+        display: learnDisplay(CORNERS_NONE_HOME, ''),
+        stickering: 'F2L',
+      },
+      goalCheck: phaseDone('corners'),
+      goalPhase: 'corners',
+      prereqPhase: 'cross',
+    },
+  ],
+}
+
 const middle: Lesson = {
   id: 'middle',
-  number: 5,
+  number: 6,
   title: 'Middle Traverse',
   goal: 'Tuck every middle edge next to its matching colour. No yellow anywhere but the top!',
   story:
@@ -1182,13 +1390,14 @@ const middle: Lesson = {
   namedAlgIds: ['goRight', 'goLeft'],
   realCubeHint:
     'On your real cube: find a top edge with no yellow sticker. Look at its front colour and decide, does it slide home to the right or the left?',
+  prereqs: ['colourMatch'],
   checkpoint: {
     look: 'The whole bottom layer is solved: white on the bottom and a full band of one colour on every side',
     hold: 'White on the bottom, yellow on top, green facing you',
     say: 'Check your cube. Is the whole bottom layer solved - white cross, white corners, and a matching band of colour all around? The top can still look messy.',
     display: learnDisplay(BOTTOM_LAYER_DONE_TOP_MESSY, ''),
     stickering: 'F2L',
-    fallbackHoldId: 'corners',
+    fallbackHoldId: 'colourMatch',
   },
   missions: [
     {
@@ -1343,7 +1552,7 @@ const middle: Lesson = {
 
 const yellowCross: Lesson = {
   id: 'yellowCross',
-  number: 6,
+  number: 7,
   title: 'Yellow Cross Ridge',
   goal: 'A yellow cross on top! Four yellow edges pointing out from the yellow centre. ☀️',
   story:
@@ -1353,6 +1562,7 @@ const yellowCross: Lesson = {
   namedAlgIds: ['yellowCross'],
   realCubeHint:
     "On your real cube: hold the L shape in the top-left, or the line going straight across. Then do F R U R' U' F'. See a dot? Just do it again.",
+  prereqs: ['middle'],
   checkpoint: {
     look: 'Two layers solved, only the top is messy',
     hold: 'Yellow on top, green facing you',
@@ -1479,7 +1689,7 @@ const yellowCross: Lesson = {
 
 const yellowEdges: Lesson = {
   id: 'yellowEdges',
-  number: 7,
+  number: 8,
   title: 'Edge Ledge',
   goal: 'Match every yellow-top edge to the colour beside it. (Corners can still look silly, that is next!)',
   story:
@@ -1489,6 +1699,7 @@ const yellowEdges: Lesson = {
   namedAlgIds: ['fish'],
   realCubeHint:
     "On your real cube: keep the yellow cross on top. Turn the top layer until two edges match the colour beside them. Side by side? Put them at the back and right, then do the Fish (R U R' U R U2 R').",
+  prereqs: ['yellowCross'],
   checkpoint: {
     look: 'A yellow cross on top',
     hold: 'Yellow on top, green facing you',
@@ -1600,7 +1811,7 @@ const yellowEdges: Lesson = {
 
 const cornerPosition: Lesson = {
   id: 'cornerPosition',
-  number: 8,
+  number: 9,
   title: 'Corner Shuffle',
   goal: "Every corner in its own spot around the top. (Twisted colours are fine for now, that's next!)",
   story:
@@ -1611,6 +1822,7 @@ const cornerPosition: Lesson = {
   namedAlgIds: ['cornerCycle'],
   realCubeHint:
     'On your real cube: find a corner that is already in the right spot (even if twisted) and hold it at the front-right. Do Corner Shuffle to walk the other three home. Repeat once or twice.',
+  prereqs: ['yellowEdges'],
   checkpoint: {
     look: 'Yellow cross on top and every cross edge matches the centre under it',
     hold: 'Yellow on top, green facing you',
@@ -1686,7 +1898,7 @@ const cornerPosition: Lesson = {
 
 const cornerOrient: Lesson = {
   id: 'cornerOrient',
-  number: 9,
+  number: 10,
   title: 'THE SUMMIT',
   goal: 'A fully solved cube! Every corner twisted just right, every colour matched. You made it to the top! 🏔️',
   story:
@@ -1697,6 +1909,7 @@ const cornerOrient: Lesson = {
   namedAlgIds: ['cornerTwist'],
   realCubeHint:
     "On your real cube: put a corner that needs twisting at the front-right-top. Do the Bottom Elevator (R' D' R D) 2 or 4 times until it shows yellow on top. Turn ONLY the top layer to bring the next corner to the front-right and repeat, don't turn anything else. When every corner shows yellow on top, you solved the whole cube!",
+  prereqs: ['cornerPosition'],
   checkpoint: {
     look: 'Every corner sits in its own spot (its three colours match the centres around it), some may be twisted',
     hold: 'Yellow on top, green facing you',
@@ -1801,6 +2014,7 @@ export const LESSONS: Record<HoldId, Lesson> = {
   cross,
   cornerFind,
   corners,
+  colourMatch,
   middle,
   yellowCross,
   yellowEdges,
@@ -1808,7 +2022,16 @@ export const LESSONS: Record<HoldId, Lesson> = {
   cornerOrient,
 }
 
-export const LESSON_LIST: Lesson[] = HOLD_ORDER.map((id) => LESSONS[id])
+/** The 11-hold trunk, in wall order. Side branches (Phase 3) are appended onto LESSON_LIST, never into this. */
+export const TRAIL_LESSONS: Lesson[] = HOLD_ORDER.map((id) => LESSONS[id])
+
+/** Trail holds only, for now (branches get appended here in Phase 3). */
+export const LESSON_LIST: Lesson[] = [...TRAIL_LESSONS]
+
+/** True for a trunk hold (no `branch`), false for a Trick Gym / Pattern Lab side-quest node. */
+export function isTrailLesson(lesson: Lesson): boolean {
+  return !lesson.branch
+}
 
 export function lessonById(id: string): Lesson | undefined {
   return LESSONS[id as HoldId]
@@ -1849,3 +2072,7 @@ export const ALL_MISSION_IDS: string[] = LESSON_LIST.flatMap((l) => l.missions.m
 
 // Re-exported so screens can go straight to the shared source of truth.
 export { NAMED_ALGS }
+
+// Re-exported so Phase 3's gym/pattern content (and its tests) can reuse the
+// same "repeat this alg N times" helper the trail's own cards already use.
+export { repeatAlg }

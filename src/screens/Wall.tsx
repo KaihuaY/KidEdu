@@ -3,9 +3,9 @@ import { navigate } from '../router'
 import { useProgress, type HoldProgress, type ProfileProgress } from '../store/progress'
 import { lastNDays, logCubeSession, formatClock } from '../store/sessions'
 import { estimateDaysToSummit, estimateMinutesRemaining, useSessionTimer, type HoldMissionsSpec } from '../store/planner'
-import { firstOpenMission, missionsDoneCount, missionStars } from '../store/missions'
+import { firstOpenMission, missionsDoneCount, missionStars, nodeState } from '../store/missions'
 import { ensureTodaysPlan, readTodaysPlan } from '../store/dailyPlan'
-import { HOLD_ORDER, LESSON_LIST, missionById, type Lesson } from '../content/lessons'
+import { HOLD_ORDER, LESSON_LIST, TRAIL_LESSONS, lessonById, missionById, type Lesson } from '../content/lessons'
 import { fireConfetti } from '../components/Confetti'
 import { CubeTabs } from '../components/CubeTabs'
 import { RingTimer } from '../components/RingTimer'
@@ -13,29 +13,17 @@ import { WeekDots } from '../components/WeekDots'
 import { TokenPill } from '../components/TokenPill'
 import { BadgeToast } from '../components/BadgeToast'
 
-type HoldState = 'locked' | 'open' | 'mastered'
-
-/** Kid climbs the wall one hold at a time - each one unlocks once the previous is mastered. */
-function holdState(profile: ProfileProgress, index: number): HoldState {
-  const id = HOLD_ORDER[index]
-  if (profile.holds[id]?.masteredAt) return 'mastered'
-  if (index === 0) return 'open'
-  const prevId = HOLD_ORDER[index - 1]
-  return profile.holds[prevId]?.masteredAt ? 'open' : 'locked'
-}
-
 interface NextUp {
   lesson: Lesson
   missionId: string
 }
 
-/** The very next thing to do: the first open mission of the first hold that isn't mastered yet. */
+/** The very next thing to do: the first open mission of the first trail hold that isn't mastered yet. */
 function findNextUp(profile: ProfileProgress): NextUp | undefined {
-  for (const lesson of LESSON_LIST) {
-    const hold = profile.holds[lesson.id]
-    if (hold?.masteredAt) continue
+  for (const lesson of TRAIL_LESSONS) {
+    if (nodeState(profile, lesson) !== 'open') continue
     const missionIds = lesson.missions.map((m) => m.id)
-    const openId = firstOpenMission(hold, missionIds)
+    const openId = firstOpenMission(profile.holds[lesson.id], missionIds)
     if (openId) return { lesson, missionId: openId }
   }
   return undefined
@@ -202,7 +190,7 @@ export function Wall() {
         <h2 style={{ margin: '0 0 0.5rem 0.25rem', fontSize: '1.1rem' }}>{kidName}&apos;s Wall</h2>
         {wallOrder.map((index, rowPos) => {
           const lesson = LESSON_LIST[index]
-          const state = holdState(profile, index)
+          const state = nodeState(profile, lesson)
           const hold: HoldProgress | undefined = profile.holds[lesson.id]
           const missionIds = lesson.missions.map((m) => m.id)
           const done = missionsDoneCount(hold, missionIds)
@@ -294,7 +282,7 @@ export function Wall() {
                   </span>
                 ) : (
                   <span style={{ fontSize: '0.8rem', color: 'var(--cc-ink-soft)', fontWeight: 700 }}>
-                    Master the hold below first
+                    Master {lessonById(lesson.prereqs[0])?.title ?? 'the hold below'} first
                   </span>
                 )}
               </button>

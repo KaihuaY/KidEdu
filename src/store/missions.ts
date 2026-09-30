@@ -5,17 +5,36 @@
 // (`masterHold`, moved here from the old Watch/Try/Spot/Climb Lesson screen).
 
 import { useEffect } from 'react'
-import { update, type HelpKind, type HoldProgress, type MissionProgress, type ProfileProgress } from './progress'
+import type { BranchId, Lesson } from '../content/lessons'
+import { update, type HelpKind, type HoldProgress, type MissionProgress, type ProfileProgress, type Settings } from './progress'
 import { dayOffset, localDay } from './sessions'
 import { starsForTier, xpForTier, type Tier } from './rewards'
 
 type ProfileId = 'kid' | 'parent'
 
-/** gold: no help at all - silver: checked with the scanner - bronze: walked through it. */
-export function tierForHelp(help: HelpKind): Tier {
+/** 'trail' (default): the trunk's usual gold/silver/bronze-by-help rule. 'quest': a side quest, which never pays gold for a mission (only branch mastery does) - a walkthrough is bronze, anything else (no help or a scan) is silver. */
+export type RewardScheme = 'trail' | 'quest'
+
+/** gold: no help at all - silver: checked with the scanner - bronze: walked through it (trail). A 'quest' scheme instead pays silver unless a walkthrough was needed (bronze) - see RewardScheme. */
+export function tierForHelp(help: HelpKind, scheme: RewardScheme = 'trail'): Tier {
+  if (scheme === 'quest') return help === 'walkthrough' ? 'bronze' : 'silver'
   if (help === 'none') return 'gold'
   if (help === 'scan') return 'silver'
   return 'bronze'
+}
+
+/**
+ * Sequential-unlock state of one map node (trail hold or, from Phase 3, a
+ * side-quest node): mastered once the profile says so, open once every
+ * declared prereq is mastered, locked otherwise. Basecamp (prereqs: [])
+ * reads open on a brand-new profile - `[].every(...)` is vacuously true.
+ */
+export type NodeState = 'locked' | 'open' | 'mastered'
+
+export function nodeState(profile: ProfileProgress, lesson: Lesson): NodeState {
+  if (profile.holds[lesson.id]?.masteredAt) return 'mastered'
+  const everyPrereqMastered = lesson.prereqs.every((id) => profile.holds[id]?.masteredAt)
+  return everyPrereqMastered ? 'open' : 'locked'
 }
 
 const TIER_RANK: Record<Tier, number> = { bronze: 1, silver: 2, gold: 3 }
@@ -88,8 +107,9 @@ export function completeMission(
   missionId: string,
   help: HelpKind,
   tries: number,
+  scheme: RewardScheme = 'trail',
 ): Tier {
-  const tier = tierForHelp(help)
+  const tier = tierForHelp(help, scheme)
   const today = localDay()
   let recordedTier: Tier = tier
   update('profiles', (profiles) => {
@@ -133,23 +153,39 @@ export function completeMission(
 
 /**
  * Stamps `cubeDay.mission.doneAt` when this completion is today's planned
- * mission (a plain "Yes, I did it!" on the mission the daily plan already
- * pointed at). A no-op otherwise - e.g. replaying an older mission, or a
- * mission that isn't today's plan (nothing to stamp), or one already
- * stamped (idempotent, never moves `doneAt` forward on a later replay).
+ * trail mission (a plain "Yes, I did it!" on the mission the daily plan
+ * already pointed at) - unchanged from before round 13. Additionally stamps
+ * `cubeDay.starEarned` once (never moved once set) when the completion is
+ * either that trail mission or any of today's `cubeDay.choices` entries (a
+ * side quest) - any one of the day's picks earns the star. A no-op when
+ * there's no cubeDay at all, or when neither stamp has anything new to say.
  */
 export function markDailyMissionDone(profileId: ProfileId, holdId: string, missionId: string): void {
   update('profiles', (profiles) => {
     const profile = profiles[profileId]
     const cubeDay = profile.cubeDay
-    const plannedMission = cubeDay?.mission
-    if (!plannedMission || plannedMission.holdId !== holdId || plannedMission.missionId !== missionId) return profiles
-    if (plannedMission.doneAt) return profiles
+    if (!cubeDay) return profiles
+
+    const plannedMission = cubeDay.mission
+    const isTrailMission = Boolean(
+      plannedMission && plannedMission.holdId === holdId && plannedMission.missionId === missionId,
+    )
+    const isChoice = Boolean(cubeDay.choices?.some((c) => c.holdId === holdId && c.missionId === missionId))
+
+    const nextMission =
+      isTrailMission && plannedMission && !plannedMission.doneAt
+        ? { ...plannedMission, doneAt: Date.now() }
+        : plannedMission
+
+    const nextStarEarned =
+      (isTrailMission || isChoice) && !cubeDay.starEarned ? { holdId, missionId, doneAt: Date.now() } : cubeDay.starEarned
+
+    if (nextMission === plannedMission && nextStarEarned === cubeDay.starEarned) return profiles
     return {
       ...profiles,
       [profileId]: {
         ...profile,
-        cubeDay: { ...cubeDay!, mission: { ...plannedMission, doneAt: Date.now() } },
+        cubeDay: { ...cubeDay, mission: nextMission, starEarned: nextStarEarned },
       },
     }
   })
@@ -319,12 +355,15 @@ export function addMissionMinutes(profileId: ProfileId, holdId: string, missionI
 }
 
 /**
- * Marks a whole hold mastered (every mission of it finished) and awards the
- * extra gold token that comes with finishing the wall. Idempotent - calling
- * it again for an already-mastered hold changes nothing. Returns true only
- * the one time this call is what mastered it.
+ * Marks a whole hold mastered (every mission of it finished). Idempotent -
+ * calling it again for an already-mastered hold changes nothing. Returns
+ * true only the one time this call is what mastered it. `reward` (default
+ * 'gold', the trunk's rule) awards the extra gold token that comes with
+ * finishing a trail hold; a side-quest node (Phase 3) instead passes 'xp' -
+ * mastering the node is worth XP only, since gold comes from finishing the
+ * *whole branch* (see completeBranch), not one node of it.
  */
-export function masterHold(profileId: ProfileId, holdId: string): boolean {
+export function masterHold(profileId: ProfileId, holdId: string, reward: 'gold' | 'xp' = 'gold'): boolean {
   let justMastered = false
   update('profiles', (profiles) => {
     const profile = profiles[profileId]
@@ -336,11 +375,65 @@ export function masterHold(profileId: ProfileId, holdId: string): boolean {
       [profileId]: {
         ...profile,
         holds: { ...profile.holds, [holdId]: { ...hold, masteredAt: Date.now() } },
-        tokens: { ...profile.tokens, gold: profile.tokens.gold + 1 },
+        tokens: reward === 'gold' ? { ...profile.tokens, gold: profile.tokens.gold + 1 } : profile.tokens,
+        xp: reward === 'xp' ? profile.xp + xpForTier('gold') : profile.xp,
       },
     }
   })
   return justMastered
+}
+
+// ---------------------------------------------------------------------------
+// Side branches (round 13, Phase 2 store rules - content ships in Phase 3):
+// per-branch on/off toggle and the "finish the whole branch" bonus. Neither
+// function reaches for a Phase-3-only branch registry - callers pass the
+// list of lessons to consider (usually LESSON_LIST, once it carries branch
+// nodes), and progress is read straight off `lesson.branch`.
+// ---------------------------------------------------------------------------
+
+/** Whether a branch is switched on in Settings; unset/missing = on by default. */
+export function isBranchEnabled(settings: Settings, id: BranchId): boolean {
+  return settings.cubeBranches?.[id] ?? true
+}
+
+/** How far a branch is along: how many of its nodes are mastered, out of how many exist. */
+export function branchProgress(
+  profile: ProfileProgress,
+  lessons: Lesson[],
+  branchId: BranchId,
+): { mastered: number; total: number; complete: boolean } {
+  const nodes = lessons.filter((l) => l.branch === branchId)
+  const mastered = nodes.filter((l) => profile.holds[l.id]?.masteredAt).length
+  return { mastered, total: nodes.length, complete: nodes.length > 0 && mastered === nodes.length }
+}
+
+/**
+ * Awards the one-time "finished the whole branch" gold token + XP, the
+ * moment every node of that branch is mastered. One atomic update; a no-op
+ * (and returns false) if the branch is already recorded complete, or if any
+ * node of it still isn't mastered. Returns true only the one time this call
+ * is what completed it.
+ */
+export function completeBranch(profileId: ProfileId, lessons: Lesson[], branchId: BranchId): boolean {
+  let justCompleted = false
+  update('profiles', (profiles) => {
+    const profile = profiles[profileId]
+    if (profile.branches?.[branchId]) return profiles
+    const nodes = lessons.filter((l) => l.branch === branchId)
+    const allMastered = nodes.length > 0 && nodes.every((l) => profile.holds[l.id]?.masteredAt)
+    if (!allMastered) return profiles
+    justCompleted = true
+    return {
+      ...profiles,
+      [profileId]: {
+        ...profile,
+        branches: { ...profile.branches, [branchId]: { completedAt: Date.now() } },
+        tokens: { ...profile.tokens, gold: profile.tokens.gold + 1 },
+        xp: profile.xp + xpForTier('gold'),
+      },
+    }
+  })
+  return justCompleted
 }
 
 /** Tracks wall-clock time spent on one mission and flushes it to progress when it closes (unmount, or holdId/missionId change). */

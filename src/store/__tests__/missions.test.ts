@@ -1,24 +1,29 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   addMissionMinutes,
+  branchProgress,
   bumpMissionTries,
   bumpTrickReps,
+  completeBranch,
   completeMission,
   completeWarmup,
   firstOpenMission,
+  isBranchEnabled,
   isMissionDone,
   isMissionUnlocked,
   markDailyMissionDone,
   masterHold,
   missionStars,
   missionsDoneCount,
+  nodeState,
   scaffoldMode,
   scheduleAfterWarmup,
   tierForHelp,
   trickCompletions,
 } from '../missions'
-import { getDoc, resetAll, update, type HoldProgress, type MissionProgress, type ProfileProgress } from '../progress'
+import { getDoc, resetAll, update, type HoldProgress, type MissionProgress, type ProfileProgress, type Settings } from '../progress'
 import { dayOffset, localDay } from '../sessions'
+import { lessonById, type HoldId, type Lesson } from '../../content/lessons'
 
 // Same in-memory localStorage mock used by store/__tests__/progress.test.ts.
 class MemoryStorage implements Storage {
@@ -57,10 +62,53 @@ function kidHold(id: string): HoldProgress | undefined {
 }
 
 describe('tierForHelp', () => {
-  it('maps help level to token tier', () => {
+  it('maps help level to token tier (default trail scheme)', () => {
     expect(tierForHelp('none')).toBe('gold')
     expect(tierForHelp('scan')).toBe('silver')
     expect(tierForHelp('walkthrough')).toBe('bronze')
+  })
+
+  it("'quest' scheme (side quests, round 13): a walkthrough is bronze, anything else is silver - never gold", () => {
+    expect(tierForHelp('none', 'quest')).toBe('silver')
+    expect(tierForHelp('scan', 'quest')).toBe('silver')
+    expect(tierForHelp('walkthrough', 'quest')).toBe('bronze')
+  })
+})
+
+describe('nodeState', () => {
+  function masteredHold(): HoldProgress {
+    return { stages: {}, missions: {}, masteredAt: 1 }
+  }
+
+  /** Nora-shaped profile: basecamp through corners mastered, colourMatch and everything after untouched. */
+  function noraProfile(): ProfileProgress {
+    const profile: ProfileProgress = {
+      holds: {},
+      xp: 0,
+      tokens: { gold: 0, silver: 0, bronze: 0 },
+      sessions: [],
+      streak: { current: 0, best: 0, lastDay: '' },
+    }
+    for (const id of ['basecamp', 'daisy', 'cross', 'cornerFind', 'corners'] as HoldId[]) {
+      profile.holds[id] = masteredHold()
+    }
+    return profile
+  }
+
+  it("Nora-shaped profile: colourMatch (prereq corners, mastered) is open; middle (prereq colourMatch, not mastered) is locked", () => {
+    const profile = noraProfile()
+    expect(nodeState(profile, lessonById('colourMatch')!)).toBe('open')
+    expect(nodeState(profile, lessonById('middle')!)).toBe('locked')
+  })
+
+  it('basecamp (no prereqs) is always open on a fresh profile', () => {
+    const profile: ProfileProgress = { holds: {}, xp: 0, tokens: { gold: 0, silver: 0, bronze: 0 }, sessions: [], streak: { current: 0, best: 0, lastDay: '' } }
+    expect(nodeState(profile, lessonById('basecamp')!)).toBe('open')
+  })
+
+  it('a mastered hold reads mastered even if its prereqs somehow are not', () => {
+    const profile: ProfileProgress = { holds: { daisy: masteredHold() }, xp: 0, tokens: { gold: 0, silver: 0, bronze: 0 }, sessions: [], streak: { current: 0, best: 0, lastDay: '' } }
+    expect(nodeState(profile, lessonById('daisy')!)).toBe('mastered')
   })
 })
 
@@ -180,6 +228,18 @@ describe('completeMission', () => {
     completeMission('kid', 'daisy', 'D1', 'none', 1)
     expect(getDoc().profiles.kid.cubeDay?.mission?.doneAt).toBeUndefined()
   })
+
+  it("scheme 'quest' (round 13 side quest): awards silver/bronze, never gold, from the quest tier rule", () => {
+    expect(completeMission('kid', 'daisy', 'D1', 'none', 1, 'quest')).toBe('silver')
+    expect(getDoc().profiles.kid.tokens).toEqual({ gold: 0, silver: 1, bronze: 0 })
+
+    expect(completeMission('kid', 'daisy', 'D2', 'walkthrough', 3, 'quest')).toBe('bronze')
+    expect(getDoc().profiles.kid.tokens.bronze).toBe(1)
+  })
+
+  it("defaults to the 'trail' scheme when the 6th argument is omitted (existing 5-arg calls keep compiling and behaving the same)", () => {
+    expect(completeMission('kid', 'daisy', 'D1', 'none', 1)).toBe('gold')
+  })
 })
 
 describe('markDailyMissionDone', () => {
@@ -198,6 +258,54 @@ describe('markDailyMissionDone', () => {
   it('does nothing when there is no cubeDay at all', () => {
     markDailyMissionDone('kid', 'daisy', 'D1')
     expect(getDoc().profiles.kid.cubeDay).toBeUndefined()
+  })
+
+  it("stamps starEarned for the trail mission, alongside mission.doneAt", () => {
+    update('profiles', (profiles) => ({
+      ...profiles,
+      kid: { ...profiles.kid, cubeDay: { day: localDay(), mission: { holdId: 'daisy', missionId: 'D1' }, choices: [{ holdId: 'daisy', missionId: 'D1' }] } },
+    }))
+    markDailyMissionDone('kid', 'daisy', 'D1')
+    const cubeDay = getDoc().profiles.kid.cubeDay
+    expect(cubeDay?.mission?.doneAt).toBeGreaterThan(0)
+    expect(cubeDay?.starEarned).toEqual({ holdId: 'daisy', missionId: 'D1', doneAt: cubeDay!.starEarned!.doneAt })
+  })
+
+  it('stamps starEarned for a side-quest choice without touching mission.doneAt', () => {
+    update('profiles', (profiles) => ({
+      ...profiles,
+      kid: {
+        ...profiles.kid,
+        cubeDay: {
+          day: localDay(),
+          mission: { holdId: 'daisy', missionId: 'D1' },
+          choices: [{ holdId: 'daisy', missionId: 'D1' }, { holdId: 'gymA', missionId: 'G1' }],
+        },
+      },
+    }))
+    markDailyMissionDone('kid', 'gymA', 'G1')
+    const cubeDay = getDoc().profiles.kid.cubeDay
+    expect(cubeDay?.mission?.doneAt).toBeUndefined()
+    expect(cubeDay?.starEarned?.holdId).toBe('gymA')
+    expect(cubeDay?.starEarned?.missionId).toBe('G1')
+  })
+
+  it('starEarned is stamped only once, even across two different qualifying completions', () => {
+    update('profiles', (profiles) => ({
+      ...profiles,
+      kid: {
+        ...profiles.kid,
+        cubeDay: {
+          day: localDay(),
+          mission: { holdId: 'daisy', missionId: 'D1' },
+          choices: [{ holdId: 'daisy', missionId: 'D1' }, { holdId: 'gymA', missionId: 'G1' }],
+        },
+      },
+    }))
+    markDailyMissionDone('kid', 'daisy', 'D1')
+    const firstStarEarned = getDoc().profiles.kid.cubeDay?.starEarned
+    markDailyMissionDone('kid', 'gymA', 'G1')
+    expect(getDoc().profiles.kid.cubeDay?.starEarned).toEqual(firstStarEarned)
   })
 })
 
@@ -407,5 +515,93 @@ describe('masterHold', () => {
     expect(masterHold('kid', 'daisy')).toBe(false)
     expect(getDoc().profiles.kid.tokens.gold).toBe(goldBefore)
     expect(kidHold('daisy')?.masteredAt).toBe(masteredAtBefore)
+  })
+
+  it("reward 'xp' (a side-quest node, round 13): masters, gives xpForTier('gold') XP, and no token", () => {
+    const xpBefore = getDoc().profiles.kid.xp
+    expect(masterHold('kid', 'daisy', 'xp')).toBe(true)
+    expect(kidHold('daisy')?.masteredAt).toBeGreaterThan(0)
+    expect(getDoc().profiles.kid.tokens.gold).toBe(0)
+    expect(getDoc().profiles.kid.xp).toBe(xpBefore + 30) // xpForTier('gold')
+  })
+})
+
+describe('isBranchEnabled', () => {
+  function settingsWith(cubeBranches?: { gym?: boolean; patterns?: boolean }): Settings {
+    return { ...getDoc().settings, cubeBranches }
+  }
+
+  it('defaults to true when cubeBranches (or the branch key) is unset', () => {
+    expect(isBranchEnabled(settingsWith(undefined), 'gym')).toBe(true)
+    expect(isBranchEnabled(settingsWith({}), 'patterns')).toBe(true)
+  })
+
+  it('respects an explicit false', () => {
+    expect(isBranchEnabled(settingsWith({ gym: false }), 'gym')).toBe(false)
+    expect(isBranchEnabled(settingsWith({ gym: false }), 'patterns')).toBe(true)
+  })
+})
+
+describe('branchProgress / completeBranch', () => {
+  /** A minimal, valid synthetic branch node - a real Lesson shape with placeholder copy. */
+  function branchLesson(id: string, branch: 'gym' | 'patterns'): Lesson {
+    return {
+      id: id as HoldId,
+      number: 0,
+      title: id,
+      goal: 'g',
+      story: 's',
+      phaseIds: [],
+      namedAlgIds: [],
+      realCubeHint: 'h',
+      prereqs: [],
+      branch,
+      missions: [
+        {
+          id: 'G1',
+          title: 'G1',
+          estimatedMinutes: 3,
+          look: { title: 't', text: 't', say: 't' },
+          steps: [],
+          check: { text: 't', say: 't' },
+          goalCheck: () => ({ done: true }),
+        },
+      ],
+    }
+  }
+
+  function masteredHold(): HoldProgress {
+    return { stages: {}, missions: {}, masteredAt: 1 }
+  }
+
+  it('branchProgress counts only the nodes carrying that branch id', () => {
+    const nodes = [branchLesson('gymA', 'gym'), branchLesson('gymB', 'gym'), branchLesson('patterns', 'patterns')]
+    update('profiles', (profiles) => ({
+      ...profiles,
+      kid: { ...profiles.kid, holds: { ...profiles.kid.holds, gymA: masteredHold() } },
+    }))
+    const progress = branchProgress(getDoc().profiles.kid, nodes, 'gym')
+    expect(progress).toEqual({ mastered: 1, total: 2, complete: false })
+  })
+
+  it('completeBranch awards one gold + XP only once every node is mastered, and only once ever', () => {
+    const nodes = [branchLesson('gymA', 'gym'), branchLesson('gymB', 'gym')]
+
+    expect(completeBranch('kid', nodes, 'gym')).toBe(false) // nothing mastered yet
+    expect(getDoc().profiles.kid.tokens.gold).toBe(0)
+
+    update('profiles', (profiles) => ({
+      ...profiles,
+      kid: { ...profiles.kid, holds: { ...profiles.kid.holds, gymA: masteredHold(), gymB: masteredHold() } },
+    }))
+    const xpBefore = getDoc().profiles.kid.xp
+    expect(completeBranch('kid', nodes, 'gym')).toBe(true)
+    expect(getDoc().profiles.kid.tokens.gold).toBe(1)
+    expect(getDoc().profiles.kid.xp).toBe(xpBefore + 30)
+    expect(getDoc().profiles.kid.branches?.gym?.completedAt).toBeGreaterThan(0)
+
+    // Calling it again changes nothing, even though every node is still mastered.
+    expect(completeBranch('kid', nodes, 'gym')).toBe(false)
+    expect(getDoc().profiles.kid.tokens.gold).toBe(1)
   })
 })
