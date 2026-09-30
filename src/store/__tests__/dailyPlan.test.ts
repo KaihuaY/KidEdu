@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { computePlan, cubeStatusText, ensureTodaysPlan, readTodaysPlan, tomorrowsMission } from '../dailyPlan'
 import { completeMission } from '../missions'
+import { dayNumber } from '../sessions'
 import { getDoc, resetAll, update, type HoldProgress, type ProfileProgress } from '../progress'
-import { LESSON_LIST, type HoldId, type Lesson } from '../../content/lessons'
+import { BRANCHES, LESSON_LIST, TRAIL_LESSONS, type HoldId, type Lesson } from '../../content/lessons'
 
 /** A minimal, valid synthetic branch node for Phase 2 tests - a real Lesson shape, just with placeholder copy. */
 function branchLesson(id: string, branch: 'gym' | 'patterns', missionIds: string[]): Lesson {
@@ -182,29 +183,35 @@ describe('computePlan', () => {
 })
 
 describe('computePlan: choices and branches (round 13)', () => {
-  it('choices is just [trail mission] when the lesson list has no branch nodes yet', () => {
-    const plan = computePlan(emptyProfile(), LESSON_LIST, '2026-01-01')
+  // These five tests use synthetic branch nodes on top of TRAIL_LESSONS only
+  // (not the real LESSON_LIST, which now carries the real Trick Gym / Pattern
+  // Lab content shipped in Phase 3) - they exercise computePlan's generic
+  // branch-choice/rotation/warm-up rules in isolation, independent of that
+  // content. The "with the real curriculum" describe block below covers the
+  // real LESSON_LIST.
+  it('choices is just [trail mission] when the lesson list has no branch nodes', () => {
+    const plan = computePlan(emptyProfile(), TRAIL_LESSONS, '2026-01-01')
     expect(plan.choices).toEqual([{ holdId: 'basecamp', missionId: 'B1', title: 'Hold it like a climber' }])
   })
 
   it('choices adds a rotated gym pick and the pattern pick when branch lessons are present', () => {
     const gymA = branchLesson('gymA', 'gym', ['G1'])
     const gymB = branchLesson('gymB', 'gym', ['G1'])
-    const patterns = branchLesson('patterns', 'patterns', ['PL1'])
-    const lessons = [...LESSON_LIST, gymA, gymB, patterns]
+    const patterns = branchLesson('patterns2', 'patterns', ['PL1'])
+    const lessons = [...TRAIL_LESSONS, gymA, gymB, patterns]
     const profile = emptyProfile()
 
     const plan = computePlan(profile, lessons, '2026-01-01')
     expect(plan.choices).toHaveLength(3)
     expect(plan.choices[0]).toEqual({ holdId: 'basecamp', missionId: 'B1', title: 'Hold it like a climber' })
     expect(['gymA', 'gymB']).toContain(plan.choices[1]?.holdId)
-    expect(plan.choices[2]).toEqual({ holdId: 'patterns', missionId: 'PL1', title: 'PL1' })
+    expect(plan.choices[2]).toEqual({ holdId: 'patterns2', missionId: 'PL1', title: 'PL1' })
   })
 
   it("the gym pick rotates day to day (round-robins by dayNumber)", () => {
     const gymA = branchLesson('gymA', 'gym', ['G1'])
     const gymB = branchLesson('gymB', 'gym', ['G1'])
-    const lessons = [...LESSON_LIST, gymA, gymB]
+    const lessons = [...TRAIL_LESSONS, gymA, gymB]
     const profile = emptyProfile()
 
     const seenHoldIds = new Set<string>()
@@ -218,23 +225,23 @@ describe('computePlan: choices and branches (round 13)', () => {
 
   it('a disabled branch is excluded from choices entirely', () => {
     const gymA = branchLesson('gymA', 'gym', ['G1'])
-    const patterns = branchLesson('patterns', 'patterns', ['PL1'])
-    const lessons = [...LESSON_LIST, gymA, patterns]
+    const patterns = branchLesson('patterns2', 'patterns', ['PL1'])
+    const lessons = [...TRAIL_LESSONS, gymA, patterns]
     const profile = emptyProfile()
 
     const plan = computePlan(profile, lessons, '2026-01-01', { branches: { gym: false } })
     expect(plan.choices.some((c) => c.holdId === 'gymA')).toBe(false)
-    expect(plan.choices.some((c) => c.holdId === 'patterns')).toBe(true)
+    expect(plan.choices.some((c) => c.holdId === 'patterns2')).toBe(true)
 
     const bothOff = computePlan(profile, lessons, '2026-01-01', { branches: { gym: false, patterns: false } })
     expect(bothOff.choices).toEqual([{ holdId: 'basecamp', missionId: 'B1', title: 'Hold it like a climber' }])
   })
 
   it('a completed pattern mission never becomes the warm-up, even once due', () => {
-    const patterns = branchLesson('patterns', 'patterns', ['PL1'])
-    const lessons = [...LESSON_LIST, patterns]
+    const patterns = branchLesson('patterns2', 'patterns', ['PL1'])
+    const lessons = [...TRAIL_LESSONS, patterns]
     const profile = emptyProfile()
-    profile.holds.patterns = hold({
+    profile.holds.patterns2 = hold({
       PL1: { tries: 1, help: 'none', tier: 'gold', minutes: 0, completedAt: 1, lastDoneDay: '2026-01-01', nextReviewDay: '2026-01-02' },
     })
 
@@ -244,7 +251,7 @@ describe('computePlan: choices and branches (round 13)', () => {
 
   it('unlike patterns, a completed and due gym mission CAN become the warm-up (the pool is trail + gym)', () => {
     const gymA = branchLesson('gymA', 'gym', ['G1', 'G2'])
-    const lessons = [...LESSON_LIST, gymA]
+    const lessons = [...TRAIL_LESSONS, gymA]
     const profile = emptyProfile()
     profile.holds.basecamp = hold({}, 1)
     profile.holds.gymA = hold({
@@ -253,6 +260,37 @@ describe('computePlan: choices and branches (round 13)', () => {
 
     const plan = computePlan(profile, lessons, '2026-01-02')
     expect(plan.warmup).toEqual({ holdId: 'gymA', missionId: 'G1', title: 'G1' })
+  })
+})
+
+describe('computePlan with the real curriculum (round 13 Phase 3 gym/pattern content)', () => {
+  it("a fresh profile's choices are [B1, today's rotated gym Learn-it, PL1]", () => {
+    const today = '2026-09-30'
+    const plan = computePlan(emptyProfile(), LESSON_LIST, today)
+    expect(plan.choices).toHaveLength(3)
+    expect(plan.choices[0]).toEqual({ holdId: 'basecamp', missionId: 'B1', title: 'Hold it like a climber' })
+
+    const gymNodeIds = BRANCHES.find((b) => b.id === 'gym')!.nodeIds
+    const expectedGymNodeId = gymNodeIds[dayNumber(today) % gymNodeIds.length]
+    const expectedLesson = LESSON_LIST.find((l) => l.id === expectedGymNodeId)!
+    const expectedLearnIt = expectedLesson.missions[0]
+    expect(plan.choices[1]).toEqual({
+      holdId: expectedGymNodeId,
+      missionId: expectedLearnIt.id,
+      title: expectedLearnIt.title,
+    })
+    expect(expectedLearnIt.title).toBe('Learn it')
+
+    expect(plan.choices[2]).toEqual({ holdId: 'patterns', missionId: 'PL1', title: 'Checkerboard' })
+  })
+
+  it('disabling the gym branch drops the gym choice, keeping the trail mission and the pattern', () => {
+    const plan = computePlan(emptyProfile(), LESSON_LIST, '2026-09-30', { branches: { gym: false } })
+    expect(plan.choices.some((c) => c.holdId.startsWith('gym'))).toBe(false)
+    expect(plan.choices).toEqual([
+      { holdId: 'basecamp', missionId: 'B1', title: 'Hold it like a climber' },
+      { holdId: 'patterns', missionId: 'PL1', title: 'Checkerboard' },
+    ])
   })
 })
 

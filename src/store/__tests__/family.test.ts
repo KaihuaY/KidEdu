@@ -29,7 +29,7 @@ describe('summarize', () => {
       cubeStreak: 0,
       pianoStreak: 0,
       missionsDone: 0,
-      missionsTotal: 32,
+      missionsTotal: 58,
       xp: 0,
       badges: 0,
       pianoMinutesThisWeek: 0,
@@ -60,7 +60,7 @@ describe('summarize', () => {
       },
     }
     expect(summarize(doc, '2026-09-15').missionsDone).toBe(2)
-    expect(summarize(doc, '2026-09-15').missionsTotal).toBe(32)
+    expect(summarize(doc, '2026-09-15').missionsTotal).toBe(58)
   })
 
   it('reads xp and streaks straight off the kid profile / piano section', () => {

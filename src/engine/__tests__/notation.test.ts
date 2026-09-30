@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { MOVE_NAMES, SOLVED, applyAlg, isSolved, parseAlg } from '../cube'
 import { KID_MOVE_NAMES, NAMED_ALGS, describeMove, everyMoveHasAName, namedAlg } from '../notation'
 
+const SOLVING_TRICK_IDS = ['elevator', 'goRight', 'goLeft', 'yellowCross', 'fish', 'cornerCycle', 'cornerTwist']
+
 describe('kid move names', () => {
   it('covers every move the engine accepts', () => {
     for (const move of MOVE_NAMES) {
@@ -72,5 +74,27 @@ describe('named algorithms', () => {
     let state = SOLVED
     for (let i = 0; i < 6; i++) state = applyAlg(state, "R U R' U'")
     expect(state).toBe(SOLVED)
+  })
+})
+
+describe('why chunks (round 13, Trick Gym "why it works")', () => {
+  it('each of the seven solving tricks has 2-4 chunks, each 1-4 moves with non-empty title/text/say, and the chunks concatenate to exactly the trick\'s alg', () => {
+    for (const id of SOLVING_TRICK_IDS) {
+      const trick = namedAlg(id)!
+      const chunks = trick.why!.chunks!
+      expect(chunks, id).toBeDefined()
+      expect(chunks.length, id).toBeGreaterThanOrEqual(2)
+      expect(chunks.length, id).toBeLessThanOrEqual(4)
+      for (const chunk of chunks) {
+        const moveCount = parseAlg(chunk.moves).length
+        expect(moveCount, `${id}: "${chunk.moves}"`).toBeGreaterThanOrEqual(1)
+        expect(moveCount, `${id}: "${chunk.moves}"`).toBeLessThanOrEqual(4)
+        expect(chunk.title.length, id).toBeGreaterThan(0)
+        expect(chunk.text.length, id).toBeGreaterThan(0)
+        expect(chunk.say.length, id).toBeGreaterThan(0)
+      }
+      const joined = chunks.map((c) => c.moves).join(' ')
+      expect(parseAlg(joined), id).toEqual(parseAlg(trick.alg))
+    }
   })
 })

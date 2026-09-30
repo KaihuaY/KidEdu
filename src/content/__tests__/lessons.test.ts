@@ -16,6 +16,7 @@ import {
   LESSON_LIST,
   LESSONS,
   ORIENTATION_RITUAL,
+  TRAIL_LESSONS,
   checkpointState,
   holdForPhase,
   learnCardEndState,
@@ -65,11 +66,17 @@ describe('hold structure', () => {
       'cornerPosition',
       'cornerOrient',
     ])
-    expect(LESSON_LIST).toHaveLength(11)
-    LESSON_LIST.forEach((lesson, i) => {
+    expect(TRAIL_LESSONS).toHaveLength(11)
+    TRAIL_LESSONS.forEach((lesson, i) => {
       expect(lesson.id).toBe(HOLD_ORDER[i])
       expect(lesson.number).toBe(i)
     })
+  })
+
+  it('LESSON_LIST carries the trail plus the 8 side-branch nodes (round 13 Phase 3) - 19 in all', () => {
+    expect(LESSON_LIST).toHaveLength(19)
+    expect(LESSON_LIST.filter((l) => l.branch === 'gym')).toHaveLength(7)
+    expect(LESSON_LIST.filter((l) => l.branch === 'patterns')).toHaveLength(1)
   })
 
   it('every hold has non-empty copy and 2-5 missions', () => {
@@ -140,6 +147,14 @@ describe('mission structure', () => {
       'YE1', 'YE2',
       'P1', 'P2',
       'S1', 'S2',
+      'G-EL1', 'G-EL2', 'G-EL3',
+      'G-GR1', 'G-GR2', 'G-GR3',
+      'G-GL1', 'G-GL2', 'G-GL3',
+      'G-YC1', 'G-YC2', 'G-YC3',
+      'G-FI1', 'G-FI2', 'G-FI3',
+      'G-CS1', 'G-CS2', 'G-CS3',
+      'G-BE1', 'G-BE2', 'G-BE3',
+      'PL1', 'PL2', 'PL3', 'PL4', 'PL5',
     ])
   })
 
@@ -422,6 +437,14 @@ describe('checkpoints', () => {
     'yellowEdges',
     'cornerPosition',
     'cornerOrient',
+    'gymElevator',
+    'gymGoRight',
+    'gymGoLeft',
+    'gymYellowCross',
+    'gymFish',
+    'gymCornerCycle',
+    'gymCornerTwist',
+    'patterns',
   ]
 
   it('every hold except Base Camp and The Daisy Ledge has a checkpoint; those two do not', () => {

@@ -284,7 +284,7 @@ export function MissionPlayer({ lesson, mission, tempoScale, onDone, onExit, war
               const reps = named ? trickCompletions(profile, named.id) : 0
               const showRecall = Boolean(named) && !recallRevealed && (warmup || reps >= 2)
 
-              const mode = scaffoldMode(reps)
+              const mode = step.fromMemory ? 'choiceMemory' : scaffoldMode(reps)
               const canOfferMemory = followAlongEligible && Boolean(named) && mode !== 'followAlongOnly'
               const effectiveChoice: 'memory' | 'followAlong' = stepShowMeOverride
                 ? 'followAlong'
@@ -457,7 +457,7 @@ export function MissionPlayer({ lesson, mission, tempoScale, onDone, onExit, war
                                   return <p style={{ margin: 0, fontWeight: 700 }}>Do the trick {times} times</p>
                                 })()}
                               {named.why && (
-                                <details>
+                                <details open={lesson.branch === 'gym'}>
                                   <summary
                                     style={{
                                       cursor: 'pointer',

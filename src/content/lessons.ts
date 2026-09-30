@@ -42,7 +42,7 @@
  * are written as if starting from a plain "yellow up, green front" SOLVED cube.
  */
 
-import { SOLVED, applyAlg, invertAlg } from '../engine/cube'
+import { SOLVED, applyAlg, invertAlg, parseAlg } from '../engine/cube'
 import { NAMED_ALGS, namedAlg } from '../engine/notation'
 import {
   countCornersPositioned,
@@ -54,6 +54,7 @@ import {
   yellowCrossShape,
 } from '../engine/progress'
 import { isPhaseDone, type PhaseId } from '../engine/solver'
+import { describeMove } from './moveNames'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -71,8 +72,16 @@ export type HoldId =
   | 'yellowEdges'
   | 'cornerPosition'
   | 'cornerOrient'
+  | 'gymElevator'
+  | 'gymGoRight'
+  | 'gymGoLeft'
+  | 'gymYellowCross'
+  | 'gymFish'
+  | 'gymCornerCycle'
+  | 'gymCornerTwist'
+  | 'patterns'
 
-/** A side branch off the trunk (round 13). Content ships in Phase 3; the id space is reserved here. */
+/** A side branch off the trunk (round 13). Trick Gym's 7 nodes + Pattern Lab ship in Phase 3. */
 export type BranchId = 'gym' | 'patterns'
 
 export type { PhaseId }
@@ -223,6 +232,16 @@ export interface Lesson {
   missions: Mission[]
 }
 
+/** One side branch (Trick Gym or Pattern Lab) - its map card and the nodes that belong to it, in the order its chips render. */
+export interface Branch {
+  id: BranchId
+  title: string
+  emoji: string
+  /** One kid-voice sentence for the branch's map card. */
+  blurb: string
+  nodeIds: HoldId[]
+}
+
 /** The centre-ritual shown once per local day, before any hold but Base Camp. */
 export interface RitualCard extends MissionCard {
   /** Only card 2 has one - the "yes, I'm holding it right" confirm button. */
@@ -286,6 +305,36 @@ export function missionCheckState(check: MissionCheck): string {
  * only the ones listed here are used by Look/Do cards and check pictures.
  */
 export const LEARN_STICKERINGS = ['full', 'Daisy', 'Cross', 'F2L', 'EOLL', 'ELL', 'CPLL', 'OCLL', 'LL'] as const
+
+/**
+ * "Before you start this node, your cube should look like this: solved."
+ * Shared by every Trick Gym / Pattern Lab node (round 13 Phase 3) - unlike a
+ * trail hold, a side-quest node never has a `fallbackHoldId` (there is no
+ * single earlier hold to send her back to; "Help my cube" covers it).
+ */
+const SOLVED_CHECKPOINT: Checkpoint = {
+  look: 'A fully solved cube. Not solved? Ask a grown-up or tap 🧩 Help my cube',
+  hold: 'Yellow on top, green facing you',
+  say: 'Check your cube. Is it fully solved? If not, ask a grown-up or tap Help my cube.',
+  display: learnDisplay('', ''),
+}
+
+/**
+ * How many times each solving trick has to ride before a solved cube comes
+ * back to solved (Trick Gym's "Learn it" / "From memory" missions) -
+ * verified against the engine, see the plan's "Verified engine facts" table
+ * and curriculumMap.test.ts's 'trick orders' suite. `'inverse'` means the
+ * trick does not return on its own - "do it, then do it backwards" instead.
+ */
+export const TRICK_ORDERS: Record<string, number | 'inverse'> = {
+  elevator: 6,
+  goRight: 'inverse',
+  goLeft: 'inverse',
+  yellowCross: 6,
+  fish: 6,
+  cornerCycle: 3,
+  cornerTwist: 6,
+}
 
 // ---------------------------------------------------------------------------
 // Goal factories
@@ -2008,6 +2057,427 @@ const cornerOrient: Lesson = {
   ],
 }
 
+// ---------------------------------------------------------------------------
+// Trick Gym (round 13, Phase 3): one node per named trick, three missions
+// each - Learn it (from a solved cube), Why it works (the trick split into
+// chunks, teach-back at the end), From memory. Every node starts and ends
+// solved, so they all share SOLVED_CHECKPOINT and carry no phaseIds/prereqs.
+// ---------------------------------------------------------------------------
+
+/** A short spoken line for a gym node's Learn-it look card - kinder to say aloud than the (longer) NAMED_ALGS hint. */
+const GYM_LEARN_SAY: Record<string, string> = {
+  elevator: 'Right side up, top left, right side down, top right. Watch the corner ride down.',
+  goRight: 'The edge on top wants to go down and to the right. Do the trick to send it home.',
+  goLeft: 'The edge on top wants to go down and to the left. Do the trick to send it home.',
+  yellowCross: 'Dot, L, or line - do the trick and watch the cross grow.',
+  fish: 'Three yellow edges swim around the top while the front one stays home.',
+  cornerCycle: 'Three corners take a walk around the top while one stays home.',
+  cornerTwist: 'Do the trick two or four times until yellow faces up on that corner.',
+}
+
+/** The chip title for a gym node - the trick's kidName with its trailing emoji stripped off. */
+const GYM_SHORT_TITLES: Record<string, string> = {
+  elevator: 'The Elevator',
+  goRight: 'Send it Right',
+  goLeft: 'Send it Left',
+  yellowCross: 'Yellow Cross',
+  fish: 'The Fish',
+  cornerCycle: 'Corner Swap',
+  cornerTwist: 'Bottom Elevator',
+}
+
+/**
+ * The "it comes back!" do-step shared by a gym node's Learn-it and
+ * From-memory missions: either "do it a few more times" (numeric order, from
+ * TRICK_ORDERS) or "now do it backwards" (order 'inverse') - see the file
+ * header's z2/learnDisplay convention for why `learnDisplay(alg, ...)` is the
+ * right pause point (she just rode the trick once).
+ */
+function comesBackStep(trickId: string, alg: string): MissionStep {
+  const order = TRICK_ORDERS[trickId]
+  if (order === 'inverse') {
+    return {
+      kind: 'do',
+      title: 'Now do it backwards',
+      text: 'Do the exact same trick, but backwards. Watch everything undo itself.',
+      say: 'Do it backwards and watch everything undo itself.',
+      display: learnDisplay(alg, invertAlg(alg)),
+    }
+  }
+  const times = order - 1
+  return {
+    kind: 'do',
+    title: `Do it ${times} more times and it comes back!`,
+    text: `Do it ${times} more times and it comes back!`,
+    say: 'Do it a few more times until your cube is back to solved.',
+    display: learnDisplay(alg, repeatAlg(alg, times)),
+    namedAlgId: trickId,
+    followAlong: false,
+  }
+}
+
+/**
+ * One do-step per "why it works" chunk, each animating just that chunk's
+ * moves from wherever the previous chunk left off - so learnCardState(step)
+ * always equals the previous step's learnCardEndState (checked directly in
+ * curriculumMap.test.ts).
+ */
+function chunkSteps(chunks: { moves: string; title: string; text: string; say: string }[]): MissionStep[] {
+  let movesSoFar = ''
+  return chunks.map((chunk) => {
+    const step: MissionStep = {
+      kind: 'do',
+      title: chunk.title,
+      text: chunk.text,
+      say: chunk.say,
+      display: learnDisplay(movesSoFar, chunk.moves),
+    }
+    movesSoFar = `${movesSoFar} ${chunk.moves}`.trim()
+    return step
+  })
+}
+
+/** Builds one Trick Gym node: Learn it / Why it works / From memory, all from `namedAlg(trickId)`. */
+function gymNode(trickId: string, nodeId: HoldId, emoji: string, idPrefix: string): Lesson {
+  const trick = namedAlg(trickId)!
+  const alg = trick.alg
+  const chunks = trick.why!.chunks!
+
+  const look: MissionCard = {
+    title: trick.kidName,
+    text: trick.hint,
+    say: GYM_LEARN_SAY[trickId] ?? trick.hint,
+    display: learnDisplay('', alg),
+  }
+
+  const comesBack = comesBackStep(trickId, alg)
+
+  const check: MissionCheck = {
+    text: `Your cube is back to solved - ${trick.kidName} always comes back!`,
+    say: 'Your cube is back to solved.',
+    display: learnDisplay('', ''),
+  }
+
+  const learnIt: Mission = {
+    id: `${idPrefix}1`,
+    title: 'Learn it',
+    estimatedMinutes: 4,
+    look,
+    steps: [
+      {
+        kind: 'do',
+        title: 'Do it once',
+        text: `Watch ${trick.kidName} once, right from a solved cube.`,
+        say: 'Watch it once from a solved cube.',
+        display: learnDisplay('', alg),
+        namedAlgId: trickId,
+      },
+      comesBack,
+    ],
+    check,
+    goalCheck: phaseDone('cornerOrient'),
+    goalPhase: 'cornerOrient',
+  }
+
+  const whySteps = chunkSteps(chunks)
+  if (chunks.length < 4) {
+    whySteps.push({
+      kind: 'do',
+      title: 'Do the whole thing and watch',
+      text: 'Do the whole thing and watch: everything else lands back where it was.',
+      say: 'Watch the whole trick, start to finish.',
+      display: learnDisplay('', alg),
+      namedAlgId: trickId,
+    })
+  }
+
+  const whyItWorks: Mission = {
+    id: `${idPrefix}2`,
+    title: 'Why it works',
+    estimatedMinutes: 4,
+    look: {
+      title: 'Why does this work?',
+      text: trick.why!.text,
+      say: trick.why!.say,
+      display: learnDisplay('', alg),
+    },
+    steps: whySteps,
+    check: {
+      text: 'Tell a grown-up in your own words why the bottom stays safe.',
+      say: 'Tell a grown-up in your own words why the bottom stays safe.',
+      display: learnDisplay('', ''),
+    },
+    goalCheck: selfReport(),
+  }
+
+  const fromMemory: Mission = {
+    id: `${idPrefix}3`,
+    title: 'From memory',
+    estimatedMinutes: 3,
+    look,
+    steps: [
+      {
+        kind: 'do',
+        title: 'Without peeking',
+        text: `Do ${trick.kidName} on your own, no peeking at the moves.`,
+        say: 'Try it on your own, no peeking.',
+        display: learnDisplay('', alg),
+        namedAlgId: trickId,
+        fromMemory: true,
+      },
+      comesBackStep(trickId, alg),
+    ],
+    check,
+    goalCheck: phaseDone('cornerOrient'),
+    goalPhase: 'cornerOrient',
+  }
+
+  return {
+    id: nodeId,
+    number: 0,
+    title: trick.kidName,
+    goal: `Learn ${trick.kidName}, find out why it works, then do it from memory.`,
+    story: `Meet ${trick.kidName}! Do it once on a solved cube, find out why it works, then try it without peeking.`,
+    phaseIds: [],
+    namedAlgIds: [trickId],
+    realCubeHint: trick.hint,
+    prereqs: [],
+    branch: 'gym',
+    emoji,
+    shortTitle: GYM_SHORT_TITLES[trickId] ?? trick.kidName,
+    checkpoint: SOLVED_CHECKPOINT,
+    missions: [learnIt, whyItWorks, fromMemory],
+  }
+}
+
+const gymElevator: Lesson = gymNode('elevator', 'gymElevator', '🛗', 'G-EL')
+const gymGoRight: Lesson = gymNode('goRight', 'gymGoRight', '➡️', 'G-GR')
+const gymGoLeft: Lesson = gymNode('goLeft', 'gymGoLeft', '⬅️', 'G-GL')
+const gymYellowCross: Lesson = gymNode('yellowCross', 'gymYellowCross', '☀️', 'G-YC')
+const gymFish: Lesson = gymNode('fish', 'gymFish', '🐟', 'G-FI')
+const gymCornerCycle: Lesson = gymNode('cornerCycle', 'gymCornerCycle', '🔄', 'G-CS')
+const gymCornerTwist: Lesson = gymNode('cornerTwist', 'gymCornerTwist', '🛗', 'G-BE')
+
+// ---------------------------------------------------------------------------
+// Pattern Lab (round 13, Phase 3): one node, five missions - make a pretty
+// pattern, show someone, then undo it back to solved.
+// ---------------------------------------------------------------------------
+
+const CHECKERBOARD = 'U2 D2 R2 L2 F2 B2'
+const SIX_SPOTS = "U D' R L' F B' U D'"
+const TETRIS = "L R F B U' D' L' R'"
+const CUBE_IN_CUBE = "F L F U' R U F2 L2 U' L' B D' B' L2 U"
+const PLUS_PATTERN = 'F2 R2 U2 F2 R2 U2 F2 R2 U2'
+
+/** On-cube move checklist for a pattern too long to follow along (PL4/PL5). */
+function moveChecklist(alg: string): string[] {
+  return parseAlg(alg).map((m) => `On your cube: ${describeMove(m)}`)
+}
+
+const pl1: Mission = {
+  id: 'PL1',
+  title: 'Checkerboard',
+  estimatedMinutes: 4,
+  look: {
+    title: 'Checkerboard',
+    text: 'Every side turns into a checkerboard of two colours. Ready to make one?',
+    say: 'Every side turns into a checkerboard pattern.',
+    display: learnDisplay(CHECKERBOARD, ''),
+  },
+  steps: [
+    {
+      kind: 'do',
+      title: 'Make it',
+      text: 'Follow along: six double turns and your cube becomes a checkerboard.',
+      say: 'Follow along to build the checkerboard.',
+      display: learnDisplay('', CHECKERBOARD),
+    },
+    {
+      kind: 'do',
+      title: 'Undo it',
+      text: 'Do the exact same six moves again, and the checkerboard undoes itself back to solved!',
+      say: 'Do it again and the checkerboard undoes itself.',
+      display: learnDisplay(CHECKERBOARD, CHECKERBOARD),
+    },
+  ],
+  check: {
+    text: 'A fully solved cube again - the checkerboard is a fun trick, not a permanent change!',
+    say: 'A fully solved cube again.',
+    display: learnDisplay('', ''),
+  },
+  goalCheck: phaseDone('cornerOrient'),
+  goalPhase: 'cornerOrient',
+}
+
+const pl2: Mission = {
+  id: 'PL2',
+  title: 'Six Spots',
+  estimatedMinutes: 4,
+  look: {
+    title: 'Six Spots',
+    text: 'One spot of colour pops out in the middle of every side.',
+    say: 'One spot pops out in the middle of every side.',
+    display: learnDisplay(SIX_SPOTS, ''),
+  },
+  steps: [
+    {
+      kind: 'do',
+      title: 'Make it',
+      text: 'Follow along and watch a spot appear on every side.',
+      say: 'Follow along to build six spots.',
+      display: learnDisplay('', SIX_SPOTS),
+    },
+    {
+      kind: 'do',
+      title: 'Undo it',
+      text: 'Do the same moves backwards and every spot disappears again.',
+      say: 'Undo it and every spot disappears.',
+      display: learnDisplay(SIX_SPOTS, invertAlg(SIX_SPOTS)),
+    },
+  ],
+  check: {
+    text: 'Every spot is gone - a fully solved cube again.',
+    say: 'A fully solved cube again.',
+    display: learnDisplay('', ''),
+  },
+  goalCheck: phaseDone('cornerOrient'),
+  goalPhase: 'cornerOrient',
+}
+
+const pl3: Mission = {
+  id: 'PL3',
+  title: 'Tetris',
+  estimatedMinutes: 4,
+  look: {
+    title: 'Tetris',
+    text: 'Each side splits into blocks of colour, like a little Tetris board.',
+    say: 'Each side splits into blocks of colour.',
+    display: learnDisplay(TETRIS, ''),
+  },
+  steps: [
+    {
+      kind: 'do',
+      title: 'Make it',
+      text: 'Follow along and watch the blocks of colour appear.',
+      say: 'Follow along to build the Tetris pattern.',
+      display: learnDisplay('', TETRIS),
+    },
+    {
+      kind: 'do',
+      title: 'Undo it',
+      text: 'Do the same moves backwards and the blocks melt back to solved.',
+      say: 'Undo it and the blocks melt back to solved.',
+      display: learnDisplay(TETRIS, invertAlg(TETRIS)),
+    },
+  ],
+  check: {
+    text: 'The blocks are gone - a fully solved cube again.',
+    say: 'A fully solved cube again.',
+    display: learnDisplay('', ''),
+  },
+  goalCheck: phaseDone('cornerOrient'),
+  goalPhase: 'cornerOrient',
+}
+
+const pl4: Mission = {
+  id: 'PL4',
+  title: 'Cube-in-Cube',
+  estimatedMinutes: 5,
+  look: {
+    title: 'Cube-in-Cube',
+    text: 'A little cube seems to float inside your big cube. This one takes lots of moves!',
+    say: 'A little cube seems to float inside your big cube.',
+    display: learnDisplay(CUBE_IN_CUBE, ''),
+  },
+  steps: [
+    {
+      kind: 'do',
+      title: 'Make it',
+      text: 'This pattern has lots of moves. Follow the list below, one move at a time.',
+      say: 'Follow the list of moves, one at a time.',
+      display: learnDisplay('', CUBE_IN_CUBE),
+      followAlong: false,
+      checklist: moveChecklist(CUBE_IN_CUBE),
+    },
+    {
+      kind: 'do',
+      title: 'Undo it',
+      text: 'Undo the same long list of moves, backwards, and your cube returns to solved.',
+      say: 'Undo the moves backwards.',
+      display: learnDisplay(CUBE_IN_CUBE, invertAlg(CUBE_IN_CUBE)),
+      followAlong: false,
+    },
+  ],
+  check: {
+    text: 'The little cube is gone - a fully solved cube again.',
+    say: 'A fully solved cube again.',
+    display: learnDisplay('', ''),
+  },
+  goalCheck: phaseDone('cornerOrient'),
+  goalPhase: 'cornerOrient',
+}
+
+const pl5: Mission = {
+  id: 'PL5',
+  title: 'Plus',
+  estimatedMinutes: 5,
+  look: {
+    title: 'Plus',
+    text: 'A big plus sign of colour appears on every side.',
+    say: 'A big plus sign appears on every side.',
+    display: learnDisplay(PLUS_PATTERN, ''),
+  },
+  steps: [
+    {
+      kind: 'do',
+      title: 'Make it',
+      text: 'This pattern has lots of moves. Follow the list below, one move at a time.',
+      say: 'Follow the list of moves, one at a time.',
+      display: learnDisplay('', PLUS_PATTERN),
+      followAlong: false,
+      checklist: moveChecklist(PLUS_PATTERN),
+    },
+    {
+      kind: 'do',
+      title: 'Undo it',
+      text: 'Undo the same long list of moves, backwards, and your cube returns to solved.',
+      say: 'Undo the moves backwards.',
+      display: learnDisplay(PLUS_PATTERN, invertAlg(PLUS_PATTERN)),
+      followAlong: false,
+    },
+  ],
+  check: {
+    text: 'The plus sign is gone - a fully solved cube again.',
+    say: 'A fully solved cube again.',
+    display: learnDisplay('', ''),
+  },
+  goalCheck: phaseDone('cornerOrient'),
+  goalPhase: 'cornerOrient',
+}
+
+const patterns: Lesson = {
+  id: 'patterns',
+  number: 0,
+  title: 'Pattern Lab',
+  goal: 'Make five pretty patterns, show someone, then put your cube back to solved.',
+  story:
+    'Time to play! Each pattern turns a solved cube into something pretty - stripes, spots, even a cube inside a cube. ' +
+    'Make it, show someone, then undo it and your cube is back to solved.',
+  phaseIds: [],
+  namedAlgIds: [],
+  realCubeHint:
+    'On your real cube: start from solved. Follow the moves to make the pattern, show it off, then undo it the same way back to solved.',
+  prereqs: [],
+  branch: 'patterns',
+  emoji: '🎨',
+  shortTitle: 'Pattern Lab',
+  checkpoint: SOLVED_CHECKPOINT,
+  missions: [pl1, pl2, pl3, pl4, pl5],
+}
+
+/** Re-exported so screens/tests can reach the Pattern Lab node by its own name, not just via LESSON_LIST/LESSONS.patterns. */
+export const PATTERNS = patterns
+
 export const LESSONS: Record<HoldId, Lesson> = {
   basecamp,
   daisy,
@@ -2020,13 +2490,51 @@ export const LESSONS: Record<HoldId, Lesson> = {
   yellowEdges,
   cornerPosition,
   cornerOrient,
+  gymElevator,
+  gymGoRight,
+  gymGoLeft,
+  gymYellowCross,
+  gymFish,
+  gymCornerCycle,
+  gymCornerTwist,
+  patterns,
 }
 
 /** The 11-hold trunk, in wall order. Side branches (Phase 3) are appended onto LESSON_LIST, never into this. */
 export const TRAIL_LESSONS: Lesson[] = HOLD_ORDER.map((id) => LESSONS[id])
 
-/** Trail holds only, for now (branches get appended here in Phase 3). */
-export const LESSON_LIST: Lesson[] = [...TRAIL_LESSONS]
+/** The two side branches (round 13 Phase 3), map card + nodes, in the order they render. */
+export const BRANCHES: Branch[] = [
+  {
+    id: 'gym',
+    title: 'Trick Gym',
+    emoji: '💪',
+    blurb: 'Learn every trick on a solved cube, find out why it works, then do it from memory.',
+    nodeIds: [
+      'gymElevator',
+      'gymGoRight',
+      'gymGoLeft',
+      'gymYellowCross',
+      'gymFish',
+      'gymCornerCycle',
+      'gymCornerTwist',
+    ],
+  },
+  {
+    id: 'patterns',
+    title: 'Pattern Lab',
+    emoji: '🎨',
+    blurb: 'Make a pretty pattern, show someone, then undo it.',
+    nodeIds: ['patterns'],
+  },
+]
+
+export function branchById(id: BranchId): Branch | undefined {
+  return BRANCHES.find((b) => b.id === id)
+}
+
+/** Trail holds, then every side-branch node (gym nodes in NAMED_ALGS order, then Pattern Lab) - 19 nodes total. */
+export const LESSON_LIST: Lesson[] = [...TRAIL_LESSONS, ...BRANCHES.flatMap((b) => b.nodeIds.map((id) => LESSONS[id]))]
 
 /** True for a trunk hold (no `branch`), false for a Trick Gym / Pattern Lab side-quest node. */
 export function isTrailLesson(lesson: Lesson): boolean {
