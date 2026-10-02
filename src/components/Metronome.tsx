@@ -6,7 +6,7 @@
 // State lives in src/audio/metronome.ts, not here, so navigating between
 // those two screens never resets or interrupts a beat already going.
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import {
   clampBpm,
   getRememberedBpm,
@@ -18,34 +18,9 @@ import {
   stop,
   useMetronome,
 } from '../audio/metronome'
+import { usePrefersReducedMotion } from '../utils/reducedMotion'
 
 const TEMPO_CHIPS = [60, 72, 84, 96, 108]
-
-function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(() => {
-    try {
-      return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-        ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        : false
-    } catch {
-      return false
-    }
-  })
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
-    try {
-      const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
-      const handler = () => setReduced(mq.matches)
-      mq.addEventListener('change', handler)
-      return () => mq.removeEventListener('change', handler)
-    } catch {
-      return undefined
-    }
-  }, [])
-
-  return reduced
-}
 
 /**
  * The pulsing beat indicator: a CSS class toggled off the beat counter's

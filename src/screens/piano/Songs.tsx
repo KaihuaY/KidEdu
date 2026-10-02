@@ -72,6 +72,12 @@ function SongRow({ piece, stats, today }: { piece: PianoPiece; stats: SongStats;
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', flex: 1, minWidth: 0 }}>
         <strong className="cc-clamp-2">
           {piece.emoji} {piece.name}
+          {piece.inRandom && pieceStatus(piece) !== 'archived' && (
+            <span data-testid={`song-random-${piece.id}`} title="In the surprise list">
+              {' '}
+              🎲
+            </span>
+          )}
         </strong>
         <span style={{ fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
           {stats.takes === 0

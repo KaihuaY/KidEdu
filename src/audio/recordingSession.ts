@@ -21,6 +21,7 @@ import { analyzeAndCoach } from '../store/coach'
 import { localDay } from '../store/sessions'
 import { fireConfetti } from '../components/Confetti'
 import { kidKey } from '../store/kid'
+import { awardRandomGoldIfReached, clearPick } from '../store/randomSong'
 
 export type SessionState =
   | { status: 'idle' }
@@ -49,6 +50,8 @@ export type SessionState =
       marksJustReached: MarkReached[]
       /** Personal records this take just beat (see src/store/records.ts). */
       recordsBeaten: RecordKey[]
+      /** This take completed the day's 10 surprise songs and earned the gold box. */
+      randomGold: boolean
     }
   | { status: 'error'; error: MicError }
 
@@ -69,6 +72,8 @@ interface InflightCheckpoint {
   pieceId: string | null
   /** How many "Played it! +1" taps had landed as of this checkpoint. Optional so a checkpoint written by an older build still parses. */
   repetitions?: number
+  /** The take is for a surprise-picked song. Optional so an older checkpoint still parses. */
+  random?: boolean
 }
 
 function readInflightCheckpoint(): InflightCheckpoint | null {
@@ -192,6 +197,8 @@ let hiddenListenersAttached = false
 // saved take so it's excluded from goal/active-minutes counting and from
 // Piano home's take list, but still uploads to Drive like any other take.
 let currentIsNote = false
+// Set when the take is for a song the surprise picker chose (see startTake's opts.random).
+let currentRandom = false
 let autoStopTimer: ReturnType<typeof setTimeout> | null = null
 // Live "Played it! +1" tally for the take in progress (see bumpLiveRepetition) -
 // reset at the start of every take and folded onto the take itself at stop.
@@ -300,7 +307,7 @@ async function persistPartialChunk(
  * many seconds have elapsed (used for the 15s "Say it" voice note - no need
  * for a kid-facing recording to ever run that long).
  */
-export async function startTake(pieceId: string | null, opts?: { isNote?: boolean; maxSeconds?: number }): Promise<void> {
+export async function startTake(pieceId: string | null, opts?: { isNote?: boolean; maxSeconds?: number; random?: boolean }): Promise<void> {
   if (isRecordingActive(state)) return
 
   // Best-effort and fire-and-forget: browsers that condition the grant on a
@@ -310,6 +317,7 @@ export async function startTake(pieceId: string | null, opts?: { isNote?: boolea
 
   currentPieceId = pieceId
   currentIsNote = opts?.isNote ?? false
+  currentRandom = opts?.random ?? false
   currentRepetitions = 0
   const takeId = randomId()
   currentTakeId = takeId
@@ -396,7 +404,7 @@ export async function startTake(pieceId: string | null, opts?: { isNote?: boolea
       }
       if (nowMs - lastCheckpointAt >= CHECKPOINT_INTERVAL_MS) {
         lastCheckpointAt = nowMs
-        writeInflightCheckpoint({ id: takeId, activeMs: frame.activeMs, startedAt: currentStartedAt, pieceId, repetitions: currentRepetitions })
+        writeInflightCheckpoint({ id: takeId, activeMs: frame.activeMs, startedAt: currentStartedAt, pieceId, repetitions: currentRepetitions, ...(currentRandom ? { random: true } : {}) })
       }
     })
 
@@ -405,6 +413,7 @@ export async function startTake(pieceId: string | null, opts?: { isNote?: boolea
     const kind = err instanceof MicStartError ? err.kind : 'unknown'
     currentTakeId = null
     currentIsNote = false
+    currentRandom = false
     currentRepetitions = 0
     clearAutoStopTimer()
     resetTrackingState()
@@ -430,6 +439,7 @@ export function bumpLiveRepetition(): number {
     startedAt: currentStartedAt,
     pieceId: currentPieceId,
     repetitions: currentRepetitions,
+    ...(currentRandom ? { random: true } : {}),
   })
   return currentRepetitions
 }
@@ -444,9 +454,11 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
   const meter = currentMeter
   const takeId = currentTakeId
   const isNote = currentIsNote
+  const random = currentRandom
   const onsets = currentOnsets
   const repetitions = currentRepetitions
   currentIsNote = false
+  currentRandom = false
   currentRepetitions = 0
   clearAutoStopTimer()
 
@@ -489,6 +501,7 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
     day,
     pieceId,
     ...(isNote ? { isNote: true } : {}),
+    ...(random && !isNote ? { random: true as const } : {}),
     startedAt,
     durationSec,
     activeSec,
@@ -507,6 +520,7 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
   let songBeadIds: string[] | null = null
   let marksJustReached: MarkReached[] = []
   let recordsBeaten: RecordKey[] = []
+  let randomGold = false
 
   if (!discarded) {
     if (result.blob) {
@@ -524,6 +538,11 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
       recordsBeaten = updateRecords()
     }
     if (pieceId && !isNote) songBeadIds = awardSongTargetBeadsIfReached(pieceId, day)
+    if (take.random) {
+      clearPick()
+      randomGold = awardRandomGoldIfReached(day)
+      if (randomGold) fireConfetti('big')
+    }
     // Kick the Drive upload right away; the worker also retries later.
     if (take.upload) void processUploadQueue()
 
@@ -558,7 +577,7 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
   clearInflightCheckpoint()
   currentTakeId = null
 
-  setState({ status: 'done', take, goalJustReached, discarded, songBeadIds, marksJustReached, recordsBeaten })
+  setState({ status: 'done', take, goalJustReached, discarded, songBeadIds, marksJustReached, recordsBeaten, randomGold })
 }
 
 export function dismiss(): void {
@@ -639,6 +658,7 @@ export async function recoverUnfinishedTakes(): Promise<number> {
     const matchingCheckpoint = checkpoint && checkpoint.id === id ? checkpoint : null
     const activeMs = matchingCheckpoint?.activeMs ?? 0
     const repetitions = matchingCheckpoint?.repetitions ?? 0
+    const random = matchingCheckpoint?.random === true
     const settings = getDoc().settings
     const take: PianoTake = {
       id,
@@ -647,6 +667,7 @@ export async function recoverUnfinishedTakes(): Promise<number> {
       startedAt,
       durationSec: chunks, // ~1 chunk per second - see AssembledPartial's doc comment
       activeSec: Math.round(activeMs / 1000),
+      ...(random ? { random: true as const } : {}),
       ...(repetitions > 0 ? { repetitions } : {}),
       mimeType,
       sizeBytes: blob.size,

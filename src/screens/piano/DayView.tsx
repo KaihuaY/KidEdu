@@ -6,6 +6,7 @@ import { feelingEmoji } from '../../store/feeling'
 import { tokenEmojis } from '../../store/piano'
 import { RECORD_LABELS, type RecordKey } from '../../store/records'
 import { MOODS } from '../../store/journal'
+import { RANDOM_GOAL, randomSongsDone } from '../../store/randomSong'
 import { dayOffset, formatClock, localDay } from '../../store/sessions'
 import { DateStrip } from '../../components/DateStrip'
 import { CoachCard } from '../../components/CoachCard'
@@ -49,7 +50,10 @@ function DayTakeRow({ take, pieces }: { take: PianoTake; pieces: PianoPiece[] })
         onClick={() => setOpen((v) => !v)}
         style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem', background: 'none', border: 'none', padding: 0, cursor: 'pointer', minHeight: 44, textAlign: 'left' }}
       >
-        <strong>{pieceLabel(take.pieceId, pieces)}</strong>
+        <strong>
+          {take.random ? '🎲 ' : ''}
+          {pieceLabel(take.pieceId, pieces)}
+        </strong>
         <span style={{ color: 'var(--cc-ink-soft)', fontSize: '0.8rem' }}>
           {wallTime} · {formatClock(take.durationSec)}
         </span>
@@ -72,6 +76,7 @@ export function DayView() {
   const progress = useProgress()
   const today = localDay()
   const digest = useMemo(() => dayDigest(progress, day), [progress, day])
+  const randomDone = randomSongsDone(progress.piano.takes, day)
   const [noteViewerIndex, setNoteViewerIndex] = useState<number | null>(null)
 
   const isEmpty =
@@ -115,6 +120,12 @@ export function DayView() {
       {!isEmpty && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <strong style={{ fontSize: '1.05rem' }}>🎯 Marks</strong>
+          {randomDone > 0 && (
+            <span data-testid="day-random">
+              🎲 Surprise songs: {randomDone} of {RANDOM_GOAL}
+              {progress.piano.days[day]?.randomGoldAt ? ' · 🟡' : ''}
+            </span>
+          )}
           {digest.marks.map((mark) => (
             <div key={mark.index} data-testid="day-mark-row" style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
               <span>

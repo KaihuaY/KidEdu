@@ -7,7 +7,9 @@ import { goalProgress, pianoDaysDone, practiceSecondsForDay, steadyBeatDots } fr
 import { formatClock, lastNDays, localDay } from '../../store/sessions'
 import { groupPieces, pieceStatus, playsForDay } from '../../store/songStats'
 import { claimTomorrowFirstApply, tomorrowFirstFor } from '../../store/tomorrowFirst'
+import { randomStatus, readPick, takeFreshSpinRequest, RANDOM_GOAL } from '../../store/randomSong'
 import { StreakCalendar } from '../../components/StreakCalendar'
+import { RandomSongPicker } from '../../components/RandomSongPicker'
 import { getAudioBackend, startTake } from '../../audio/recordingSession'
 import { getRecordingStore, useLocalAudioIds } from '../../store/recordings'
 import { buildFileName, processUploadQueue } from '../../store/driveUpload'
@@ -258,6 +260,23 @@ export function PianoHome() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Surprise song (store/randomSong.ts): the grown-up's 🎲 list, today's count
+  // out of 10, and the pick waiting to be recorded on this device. The done
+  // screen's "Next surprise song" button leaves a one-shot flag so Piano home
+  // opens straight into a fresh spin.
+  const [pickerOpen, setPickerOpen] = useState<null | 'open' | 'fresh'>(() => (takeFreshSpinRequest() ? 'fresh' : null))
+  const random = useMemo(() => randomStatus(progress, today), [progress, today])
+  const randomDone = Math.min(random.done, random.goal)
+  const pendingPick = random.poolSize > 0 ? readPick(today) : null
+  const pendingPiece = pendingPick ? pianoPieces.find((p) => p.id === pendingPick.pieceId) : undefined
+
+  function handleRandomRecord(pieceId: string) {
+    // Same rule as handleRecord: startTake must run inside the tap.
+    pickPiece(pieceId)
+    void startTake(pieceId, { random: true })
+    navigate('/piano/record')
+  }
+
   function toggleMetronomeOpen() {
     const next = !metronomeOpen
     setMetronomeOpen(next)
@@ -287,6 +306,20 @@ export function PianoHome() {
 
       <div className="cc-card" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
         <RingTimer size={120} progress={goalProgress(countedSec, goalMin)} label={formatClock(countedSec)} sublabel={`of ${goalMin} min`} />
+        {random.poolSize > 0 && (
+          <button
+            type="button"
+            data-testid="random-ring"
+            aria-label={`Surprise songs today: ${randomDone} of ${random.goal}. ${random.goal} earns a gold box.`}
+            onClick={() => setPickerOpen('open')}
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem', background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', color: 'var(--cc-ink)' }}
+          >
+            <RingTimer size={96} color="var(--cc-accent)" progress={randomDone / random.goal} label={`${randomDone}/${random.goal}`} sublabel="🎲 songs" />
+            <span data-testid="random-reward-caption" style={{ fontSize: '0.8rem', fontWeight: 700, color: random.earned ? 'var(--cc-success)' : 'var(--cc-ink-soft)' }}>
+              {random.earned ? '🟡 earned today!' : `${RANDOM_GOAL} = 🟡 gold box`}
+            </span>
+          </button>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
           <WeekDots days={week} done={daysDone} />
           <button
@@ -305,12 +338,59 @@ export function PianoHome() {
         </div>
       </div>
 
-      <TierStrip />
+      <TierStrip onOpenRandom={() => setPickerOpen('open')} />
 
       <StreakCalendar />
 
+      {pickerOpen && (
+        <RandomSongPicker
+          today={today}
+          freshSpin={pickerOpen === 'fresh'}
+          onRecord={handleRandomRecord}
+          onClose={() => setPickerOpen(null)}
+        />
+      )}
+
       <div className="cc-card" style={{ padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <strong>What are you playing?</strong>
+        {random.poolSize > 0 ? (
+          <>
+            <button
+              type="button"
+              data-testid="surprise-me"
+              className="cc-btn cc-btn-accent"
+              style={{ minHeight: 56 }}
+              onClick={() => setPickerOpen('open')}
+            >
+              🎲 Surprise me!
+            </button>
+            {pendingPiece && !pickerOpen && (
+              <div
+                data-testid="random-pending"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap', fontWeight: 700 }}
+              >
+                <span>
+                  🎲 Your surprise song: {pendingPiece.emoji} {pendingPiece.name.trim()}
+                </span>
+                <button
+                  type="button"
+                  data-testid="random-pending-record"
+                  className="cc-btn cc-btn-primary"
+                  style={{ minHeight: 56 }}
+                  onClick={() => handleRandomRecord(pendingPiece.id)}
+                >
+                  ▶ Record it
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          pianoPieces.length > 0 && (
+            <span data-testid="random-empty-hint" style={{ color: 'var(--cc-ink-soft)', fontSize: '0.85rem' }}>
+              🎲 Ask a grown-up to add songs to the surprise list in Settings.
+            </span>
+          )
+        )}
         {firstSongToday && selectedPieceId === firstSongToday.id && (
           <p data-testid="tomorrow-banner" style={{ margin: 0, fontWeight: 700, color: 'var(--cc-primary)' }}>
             ⭐ You chose to start with {firstSongToday.name.trim()} today!

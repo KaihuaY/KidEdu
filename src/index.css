@@ -284,6 +284,19 @@ textarea {
   }
 }
 
+/* The surprise-song reel landing (src/components/RandomSongPicker.tsx). */
+@keyframes cc-reel-land {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 /* Marks a low-confidence scanned sticker that needs a tap to fix - used on
    CameraScan's preview grid. */
 @keyframes cc-pulse {

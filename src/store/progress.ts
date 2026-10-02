@@ -32,6 +32,8 @@ export interface PianoPiece {
   timesPerDay?: number
   /** 'week' (default, so older pieces stay visible) = big chips, 'keep' = under "More songs", 'archived' = hidden from the kid, history kept. */
   status?: 'week' | 'keep' | 'archived'
+  /** In the grown-up's surprise list (see store/randomSong.ts). */
+  inRandom?: boolean
   /** Manual order within a status group (lower first). */
   order?: number
 }
@@ -349,6 +351,8 @@ export interface PianoTake {
   pieceId: string | null
   /** A grown-up's voice note, not practice: never counts toward goals or the takes list. */
   isNote?: boolean
+  /** Recorded for a song the app picked (the surprise picker). */
+  random?: true
   startedAt: number
   durationSec: number
   activeSec: number
@@ -382,6 +386,8 @@ export interface PianoTake {
 
 export interface PianoDay {
   goalReachedAt?: number
+  /** The day's gold box for 10 surprise songs was granted. */
+  randomGoldAt?: number
   parentStars?: ParentStars
   parentRatedAt?: number
   /** Piece ids that already got their "song repeat target" beads today (see awardSongTargetBeadsIfReached). */

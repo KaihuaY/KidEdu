@@ -48,6 +48,7 @@ export const BADGES: Badge[] = [
   { id: 'first-pattern', title: 'Pattern maker', emoji: '🎨', how: 'Make your first pretty pattern in the Pattern Lab.' },
   { id: 'pattern-lab-all', title: 'Pattern Lab master', emoji: '🎨', how: 'Finish every pattern in the Pattern Lab.' },
   { id: 'trick-gym-all', title: 'Trick Gym champion', emoji: '💪', how: 'Master all seven tricks in the Trick Gym.' },
+  { id: 'surprise-gold-1', title: 'Lucky dip', emoji: '🎲', how: '10 surprise songs in one day' },
 ]
 
 /** Whether every card in `set` is owned (count >= 1) in `doc.collection`. */
@@ -112,6 +113,8 @@ export function earnedBadges(doc: ProgressDoc): string[] {
   if (teacherStars >= 1) out.push('teacher-star-1')
   if (teacherStars >= 4) out.push('teacher-star-4')
   if (teacherStars >= 10) out.push('teacher-star-10')
+
+  if (Object.values(doc.piano.days ?? {}).some((d) => d?.randomGoldAt)) out.push('surprise-gold-1')
 
   return out
 }

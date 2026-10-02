@@ -13,6 +13,7 @@ import {
 } from '../store/progress'
 import { localDay } from '../store/sessions'
 import { pieceStatus } from '../store/songStats'
+import { RANDOM_GOAL, randomPool } from '../store/randomSong'
 import { canMovePiece, movePieceOrder, nextOrderFor } from '../store/pieceOrder'
 import { clearToken, getToken, setToken, start as startSync, stop as stopSync, useSyncStatus } from '../store/gistSync'
 import { PinGate } from '../components/PinGate'
@@ -387,8 +388,35 @@ function PianoPiecesEditor() {
     setConfirmingDeleteId(null)
   }
 
+  const randomCount = randomPool(pieces).length
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+        <p data-testid="random-list-count" style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+          🎲 Surprise list: {randomCount} song{randomCount === 1 ? '' : 's'} · {RANDOM_GOAL} surprise songs in a day earns a gold box
+        </p>
+        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            data-testid="random-add-week"
+            className="cc-btn cc-btn-surface"
+            style={{ minHeight: 44, padding: '0.3rem 0.6rem', fontSize: '0.85rem' }}
+            onClick={() => setPieces(pieces.map((p) => (pieceStatus(p) === 'week' ? { ...p, inRandom: true } : p)))}
+          >
+            Add all this-week songs
+          </button>
+          <button
+            type="button"
+            data-testid="random-clear"
+            className="cc-btn cc-btn-surface"
+            style={{ minHeight: 44, padding: '0.3rem 0.6rem', fontSize: '0.85rem' }}
+            onClick={() => setPieces(pieces.map((p) => ({ ...p, inRandom: false })))}
+          >
+            Clear list
+          </button>
+        </div>
+      </div>
       {pieces.map((p) => {
         const status = pieceStatus(p)
         return (
@@ -463,6 +491,27 @@ function PianoPiecesEditor() {
                   {label}
                 </button>
               ))}
+            </div>
+            <div style={{ paddingLeft: '0.2rem' }}>
+              <button
+                type="button"
+                data-testid={`piece-random-${p.id}`}
+                aria-pressed={!!p.inRandom}
+                className="cc-btn"
+                disabled={status === 'archived'}
+                style={{
+                  minHeight: 44,
+                  padding: '0.3rem 0.75rem',
+                  fontSize: '0.85rem',
+                  background: p.inRandom ? 'var(--cc-primary)' : 'var(--cc-surface)',
+                  color: p.inRandom ? 'var(--cc-primary-ink)' : 'var(--cc-ink)',
+                  border: p.inRandom ? 'none' : '2px solid var(--cc-border)',
+                  boxShadow: 'none',
+                }}
+                onClick={() => updatePiece(p.id, { inRandom: !p.inRandom })}
+              >
+                {p.inRandom ? '✓ 🎲 In surprise list' : '＋ 🎲 Surprise list'}
+              </button>
             </div>
             {confirmingDeleteId === p.id && (
               <div className="cc-card" style={{ padding: '0.6rem 0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>

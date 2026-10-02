@@ -771,3 +771,11 @@ is never part of the progress document. Tokens for the dark palette live in
   badges at 1, 4 and 10 stars. Piano home and Grown-up review both show the
   week's confirmed-day count; the family board adds a "⭐ Teacher's stars"
   row for the last 7 days.
+
+## Round 14
+
+- **Surprise me picker**: a slot-machine reel lands on a random song from the surprise list, with one re-spin per pick. It counts when the picked song is recorded for at least 20 seconds.
+- **Parent's surprise list**: Settings, Piano pieces, tap "＋ 🎲 Surprise list" on each song (or "Add all this-week songs" / "Clear list"). Songs on it show a 🎲 in Songs.
+- **Second circle and daily gold box**: 10 surprise songs in a day earns a 🟡 gold box. It resets every day and is earned once per day.
+- **Where the promise shows**: the ring caption, the prize strip chip, and the picker header. The day view lists surprise songs under Marks.
+- **Badge**: "Lucky dip".

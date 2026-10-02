@@ -26,6 +26,8 @@ import {
 import { getDoc, resetAll, update } from '../../store/progress'
 import { clearKid, setKid } from '../../store/kid'
 import { getRecordingStore } from '../../store/recordings'
+import { readPick, spin } from '../../store/randomSong'
+import { localDay } from '../../store/sessions'
 
 class MemoryStorage implements Storage {
   private map = new Map<string, string>()
@@ -530,5 +532,54 @@ describe('the inflight checkpoint key is per-kid', () => {
     await wait(1200)
     await stopTake('user')
     expect(sessionStorage.getItem('cubeclimb.piano.inflight.amelia')).toBeNull() // cleared on a clean stop
+  }, 8000)
+})
+
+describe('surprise song takes', () => {
+  it('flags the saved take random, reports no gold, and clears the stored pick', async () => {
+    update('settings', (st) => ({ ...st, pianoPieces: [{ id: 'piece-1', name: 'Twinkle', emoji: '⭐', inRandom: true }] }))
+    const today = localDay()
+    expect(spin(today)?.pieceId).toBe('piece-1')
+    expect(readPick(today)).not.toBeNull()
+
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    await startTake('piece-1', { random: true })
+    await wait(3200)
+    await stopTake('user')
+
+    const state = getSessionState()
+    expect(state.status).toBe('done')
+    if (state.status === 'done') {
+      expect(state.discarded).toBe(false)
+      expect(state.take.random).toBe(true)
+      expect(state.randomGold).toBe(false)
+    }
+    expect(getDoc().piano.takes.at(-1)?.random).toBe(true)
+    expect(readPick(today)).toBeNull()
+  }, 8000)
+
+  it('a discarded short random take keeps the pick', async () => {
+    update('settings', (st) => ({ ...st, pianoPieces: [{ id: 'piece-1', name: 'Twinkle', emoji: '⭐', inRandom: true }] }))
+    const today = localDay()
+    spin(today)
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    await startTake('piece-1', { random: true })
+    await wait(800)
+    await stopTake('user')
+
+    const state = getSessionState()
+    expect(state.status === 'done' && state.discarded).toBe(true)
+    expect(readPick(today)).not.toBeNull()
+  }, 8000)
+
+  it('an ordinary take has no random key', async () => {
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    await startTake('piece-1')
+    await wait(3200)
+    await stopTake('user')
+
+    const saved = getDoc().piano.takes.at(-1)
+    expect(saved).toBeDefined()
+    expect('random' in (saved ?? {})).toBe(false)
   }, 8000)
 })

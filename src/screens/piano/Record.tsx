@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { navigate } from '../../router'
-import { useProgress, type PianoPiece, type Records } from '../../store/progress'
+import { useProgress, type PianoPiece, type PianoTake, type Records } from '../../store/progress'
 import { repetitionsForPiece, setSelfRating, setTakeGoalHit, tokenEmojis, usePiano } from '../../store/piano'
 import { goalProgress, practiceSecondsForDay, steadyBeatDots } from '../../store/pianoRewards'
 import { useRecords, type RecordKey } from '../../store/records'
@@ -16,6 +16,7 @@ import { FeelingPicker } from '../../components/FeelingPicker'
 import { JournalNudge } from '../../components/JournalNudge'
 import { TomorrowFirstPicker } from '../../components/TomorrowFirstPicker'
 import { TeacherReminder } from '../../components/TeacherReminder'
+import { countsAsRandom, randomStatus, requestFreshSpin, RANDOM_MIN_SECONDS } from '../../store/randomSong'
 import { MetronomeStrip } from '../../components/Metronome'
 import { SelfRatingButtons } from '../../components/SelfRatingButtons'
 import { TakePlayer } from '../../components/TakePlayer'
@@ -33,6 +34,50 @@ const ERROR_MESSAGES: Record<string, string> = {
 function backToPiano(): void {
   dismiss()
   navigate('/piano')
+}
+
+/**
+ * The surprise-song lines on the done screen: how many of today's 10 are done
+ * (and how many are left for the gold box), the "too short to count" note, the
+ * gold celebration, and a shortcut straight into the next spin.
+ */
+function RandomSongLine({ take, justEarned }: { take: PianoTake; justEarned: boolean }) {
+  const progress = useProgress()
+  const status = randomStatus(progress, take.day)
+  const done = Math.min(status.done, status.goal)
+  const left = Math.max(0, status.goal - status.done)
+
+  function nextSurprise() {
+    requestFreshSpin()
+    backToPiano()
+  }
+
+  return (
+    <>
+      {!countsAsRandom(take) ? (
+        <p data-testid="random-too-short" style={{ margin: 0, fontWeight: 700, color: 'var(--cc-ink-soft)', textAlign: 'center' }}>
+          🎲 A surprise song needs at least {RANDOM_MIN_SECONDS} seconds to count.
+        </p>
+      ) : justEarned ? (
+        <p data-testid="random-gold" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-accent)', textAlign: 'center' }}>
+          🎲 {status.goal} surprise songs today! 🟡 A gold box for you!
+        </p>
+      ) : status.earned ? (
+        <p data-testid="random-progress" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)', textAlign: 'center' }}>
+          🎲 Another surprise song! Today&apos;s 🟡 gold box is already yours.
+        </p>
+      ) : (
+        <p data-testid="random-progress" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)', textAlign: 'center' }}>
+          🎲 Surprise song {done} of {status.goal}! {left} more for the 🟡 gold box
+        </p>
+      )}
+      {status.poolSize > 0 && !status.earned && (
+        <button type="button" data-testid="random-next" className="cc-btn cc-btn-accent" style={{ minHeight: 56 }} onClick={nextSurprise}>
+          🎲 Next surprise song
+        </button>
+      )}
+    </>
+  )
 }
 
 /** One kid-facing celebration line for a record `key` that was just beaten, reading the fresh value from `records`. */
@@ -289,6 +334,7 @@ export function Record() {
             Target done! ✨ +2 beads 📿
           </p>
         )}
+        {take.random && !take.isNote && <RandomSongLine take={take} justEarned={session.randomGold} />}
         {records &&
           session.recordsBeaten.map((key) => {
             const msg = recordMessage(key, records, progress.settings.pianoPieces)
