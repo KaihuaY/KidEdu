@@ -6,7 +6,7 @@ import { navigate } from '../router'
  * stays the same small circle it always was) that opens that day in
  * DayView - a quick way in from the strip on Piano home.
  */
-export function WeekDots({ days, done }: { days: string[]; done: Set<string> }) {
+export function WeekDots({ days, done, sick }: { days: string[]; done: Set<string>; sick?: Set<string> }) {
   return (
     <div style={{ display: 'flex', gap: '0.1rem' }} role="group" aria-label="This week's practice days">
       {days.map((day) => (
@@ -14,6 +14,7 @@ export function WeekDots({ days, done }: { days: string[]; done: Set<string> }) 
           key={day}
           type="button"
           data-testid={`week-dot-${day}`}
+          data-sick={sick?.has(day) && !done.has(day) ? 'true' : undefined}
           title={day}
           aria-label={day}
           onClick={() => navigate(`/piano/day/${day}`)}
@@ -29,6 +30,11 @@ export function WeekDots({ days, done }: { days: string[]; done: Set<string> }) 
             cursor: 'pointer',
           }}
         >
+          {sick?.has(day) && !done.has(day) ? (
+            <span aria-hidden="true" style={{ fontSize: '0.95rem', lineHeight: 1 }}>
+              🤒
+            </span>
+          ) : (
           <span
             aria-hidden="true"
             style={{
@@ -38,6 +44,7 @@ export function WeekDots({ days, done }: { days: string[]; done: Set<string> }) 
               background: done.has(day) ? 'var(--cc-success)' : 'var(--cc-border)',
             }}
           />
+          )}
         </button>
       ))}
     </div>

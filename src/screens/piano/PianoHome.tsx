@@ -8,6 +8,7 @@ import { formatClock, lastNDays, localDay } from '../../store/sessions'
 import { groupPieces, pieceStatus, playsForDay } from '../../store/songStats'
 import { claimTomorrowFirstApply, tomorrowFirstFor } from '../../store/tomorrowFirst'
 import { randomStatus, readPick, takeFreshSpinRequest, RANDOM_GOAL } from '../../store/randomSong'
+import { sickDays } from '../../store/sickDays'
 import { StreakCalendar } from '../../components/StreakCalendar'
 import { RandomSongPicker } from '../../components/RandomSongPicker'
 import { getAudioBackend, startTake } from '../../audio/recordingSession'
@@ -196,6 +197,7 @@ export function PianoHome() {
   const goalMin = goalMinutes.piano
   const week = lastNDays(7, today)
   const daysDone = useMemo(() => pianoDaysDone(piano), [piano])
+  const sickSet = useMemo(() => new Set(sickDays(piano)), [piano])
   const playsToday = useMemo(() => playsForDay(piano.takes, today), [piano.takes, today])
   const songTargets = useMemo(
     () => songTargetsForDay(pianoPieces, piano.takes, today),
@@ -321,7 +323,7 @@ export function PianoHome() {
           </button>
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-          <WeekDots days={week} done={daysDone} />
+          <WeekDots days={week} done={daysDone} sick={sickSet} />
           <button
             type="button"
             data-testid="plays-today"

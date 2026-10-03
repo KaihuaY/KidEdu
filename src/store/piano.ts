@@ -20,7 +20,7 @@ import {
   type TakeCoach,
 } from './progress'
 import { bumpStreak, dayOffset, localDay } from './sessions'
-import { applyFreezeIfNeeded } from './streakFreeze'
+import { bridgeGap } from './streakFreeze'
 import { TIERS, xpForTier, type Tier } from './rewards'
 import { practiceSecondsForDay, tokenForParentStars } from './pianoRewards'
 import { getRecordingStore } from './recordings'
@@ -236,6 +236,8 @@ export interface MarkReached {
   tokens: TokenCounts
   /** Set on the index-0 entry when reaching the ring today also applied a weekly streak freeze to a missed day. */
   frozenDay?: string
+  /** Set on the index-0 entry when sick days a grown-up marked bridged a gap in the chain (count of those days). */
+  sickBridged?: number
 }
 
 /** Which PianoDay stamp records mark `index` (kept from rounds 5 and 8 so old days still read correctly). */
@@ -258,21 +260,25 @@ export function awardMarksIfReached(day: string): MarkReached[] {
     const stamp = MARK_STAMPS[index]
     if (dayState?.[stamp] || minutes < mark.minutes) return
     let frozenDay: string | null = null
+    let sickBridged = 0
     update('piano', (piano) => {
       const daysWithStamp = { ...piano.days, [day]: { ...piano.days[day], [stamp]: Date.now() } }
       if (index !== 0) return { ...piano, days: daysWithStamp }
-      const frozen = applyFreezeIfNeeded(piano, day)
-      frozenDay = frozen.frozenDay
-      if (!frozenDay) return { ...piano, days: daysWithStamp, streak: bumpStreak(piano.streak, day) }
+      const gap = bridgeGap(piano, day)
+      const gapWasOpen = piano.streak.lastDay !== day && piano.streak.lastDay !== dayOffset(day, -1)
+      if (!gap.continues || !gapWasOpen) return { ...piano, days: daysWithStamp, streak: bumpStreak(piano.streak, day) }
+      frozenDay = gap.frozenDay
+      sickBridged = gap.sickBridged
       return {
         ...piano,
-        days: { ...daysWithStamp, [frozenDay]: frozen.piano.days[frozenDay] },
-        streak: bumpStreak({ ...frozen.piano.streak, lastDay: dayOffset(day, -1) }, day),
+        days: frozenDay ? { ...daysWithStamp, [frozenDay]: gap.piano.days[frozenDay] } : daysWithStamp,
+        streak: bumpStreak({ ...piano.streak, lastDay: dayOffset(day, -1) }, day),
       }
     })
     if (totalTokens(mark.tokens) > 0) grantTokens(mark.tokens)
     const entry: MarkReached = { index, minutes: mark.minutes, tokens: { ...mark.tokens } }
     if (frozenDay) entry.frozenDay = frozenDay
+    if (sickBridged > 0) entry.sickBridged = sickBridged
     reached.push(entry)
   })
   return reached

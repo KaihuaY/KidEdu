@@ -77,6 +77,30 @@ describe('dayKind', () => {
     expect(dayKind(piano, '2026-09-10', today)).toBe('ring')
   })
 
+  it('sick when the day is marked sick', () => {
+    const piano: PianoSection = { ...emptyPiano(0), days: { '2026-09-10': { sickDay: true } } }
+    expect(dayKind(piano, '2026-09-10', today)).toBe('sick')
+  })
+
+  it('sick wins over played and frozen', () => {
+    const piano: PianoSection = {
+      ...emptyPiano(0),
+      days: { '2026-09-10': { sickDay: true, streakFreeze: true } },
+      takes: [makeTake('2026-09-10')],
+    }
+    expect(dayKind(piano, '2026-09-10', today)).toBe('sick')
+  })
+
+  it('ring wins over sick', () => {
+    const piano: PianoSection = { ...emptyPiano(0), days: { '2026-09-10': { goalReachedAt: 1, sickDay: true } } }
+    expect(dayKind(piano, '2026-09-10', today)).toBe('ring')
+  })
+
+  it('future wins over sick', () => {
+    const piano: PianoSection = { ...emptyPiano(0), days: { '2026-09-16': { sickDay: true } } }
+    expect(dayKind(piano, '2026-09-16', today)).toBe('future')
+  })
+
   it('today itself is not future', () => {
     const piano = emptyPiano(0)
     expect(dayKind(piano, today, today)).toBe('none')

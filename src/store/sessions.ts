@@ -1,4 +1,4 @@
-import { update, type Streak } from './progress'
+import { getDoc, update, type Streak } from './progress'
 
 // ---------------------------------------------------------------------------
 // Shared day/streak/clock helpers for both activities (cube and piano).
@@ -64,6 +64,18 @@ export function formatClock(totalSeconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+/** True when the profile streak's lastDay is earlier than yesterday, the gap is at most 60 days, and every day strictly between is a grown-up sick day. */
+function sickGapOnly(lastDay: string, today: string, days: Record<string, { sickDay?: true } | undefined>): boolean {
+  if (!lastDay || lastDay >= dayOffset(today, -1)) return false
+  let d = dayOffset(lastDay, 1)
+  for (let i = 0; i < 61; i++) {
+    if (d >= today) return true
+    if (!days[d]?.sickDay) return false
+    d = dayOffset(d, 1)
+  }
+  return false
+}
+
 /**
  * Logs today's cube practice session (once per local day) and advances the
  * profile's streak. Replaces the old `updateStreakAndLogSession` in
@@ -71,6 +83,7 @@ export function formatClock(totalSeconds: number): string {
  */
 export function logCubeSession(profileId: 'kid' | 'parent', minutes: number): void {
   const today = localDay()
+  const pianoDays = getDoc().piano.days
   update('profiles', (profiles) => {
     const profile = profiles[profileId]
     const already = profile.sessions.some((s) => s.day === today)
@@ -79,7 +92,9 @@ export function logCubeSession(profileId: 'kid' | 'parent', minutes: number): vo
       [profileId]: {
         ...profile,
         sessions: already ? profile.sessions : [...profile.sessions, { day: today, minutes, stagesDone: 0 }],
-        streak: already ? profile.streak : bumpStreak(profile.streak, today),
+        streak: already
+          ? profile.streak
+          : bumpStreak(profileId === 'kid' && sickGapOnly(profile.streak.lastDay, today, pianoDays) ? { ...profile.streak, lastDay: dayOffset(today, -1) } : profile.streak, today),
       },
     }
   })

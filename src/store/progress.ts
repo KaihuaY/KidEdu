@@ -404,6 +404,8 @@ export interface PianoDay {
   feelingAt?: number
   /** This day was skipped but a weekly streak freeze covered it, so the piano chain continued (see store/streakFreeze.ts). */
   streakFreeze?: true
+  /** A grown-up marked this day as a sick day: it pauses the piano and cube streaks instead of breaking them (see store/sickDays.ts). */
+  sickDay?: true
   /** A grown-up confirmed (PIN) that she worked on the teacher's note this day. */
   teacherConfirmed?: { noteId: string; at: number }
 }

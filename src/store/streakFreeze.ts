@@ -52,3 +52,38 @@ export function applyFreezeIfNeeded(piano: PianoSection, day: string): { piano: 
   }
   return { piano: nextPiano, frozenDay: missedDay }
 }
+
+/**
+ * What happens to the piano chain when the ring is reached on `day` after a gap. Looks at the days strictly
+ * between streak.lastDay and `day` (if lastDay is empty, >= day, or the gap is longer than 60 days -> no bridge):
+ * days that are sickDay or already streakFreeze are bridged. If no other day remains -> continues. If exactly ONE
+ * other day remains and freezeAvailable(piano, thatDay) -> that day is frozen (streakFreeze: true) and the chain
+ * continues. Otherwise it does not continue. A zero-day gap (lastDay === day-1) continues trivially with nothing bridged;
+ * lastDay === day returns continues: true as well (same-day, bumpStreak leaves it unchanged).
+ */
+export function bridgeGap(
+  piano: PianoSection,
+  day: string,
+): { piano: PianoSection; continues: boolean; frozenDay: string | null; sickBridged: number } {
+  const last = piano.streak.lastDay
+  const none = { piano, continues: false, frozenDay: null, sickBridged: 0 }
+  if (!last || last > day) return none
+  if (last === day || last === dayOffset(day, -1)) return { ...none, continues: true }
+
+  const others: string[] = []
+  let sick = 0
+  let d = dayOffset(last, 1)
+  for (let i = 0; d < day; i++) {
+    if (i >= 60) return none
+    const state = piano.days[d]
+    if (state?.sickDay) sick++
+    else if (!state?.streakFreeze) others.push(d)
+    d = dayOffset(d, 1)
+  }
+  if (others.length === 0) return { piano, continues: true, frozenDay: null, sickBridged: sick }
+  if (others.length > 1) return none
+  const missed = others[0]
+  if (!freezeAvailable(piano, missed)) return none
+  const next: PianoSection = { ...piano, days: { ...piano.days, [missed]: { ...piano.days[missed], streakFreeze: true } } }
+  return { piano: next, continues: true, frozenDay: missed, sickBridged: sick }
+}

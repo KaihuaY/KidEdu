@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { awardMarksIfReached, saveTake } from '../piano'
 import { computeRecords } from '../records'
-import { getDoc, resetAll, type PianoTake } from '../progress'
-import { applyFreezeIfNeeded, freezeAvailable, freezeUsedInWeek, frozenDays, weekKey } from '../streakFreeze'
+import { getDoc, resetAll, update, type PianoDay, type PianoTake } from '../progress'
+import { dayOffset } from '../sessions'
+import { applyFreezeIfNeeded, bridgeGap, freezeAvailable, freezeUsedInWeek, frozenDays, weekKey } from '../streakFreeze'
 
 // Same in-memory localStorage mock as piano.test.ts - piano.ts writes through
 // progress.ts's `update`, which persists there.
@@ -177,5 +178,64 @@ describe('cube streak is untouched', () => {
 
     const kidStreak = getDoc().profiles.kid.streak
     expect(kidStreak).toEqual({ current: 0, best: 0, lastDay: '' })
+  })
+})
+
+describe('bridgeGap with sick days', () => {
+  const D = '2026-09-30'
+  const off = (n: number) => dayOffset(D, n)
+
+  function seed(lastDayOffset: number, current: number, days: Record<string, PianoDay>): void {
+    update('piano', (piano) => ({
+      ...piano,
+      days,
+      streak: { current, best: current, lastDay: off(lastDayOffset) },
+    }))
+  }
+  const sick = (...ns: number[]) => Object.fromEntries(ns.map((n) => [off(n), { sickDay: true as const }]))
+
+  function reach(): ReturnType<typeof awardMarksIfReached> {
+    saveTake({ id: 't', day: D, pieceId: null, startedAt: Date.now(), durationSec: 900, activeSec: 900, mimeType: 'audio/webm', sizeBytes: 1, hasAudio: true, deviceId: 'd' })
+    return awardMarksIfReached(D)
+  }
+
+  it('bridges three sick days without freezing anything', () => {
+    seed(-4, 5, sick(-3, -2, -1))
+    const marks = reach()
+    expect(getDoc().piano.streak.current).toBe(6)
+    expect(marks[0].sickBridged).toBe(3)
+    expect(marks[0].frozenDay).toBeUndefined()
+    expect(frozenDays(getDoc().piano)).toEqual([])
+  })
+
+  it('freezes the one unmarked day between sick days', () => {
+    seed(-4, 5, sick(-3, -1))
+    const marks = reach()
+    expect(getDoc().piano.streak.current).toBe(6)
+    expect(marks[0].frozenDay).toBe(off(-2))
+    expect(marks[0].sickBridged).toBe(2)
+    expect(getDoc().piano.days[off(-2)]?.streakFreeze).toBe(true)
+  })
+
+  it('resets with two unmarked missed days', () => {
+    seed(-4, 5, sick(-3))
+    reach()
+    expect(getDoc().piano.streak.current).toBe(1)
+    expect(frozenDays(getDoc().piano)).toEqual([])
+  })
+
+  it('resets when the gap is longer than 60 days even if all are sick', () => {
+    const all: number[] = []
+    for (let i = -61; i <= -1; i++) all.push(i)
+    seed(-62, 5, sick(...all))
+    reach()
+    expect(getDoc().piano.streak.current).toBe(1)
+  })
+
+  it('reports a zero-day and same-day gap as continuing', () => {
+    seed(-1, 2, {})
+    const piano = getDoc().piano
+    expect(bridgeGap(piano, D)).toEqual({ piano, continues: true, frozenDay: null, sickBridged: 0 })
+    expect(bridgeGap({ ...piano, streak: { ...piano.streak, lastDay: D } }, D).continues).toBe(true)
   })
 })

@@ -779,3 +779,11 @@ is never part of the progress document. Tokens for the dark palette live in
 - **Second circle and daily gold box**: 10 surprise songs in a day earns a 🟡 gold box. It resets every day and is earned once per day.
 - **Where the promise shows**: the ring caption, the prize strip chip, and the picker header. The day view lists surprise songs under Marks.
 - **Badge**: "Lucky dip".
+
+## Round 15
+
+- **Sick days**: a grown-up marks them in Settings (a grid of the last 30 days, plus today and tomorrow).
+- They pause both the piano and the cube streaks: no count is added, but the chain is not broken.
+- Marking a day after the fact restores a streak that already reset. There is no limit on how many days.
+- Shown as 🤒 on the streak calendar and the week dots (and in the day view).
+- Stored as `piano.days[day].sickDay`.

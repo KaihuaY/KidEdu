@@ -79,6 +79,7 @@ export function DayView() {
   const randomDone = randomSongsDone(progress.piano.takes, day)
   const [noteViewerIndex, setNoteViewerIndex] = useState<number | null>(null)
 
+  const isSickDay = !!progress.piano.days[day]?.sickDay
   const isEmpty =
     digest.takes.length === 0 && digest.journal.length === 0 && digest.records.length === 0 && !digest.parentStars && digest.feeling === undefined
 
@@ -87,6 +88,12 @@ export function DayView() {
       <h1 style={{ margin: 0, fontSize: '1.3rem' }}>{dayLabel(day, today)}</h1>
 
       <DateStrip selected={day} onSelect={(d) => navigate(`/piano/day/${d}`)} />
+
+      {isSickDay && (
+        <p data-testid="day-sick" style={{ margin: 0, fontWeight: 700 }}>
+          🤒 Sick day · streaks paused
+        </p>
+      )}
 
       {isEmpty && (
         <div className="cc-card" style={{ padding: '1.25rem', textAlign: 'center' }}>

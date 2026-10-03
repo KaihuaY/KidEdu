@@ -4,7 +4,7 @@
 import { takesForDay } from './pianoRewards'
 import type { PianoSection } from './progress'
 
-export type DayKind = 'ring' | 'played' | 'frozen' | 'none' | 'future'
+export type DayKind = 'ring' | 'played' | 'sick' | 'frozen' | 'none' | 'future'
 
 /** Local YYYY-MM-DD for `year`-`month` (1-12)-`date`. */
 function ymd(year: number, month: number, date: number): string {
@@ -35,6 +35,7 @@ export function monthGrid(year: number, month: number): (string | null)[][] {
 export function dayKind(piano: PianoSection, day: string, today: string): DayKind {
   if (day > today) return 'future'
   if (piano.days[day]?.goalReachedAt) return 'ring'
+  if (piano.days[day]?.sickDay) return 'sick'
   if (piano.days[day]?.streakFreeze) return 'frozen'
   if (takesForDay(piano.takes, day).length > 0) return 'played'
   return 'none'

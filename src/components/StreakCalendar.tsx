@@ -81,6 +81,14 @@ export function StreakCalendar() {
 
   const weeks = monthGrid(viewed.year, viewed.month)
   const frozenDay = freezeUsedInWeek(piano, today)
+  const isChain = (k: DayKind) => k === 'ring' || k === 'frozen' || k === 'sick'
+  const showLegend = weeks.some((row) =>
+    row.some((d) => {
+      if (!d) return false
+      const k = dayKind(piano, d, today)
+      return k === 'sick' || k === 'frozen'
+    }),
+  )
 
   return (
     <div className="cc-card" data-testid="streak-calendar" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
@@ -151,10 +159,10 @@ export function StreakCalendar() {
                 const nextDay = row[cellIndex + 1]
                 const chainsToNext =
                   !!nextDay &&
-                  (kind === 'ring' || kind === 'frozen') &&
+                  isChain(kind) &&
                   (() => {
                     const nextKind = dayKind(piano, nextDay, today)
-                    return nextKind === 'ring' || nextKind === 'frozen'
+                    return isChain(nextKind)
                   })()
                 return (
                   <div key={day} style={{ position: 'relative', width: 44, height: 44 }}>
@@ -197,9 +205,9 @@ export function StreakCalendar() {
                       <span style={{ fontSize: '0.8rem', fontWeight: isToday ? 700 : 400, color: isToday ? 'var(--cc-primary)' : 'var(--cc-ink)' }}>
                         {dateNum}
                       </span>
-                      {kind === 'frozen' ? (
+                      {kind === 'frozen' || kind === 'sick' ? (
                         <span aria-hidden="true" style={{ fontSize: '0.8rem' }}>
-                          ❄️
+                          {kind === 'sick' ? '🤒' : '❄️'}
                         </span>
                       ) : kind === 'future' ? null : (
                         <span
@@ -219,6 +227,12 @@ export function StreakCalendar() {
               })}
             </div>
           ))}
+
+          {showLegend && (
+            <p data-testid="calendar-legend" style={{ margin: 0, fontSize: '0.8rem', color: 'var(--cc-ink-soft)' }}>
+              🤒 sick day · ❄️ freeze
+            </p>
+          )}
         </>
       )}
     </div>

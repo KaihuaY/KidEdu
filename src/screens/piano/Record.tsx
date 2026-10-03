@@ -317,6 +317,11 @@ export function Record() {
             <p style={{ margin: 0, fontWeight: 700 }}>See you tomorrow! 🎹</p>
           </>
         )}
+        {(session.marksJustReached.find((m) => m.index === 0)?.sickBridged ?? 0) > 0 && (
+          <p data-testid="streak-sick" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)', textAlign: 'center' }}>
+            🤒 Welcome back! Your {piano.streak.current}-day chain waited for you.
+          </p>
+        )}
         {session.marksJustReached.find((m) => m.index === 0)?.frozenDay && (
           <p data-testid="streak-frozen" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>
             ❄️ Your streak freeze kept your {piano.streak.current}-day chain going!

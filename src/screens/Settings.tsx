@@ -33,6 +33,7 @@ import { teacherStarTarget } from '../store/teacherNotes'
 import { APP_BUILD } from '../buildInfo'
 import { DeviceOwner } from '../components/DeviceOwner'
 import { MarksEditor } from '../components/MarksEditor'
+import { SickDaysEditor } from '../components/SickDaysEditor'
 import { lockDevice } from '../store/kid'
 import { clearLastCrash, readLastCrash } from '../components/ErrorBoundary'
 import type { Tier } from '../store/rewards'
@@ -891,6 +892,11 @@ export function Settings() {
           Nora picks one of these before she records.
         </p>
         <PianoPiecesEditor />
+      </section>
+
+      <section className="cc-card" data-testid="sick-days-section" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>🤒 Sick days</h2>
+        <SickDaysEditor />
       </section>
 
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
