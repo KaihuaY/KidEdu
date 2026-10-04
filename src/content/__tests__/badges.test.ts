@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { BADGES, earnedBadges } from '../badges'
-import { itemsInSet } from '../collection'
+import { COLLECTION, itemsInSet, SETS } from '../collection'
 import { branchById } from '../lessons'
 import { defaultDoc, resetAll, type Bracelet, type MissionProgress, type OwnedItem, type PianoTake, type ProgressDoc } from '../../store/progress'
 
@@ -165,6 +165,19 @@ describe('earnedBadges - collection', () => {
     expect(earnedBadges(doc)).toContain('set-gems')
     expect(earnedBadges(doc)).not.toContain('set-animals')
     expect(earnedBadges(doc)).not.toContain('set-space')
+  })
+
+  it('a set with zero cards never counts as complete, and every set has a badge', () => {
+    const doc: ProgressDoc = defaultDoc()
+    const everything = COLLECTION.map((c) => owned(c.id))
+    doc.collection.items = everything
+    const earned = earnedBadges(doc)
+    for (const s of SETS) {
+      expect(BADGES.some((b) => b.id === `set-${s.id}`), `badge for ${s.id}`).toBe(true)
+      expect(earned.includes(`set-${s.id}`), `set-${s.id}`).toBe(itemsInSet(s.id).length > 0)
+    }
+    doc.collection.items = []
+    for (const s of SETS) expect(earnedBadges(doc)).not.toContain(`set-${s.id}`)
   })
 
   it('first-legendary fires only once a legendary-rarity card is owned', () => {

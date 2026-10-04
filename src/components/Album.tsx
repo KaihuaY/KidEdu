@@ -88,7 +88,10 @@ function ItemCardModal({ item, onClose }: { item: CollectionItem; onClose: () =>
 export function Album() {
   const progress = useProgress()
   const collection = useCollection()
-  const [activeSet, setActiveSet] = useState<CollectionSet>('gems')
+  // Default tab: the first set (in SETS order) she owns at least one card of, else the first set.
+  const [activeSet, setActiveSet] = useState<CollectionSet>(
+    () => SETS.find((s) => itemsInSet(s.id).some((c) => (ownedItem(c.id, collection)?.count ?? 0) > 0))?.id ?? SETS[0].id,
+  )
   const [openItem, setOpenItem] = useState<CollectionItem | null>(null)
   const [stickersOpen, setStickersOpen] = useState(false)
 
@@ -107,7 +110,7 @@ export function Album() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <div style={{ display: 'flex', gap: '0.5rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.5rem' }}>
         {SETS.map((s) => {
           const cards = itemsInSet(s.id)
           const ownedInThisSet = cards.filter((c) => (ownedItem(c.id, collection)?.count ?? 0) > 0).length
@@ -120,7 +123,7 @@ export function Album() {
               className="cc-btn"
               onClick={() => setActiveSet(s.id)}
               style={{
-                flex: 1,
+                minWidth: 0,
                 minHeight: 56,
                 flexDirection: 'column',
                 gap: '0.15rem',
@@ -133,15 +136,23 @@ export function Album() {
               <span style={{ fontSize: '1.3rem' }} aria-hidden="true">
                 {s.emoji}
               </span>
-              <span style={{ fontSize: '0.75rem', fontWeight: 800 }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 800 }}>
                 {ownedInThisSet}/{cards.length}
+              </span>
+              <span
+                style={{ fontSize: '0.75rem', fontWeight: 700, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              >
+                {s.name}
               </span>
             </button>
           )
         })}
       </div>
 
-      <div className="cc-card" style={{ padding: '0.75rem', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.6rem' }}>
+      {cardsInSet.length === 0 && (
+        <div className="cc-card" style={{ padding: '1rem', textAlign: 'center', fontWeight: 800, color: 'var(--cc-ink-soft)' }}>Coming soon</div>
+      )}
+      <div className="cc-card" style={{ padding: '0.75rem', display: cardsInSet.length === 0 ? 'none' : 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.6rem' }}>
         {cardsInSet.map((card) => {
           const own = ownedItem(card.id, collection)
           const isOwned = (own?.count ?? 0) > 0

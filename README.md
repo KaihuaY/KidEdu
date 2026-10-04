@@ -632,13 +632,37 @@ are spent on the **Box** screen, which now has four tabs:
 - **🎟️ Tickets.** As before.
 
 The 76 photos live in `public/collection/` and come from Wikimedia
-Commons under free licences (public domain, CC0, CC BY, CC BY-SA);
-`scripts/collection-sources.json` names the exact file for each card and
-`node scripts/fetch-collection.mjs [--force] [id ...]` downloads 480 px
-copies, refuses anything that is not freely licensed, and regenerates
-`src/content/collectionCredits.ts`. **Settings → Photo credits** (also
-`#/credits`) lists every photographer and licence. Facts and card text are
-in `src/content/collection.ts`; beads in `src/content/beads.ts`.
+Commons under free licences (public domain, CC0, CC BY, CC BY-SA).
+**Settings → Photo credits** (also `#/credits`) lists every photographer and
+licence. Beads are in `src/content/beads.ts`.
+
+How the collection is organised:
+
+- One file per set in `src/content/collection/` (`gems.ts`, `animals.ts`,
+  `space.ts`, `birds.ts`, `butterflies.ts`, `countries.ts`); `item.ts` holds
+  the card type and the `item(...)` helper. `src/content/collection.ts` joins
+  them (`COLLECTION`, `SETS`) and is the only module the app imports.
+- Photo sources are one JSON file per set in `scripts/collection-sources/`
+  (`{ "card-id": "File:Exact title.jpg" }`). A duplicate id across files is an
+  error.
+- Find a photo: `node scripts/find-commons.mjs "atlantic puffin" [--limit 8]`
+  lists candidates with licence, size and whether it passes (free licence,
+  JPEG, at least 800 px wide). Copy the exact `File:` title.
+- Download: `node scripts/fetch-collection.mjs [--force] [id ...]` makes a
+  480 px JPEG in `public/collection/<id>.jpg`, refuses non-free licences and
+  regenerates `src/content/collectionCredits.ts`.
+
+Adding a card: add the title to the set's sources JSON, run the fetch script
+for that id, add `item('id', 'set', 'Name', 'rarity', '🐦', 'Two-sentence fact.', 'Lives in: …')`
+to the set file (id = kebab-case = photo name; fact exactly 2 sentences, at
+most 220 characters; `where` prefix per set; optional `Say: …`; one legendary per
+set), then raise the size in `src/content/__tests__/collection.test.ts`.
+Adding a set: extend `CollectionSet` in `item.ts`, add a set file, an entry in
+`SETS`, a `set-<id>` badge in `src/content/badges.ts`, and a sources JSON.
+
+Blind boxes lean towards new cards: after the rarity is rolled, with
+probability `NEW_CARD_BIAS` (0.7, in `src/store/rewards.ts`) the card is picked
+from the ones she does not own yet in that rarity (if any), otherwise from all.
 
 ## Your data is safe
 

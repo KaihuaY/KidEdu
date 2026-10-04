@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Downloads the reward-collection photos from Wikimedia Commons (see
-// scripts/collection-sources.json for the curated id -> File: title map) and
+// scripts/collection-sources/*.json for the curated id -> File: title map) and
 // writes src/content/collectionCredits.ts with the CREDITS the Credits
 // screen (src/screens/Credits.tsx) and content test (collection.test.ts)
 // rely on.
@@ -10,7 +10,7 @@
 //
 // No dependencies - Node 20+ only.
 
-import { mkdir, readFile, writeFile, stat } from 'node:fs/promises'
+import { mkdir, readdir, readFile, writeFile, stat } from 'node:fs/promises'
 import { createWriteStream } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -19,7 +19,7 @@ import { finished } from 'node:stream/promises'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
-const SOURCES_PATH = resolve(ROOT, 'scripts/collection-sources.json')
+const SOURCES_DIR = resolve(ROOT, 'scripts/collection-sources')
 const OUT_DIR = resolve(ROOT, 'public/collection')
 const CREDITS_PATH = resolve(ROOT, 'src/content/collectionCredits.ts')
 
@@ -182,12 +182,29 @@ function writeCreditsFile(credits) {
   return lines.join('\n')
 }
 
+// Merges every scripts/collection-sources/*.json (one per set) into one
+// id -> File: title map; the same id in two files is an error.
+async function loadSources() {
+  const files = (await readdir(SOURCES_DIR)).filter((f) => f.endsWith('.json')).sort()
+  const sources = {}
+  const owner = {}
+  for (const f of files) {
+    const data = JSON.parse(await readFile(resolve(SOURCES_DIR, f), 'utf8'))
+    for (const [id, title] of Object.entries(data)) {
+      if (id in sources) throw new Error(`duplicate id "${id}" in ${owner[id]} and ${f}`)
+      sources[id] = title
+      owner[id] = f
+    }
+  }
+  return sources
+}
+
 async function main() {
   const args = process.argv.slice(2)
   const force = args.includes('--force')
   const requestedIds = args.filter((a) => a !== '--force')
 
-  const sources = JSON.parse(await readFile(SOURCES_PATH, 'utf8'))
+  const sources = await loadSources()
   const ids = requestedIds.length > 0 ? requestedIds : Object.keys(sources)
 
   // Keep any previously-generated credits for ids we are not touching this run.
@@ -207,7 +224,7 @@ async function main() {
   const results = { ok: [], rejected: [] }
   const missing = ids.filter((id) => !sources[id])
   for (const id of missing) {
-    results.rejected.push({ id, title: '(none)', reason: 'no entry in collection-sources.json' })
+    results.rejected.push({ id, title: '(none)', reason: 'no entry in scripts/collection-sources/*.json' })
   }
 
   const workItems = ids.filter((id) => sources[id]).map((id) => ({ id, title: sources[id] }))

@@ -138,31 +138,49 @@ export function rollRarity(tier: Tier, rng: () => number = Math.random): Rarity 
   return 'common'
 }
 
+/** Chance that a box card is picked from the cards she does not own yet (when the rarity has any). */
+export const NEW_CARD_BIAS = 0.7
+
 /**
  * Picks one item of `rarity` from `items`, uniformly, never one whose id is
  * in `exclude` while an alternative exists. If `rarity` has no eligible
  * items, steps down through each lower rarity in turn; if every rarity is
  * exhausted, falls back to any eligible item, and finally (only if `exclude`
  * ruled out literally everything) to any item at all.
+ *
+ * New-card bias: when `ownedIds` is given and the candidate list has both
+ * owned and unowned cards, then with probability NEW_CARD_BIAS (one extra
+ * rng() draw) the pick is uniform among the unowned candidates only;
+ * otherwise uniform among all candidates. No owned candidates -> no extra
+ * draw, so behaviour (and rng sequence) is identical to before.
  */
 export function pickItem(
   items: readonly CollectionItem[],
   rarity: Rarity,
   exclude: string[] = [],
   rng: () => number = Math.random,
+  ownedIds: readonly string[] = [],
 ): CollectionItem | undefined {
   const excluded = new Set(exclude)
+  const ownedSet = new Set(ownedIds)
+  const choose = (pool: CollectionItem[]): CollectionItem => {
+    if (ownedSet.size > 0) {
+      const unowned = pool.filter((it) => !ownedSet.has(it.id))
+      if (unowned.length > 0 && unowned.length < pool.length && rng() < NEW_CARD_BIAS) pool = unowned
+    }
+    return pool[Math.min(pool.length - 1, Math.floor(rng() * pool.length))]
+  }
   const startIndex = RARITIES.indexOf(rarity)
 
   for (let i = startIndex; i >= 0; i--) {
     const pool = items.filter((it) => it.rarity === RARITIES[i] && !excluded.has(it.id))
-    if (pool.length > 0) return pool[Math.min(pool.length - 1, Math.floor(rng() * pool.length))]
+    if (pool.length > 0) return choose(pool)
   }
 
   const anyEligible = items.filter((it) => !excluded.has(it.id))
   const fallback = anyEligible.length > 0 ? anyEligible : items
   if (fallback.length === 0) return undefined
-  return fallback[Math.min(fallback.length - 1, Math.floor(rng() * fallback.length))]
+  return choose([...fallback])
 }
 
 /** How many beads a freshly-opened box of each tier drops, as [min, max] (inclusive). */
@@ -201,7 +219,7 @@ export function rollBoxContents(
   rng: () => number = Math.random,
 ): BoxContents {
   const rarity = rollRarity(tier, rng)
-  const item = pickItem(COLLECTION, rarity, lastItemId ? [lastItemId] : [], rng) ?? COLLECTION[0]
+  const item = pickItem(COLLECTION, rarity, lastItemId ? [lastItemId] : [], rng, owned.filter((o) => o.count > 0).map((o) => o.id)) ?? COLLECTION[0]
   const duplicate = owned.some((o) => o.id === item.id)
 
   const [min, max] = BEAD_DROPS[tier]

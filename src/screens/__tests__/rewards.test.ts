@@ -5,6 +5,7 @@ import {
   RARITY_WEIGHTS,
   formatCents,
   maxStars,
+  NEW_CARD_BIAS,
   pickItem,
   pickWeighted,
   rollBoxContents,
@@ -260,6 +261,51 @@ describe('pickItem', () => {
 
   it('returns undefined for a genuinely empty item list', () => {
     expect(pickItem([], 'common')).toBeUndefined()
+  })
+
+  describe('new-card bias', () => {
+    const commons = ['c1', 'c2', 'c3', 'c4'].map((id) => fakeItem(id, 'common'))
+    const N = 2000
+
+    it('favours unowned cards when half the candidates are owned (about 85%)', () => {
+      const rng = seededRng(77)
+      let unowned = 0
+      for (let i = 0; i < N; i++) {
+        const id = pickItem(commons, 'common', [], rng, ['c1', 'c2'])?.id
+        if (id === 'c3' || id === 'c4') unowned++
+      }
+      const share = unowned / N
+      expect(NEW_CARD_BIAS).toBe(0.7)
+      expect(share).toBeGreaterThan(0.8)
+      expect(share).toBeLessThan(0.9)
+    })
+
+    it('is uniform when every candidate in the rarity is owned', () => {
+      const rng = seededRng(78)
+      const counts: Record<string, number> = { c1: 0, c2: 0, c3: 0, c4: 0 }
+      for (let i = 0; i < N; i++) counts[pickItem(commons, 'common', [], rng, ['c1', 'c2', 'c3', 'c4'])!.id]++
+      for (const id of Object.keys(counts)) {
+        expect(counts[id] / N, id).toBeGreaterThan(0.19)
+        expect(counts[id] / N, id).toBeLessThan(0.31)
+      }
+    })
+
+    it('is uniform with an empty owned list', () => {
+      const rng = seededRng(79)
+      const counts: Record<string, number> = { c1: 0, c2: 0, c3: 0, c4: 0 }
+      for (let i = 0; i < N; i++) counts[pickItem(commons, 'common', [], rng, [])!.id]++
+      for (const id of Object.keys(counts)) {
+        expect(counts[id] / N, id).toBeGreaterThan(0.19)
+        expect(counts[id] / N, id).toBeLessThan(0.31)
+      }
+    })
+
+    it('never returns the excluded previous item while alternatives exist', () => {
+      const rng = seededRng(80)
+      for (let i = 0; i < N; i++) {
+        expect(pickItem(commons, 'common', ['c3'], rng, ['c1', 'c2'])?.id).not.toBe('c3')
+      }
+    })
   })
 })
 

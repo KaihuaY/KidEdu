@@ -5,7 +5,7 @@
 
 import { isMissionDone } from '../store/missions'
 import { teacherStarsCount } from '../store/teacherNotes'
-import { findItem, itemsInSet, type CollectionSet } from './collection'
+import { findItem, itemsInSet, SETS, type CollectionSet } from './collection'
 import { branchById, PATTERNS } from './lessons'
 import type { ProgressDoc } from '../store/progress'
 
@@ -40,6 +40,9 @@ export const BADGES: Badge[] = [
   { id: 'set-gems', title: 'Gem collector', emoji: '💎', how: 'Collect every card in the Gems & minerals set.' },
   { id: 'set-animals', title: 'Animal expert', emoji: '🦊', how: 'Collect every card in the Animals set.' },
   { id: 'set-space', title: 'Space explorer', emoji: '🪐', how: 'Collect every card in the Space set.' },
+  { id: 'set-birds', title: 'Bird watcher', emoji: '🐦', how: 'Collect every bird' },
+  { id: 'set-butterflies', title: 'Butterfly spotter', emoji: '🦋', how: 'Collect every butterfly and moth' },
+  { id: 'set-countries', title: 'World traveller', emoji: '🌍', how: 'Collect every country' },
   { id: 'first-legendary', title: 'Legendary!', emoji: '🌟', how: 'Win a legendary collection card.' },
   { id: 'first-bracelet', title: 'Bracelet maker', emoji: '📿', how: 'Finish your first bead bracelet.' },
   { id: 'teacher-star-1', title: "Teacher's star", emoji: '⭐', how: 'Followed the teacher\'s note all week.' },
@@ -103,9 +106,8 @@ export function earnedBadges(doc: ProgressDoc): string[] {
   if (Object.values(doc.piano.days).some((d) => d.parentStars === 3)) out.push('first-gold-stars')
 
   if (doc.collection.items.length > 0) out.push('first-card')
-  if (setComplete(doc, 'gems')) out.push('set-gems')
-  if (setComplete(doc, 'animals')) out.push('set-animals')
-  if (setComplete(doc, 'space')) out.push('set-space')
+  // A set with no cards yet never counts as complete (setComplete guards it).
+  for (const s of SETS) if (setComplete(doc, s.id)) out.push(`set-${s.id}`)
   if (doc.collection.items.some((i) => findItem(i.id)?.rarity === 'legendary')) out.push('first-legendary')
   if (doc.collection.bracelets.some((b) => b.finishedAt)) out.push('first-bracelet')
 

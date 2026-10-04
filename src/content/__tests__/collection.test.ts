@@ -8,7 +8,7 @@
 // (which is deliberately just ["vite/client"] for the rest of the app).
 /// <reference types="node" />
 
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { RARITIES, type Rarity } from '../../store/progress'
@@ -29,9 +29,15 @@ const WHERE_PREFIXES: Record<CollectionSet, string[]> = {
   gems: ['Found in:'],
   animals: ['Lives in:'],
   space: ['Orbits:', 'Located:'],
+  birds: ['Lives in:'],
+  butterflies: ['Found in:'],
+  countries: ['Capital:'],
 }
 
-const SET_SIZE: Record<CollectionSet, number> = { gems: 24, animals: 36, space: 16 }
+// PHASE 2: raise to gems 36, animals 50, space 26, birds 24, butterflies 16, countries 30
+const SET_SIZE: Record<CollectionSet, number> = { gems: 24, animals: 36, space: 16, birds: 0, butterflies: 0, countries: 0 }
+const TOTAL = Object.values(SET_SIZE).reduce((a, b) => a + b, 0)
+const SET_IDS: CollectionSet[] = ['gems', 'animals', 'space', 'birds', 'butterflies', 'countries']
 
 function sentenceCount(fact: string): number {
   return fact
@@ -45,12 +51,12 @@ function repoPath(...parts: string[]): string {
 }
 
 describe('COLLECTION', () => {
-  it('has 76 items total', () => {
-    expect(COLLECTION.length).toBe(76)
+  it('has the expected number of items in total', () => {
+    expect(COLLECTION.length).toBe(TOTAL)
   })
 
-  it('declares the three sets with the expected sizes', () => {
-    expect(SETS.map((s) => s.id)).toEqual(['gems', 'animals', 'space'])
+  it('declares the six sets with the expected sizes', () => {
+    expect(SETS.map((s) => s.id)).toEqual(SET_IDS)
     for (const set of SETS.map((s) => s.id)) {
       expect(itemsInSet(set).length, `${set} size`).toBe(SET_SIZE[set])
     }
@@ -80,6 +86,15 @@ describe('COLLECTION', () => {
   it('has a downloaded photo for every item', () => {
     const missing = COLLECTION.filter((c) => !existsSync(repoPath('public', 'collection', `${c.id}.jpg`))).map((c) => c.id)
     expect(missing).toEqual([])
+  })
+
+  it('every photo is a real JPEG of at most 220 KB', () => {
+    for (const c of COLLECTION) {
+      const file = repoPath('public', 'collection', `${c.id}.jpg`)
+      const head = readFileSync(file).subarray(0, 3)
+      expect([...head], `${c.id} JPEG magic bytes`).toEqual([0xff, 0xd8, 0xff])
+      expect(statSync(file).size, `${c.id} size`).toBeLessThanOrEqual(220 * 1024)
+    }
   })
 
   it('has a fact of exactly two short, true-length sentences', () => {
@@ -120,8 +135,12 @@ describe('COLLECTION', () => {
       gems: { common: 10, uncommon: 7, rare: 4, epic: 2, legendary: 1 },
       animals: { common: 15, uncommon: 11, rare: 6, epic: 3, legendary: 1 },
       space: { common: 6, uncommon: 5, rare: 3, epic: 1, legendary: 1 },
+      birds: { common: 10, uncommon: 7, rare: 4, epic: 2, legendary: 1 },
+      butterflies: { common: 6, uncommon: 5, rare: 3, epic: 1, legendary: 1 },
+      countries: { common: 12, uncommon: 8, rare: 5, epic: 4, legendary: 1 },
     }
     for (const set of SETS.map((s) => s.id)) {
+      if (itemsInSet(set).length === 0) continue // not filled yet
       const counts: Record<Rarity, number> = { common: 0, uncommon: 0, rare: 0, epic: 0, legendary: 0 }
       for (const c of itemsInSet(set)) counts[c.rarity]++
       expect(counts.legendary, `${set} legendary count`).toBe(1)
@@ -131,7 +150,7 @@ describe('COLLECTION', () => {
     }
   })
 
-  it('names the correct legendary item per set', () => {
+  it('names the correct legendary item per set (new sets may name their own)', () => {
     expect(itemsInSet('gems').find((c) => c.rarity === 'legendary')?.id).toBe('diamond')
     expect(itemsInSet('animals').find((c) => c.rarity === 'legendary')?.id).toBe('blue-whale')
     expect(itemsInSet('space').find((c) => c.rarity === 'legendary')?.id).toBe('andromeda-galaxy')
