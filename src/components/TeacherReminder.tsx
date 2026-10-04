@@ -7,7 +7,6 @@ import { useMemo, useState } from 'react'
 import { useProgress } from '../store/progress'
 import { confirmTeacherDay, shouldRemindTeacher } from '../store/teacherNotes'
 import { markNudgeShown } from '../store/journal'
-import { SayIt } from './SayIt'
 import { PinGate } from './PinGate'
 import { fireConfetti } from './Confetti'
 
@@ -33,7 +32,6 @@ export function TeacherReminder({ day, ringDone, isNote }: { day: string; ringDo
   if (!note || dismissed) return null
 
   const items = note.items ?? []
-  const sayText = items.length > 0 ? items.join('. ') : note.caption || "Look at your teacher's note"
 
   function handleLater() {
     if (!note) return
@@ -75,8 +73,6 @@ export function TeacherReminder({ day, ringDone, isNote }: { day: string; ringDo
           <span>See the note</span>
         </div>
       )}
-
-      <SayIt text={sayText} />
 
       {!result ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>

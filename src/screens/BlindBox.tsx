@@ -102,7 +102,7 @@ function BoxResultCard({ result, onOpenAnother, onSeeCards }: { result: OpenResu
           <CardPhoto item={result.item} size={128} />
         </div>
         <p data-testid="box-item-name" style={{ margin: 0, fontWeight: 800, fontSize: '1.1rem' }}>
-          {result.item.name}
+          {result.item.emoji} {result.item.name}
         </p>
         <p data-testid="box-rarity" style={{ margin: 0 }}>
           <RarityStars rarity={result.rarity} />

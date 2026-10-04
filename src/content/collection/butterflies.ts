@@ -1,15 +1,151 @@
 import type { CollectionItem } from './item'
-// import { item } from './item'
+import { item } from './item'
 
-// Butterflies & moths: target 16 cards.
-// Card rules (enforced by src/content/__tests__/collection.test.ts):
-//  - id: kebab-case, unique, and equal to the photo file name public/collection/<id>.jpg
-//  - fact: exactly 2 sentences, at most 220 characters, true and kid-friendly
-//  - say: optional pronunciation hint, must start with "Say:"
-//  - exactly one legendary in the set
-//  - rarity mix about 40% common, 28% uncommon, 18% rare, 10% epic, 1 legendary
-//  - every card needs a Commons source in scripts/collection-sources/<set>.json
-//    (find one with scripts/find-commons.mjs, then run scripts/fetch-collection.mjs <id>)
-//  - where: "Found in: <places>"
-
-export const BUTTERFLIES: CollectionItem[] = []
+// Butterflies & moths (16).
+export const BUTTERFLIES: CollectionItem[] = [
+  item(
+    'small-tortoiseshell',
+    'butterflies',
+    'Small tortoiseshell',
+    'common',
+    '🦋',
+    'Small tortoiseshells spend the winter asleep in sheds and tree holes, then wake up on the first warm days of spring. Their caterpillars love to eat stinging nettles.',
+    'Found in: gardens and meadows across Europe and Asia',
+  ),
+  item(
+    'red-admiral',
+    'butterflies',
+    'Red admiral',
+    'common',
+    '🦋',
+    'Red admirals fly north each spring from warmer southern lands, even crossing the sea. They love rotting fruit and sometimes sip juice from fallen apples.',
+    'Found in: gardens and woods in Europe and North America',
+  ),
+  item(
+    'painted-lady',
+    'butterflies',
+    'Painted lady',
+    'common',
+    '🦋',
+    'Painted ladies make one of the longest butterfly journeys, flying thousands of miles between Africa and Europe. It takes several generations of butterflies to finish the round trip.',
+    'Found in: meadows and gardens on almost every continent',
+  ),
+  item(
+    'cabbage-white',
+    'butterflies',
+    'Cabbage white',
+    'common',
+    '🦋',
+    'Cabbage white caterpillars munch cabbage leaves, which is how they got their name. The butterflies taste with their feet to find the right leaves for their eggs.',
+    'Found in: gardens and vegetable patches worldwide',
+  ),
+  item(
+    'peacock-butterfly',
+    'butterflies',
+    'Peacock butterfly',
+    'common',
+    '🦋',
+    'The peacock butterfly has four big eyespots on its wings that startle hungry birds. If it is scared, it also rubs its wings together to make a hissing sound.',
+    'Found in: gardens and woods across Europe and Asia',
+  ),
+  item(
+    'common-blue',
+    'butterflies',
+    'Common blue',
+    'common',
+    '🦋',
+    'Only male common blues are bright blue, while the females are mostly brown. They fold their wings shut when they rest, showing spotty undersides.',
+    'Found in: grassy meadows across Europe and Asia',
+  ),
+  item(
+    'monarch',
+    'butterflies',
+    'Monarch',
+    'uncommon',
+    '🦋',
+    'Monarchs fly thousands of miles to spend the winter in the warm forests of Mexico. Their caterpillars eat poisonous milkweed, which makes the butterflies taste bad to birds.',
+    'Found in: meadows and gardens in North America',
+  ),
+  item(
+    'swallowtail',
+    'butterflies',
+    'Swallowtail',
+    'uncommon',
+    '🦋',
+    'Swallowtail butterflies have little tails on their back wings, like the forked tail of a swallow bird. Their green and black caterpillars can poke out a smelly orange horn when scared.',
+    'Found in: meadows and fens across Europe, Asia and North America',
+  ),
+  item(
+    'blue-morpho',
+    'butterflies',
+    'Blue morpho',
+    'uncommon',
+    '🦋',
+    "A blue morpho's wings are not truly blue, because tiny scales bounce blue light, so they flash as it flaps. The undersides are brown, so it seems to vanish when it lands.",
+    'Found in: rainforests in Central and South America',
+  ),
+  item(
+    'hummingbird-hawk-moth',
+    'butterflies',
+    'Hummingbird hawk-moth',
+    'uncommon',
+    '🦋',
+    'This moth hovers in front of flowers and sips nectar through a long tongue, just like a hummingbird. Unlike most moths, it flies in the daytime.',
+    'Found in: sunny gardens in southern Europe, Africa and Asia',
+  ),
+  item(
+    'luna-moth',
+    'butterflies',
+    'Luna moth',
+    'uncommon',
+    '🦋',
+    'Adult luna moths have no mouth, so they cannot eat and live only about a week. Their long tails may confuse hunting bats.',
+    'Found in: forests in North America',
+  ),
+  item(
+    'atlas-moth',
+    'butterflies',
+    'Atlas moth',
+    'rare',
+    '🦋',
+    "Atlas moths are among the biggest moths in the world, with wings as wide as a dinner plate. Each wing tip looks like a snake's head, which may scare off hungry birds.",
+    'Found in: tropical forests in Asia',
+  ),
+  item(
+    'glasswing',
+    'butterflies',
+    'Glasswing butterfly',
+    'rare',
+    '🦋',
+    'The glasswing butterfly has see-through wings, so it is hard for hungry birds to spot. Its clear wings are covered in tiny pillars that stop light from bouncing off.',
+    'Found in: rainforests in Central and South America',
+  ),
+  item(
+    'emperor-moth',
+    'butterflies',
+    'Emperor moth',
+    'rare',
+    '🦋',
+    'A male emperor moth can smell a female from far away using his big feathery antennae. Each wing has a big eyespot that startles hungry birds.',
+    'Found in: heaths and moors across Europe',
+  ),
+  item(
+    'sunset-moth',
+    'butterflies',
+    'Madagascan sunset moth',
+    'epic',
+    '🦋',
+    'The Madagascan sunset moth looks like a butterfly, but it is a moth that flies in the daytime. Its shimmering colours come from tiny scales that bounce light.',
+    'Found in: rainforests in Madagascar',
+    'Say: mad-uh-GAS-kan',
+  ),
+  item(
+    'birdwing',
+    'butterflies',
+    "Queen Alexandra's birdwing",
+    'legendary',
+    '🦋',
+    "Queen Alexandra's birdwing is the biggest butterfly in the world, with wings about 25 centimetres across. It lives only in a small patch of rainforest in Papua New Guinea.",
+    'Found in: rainforests in Papua New Guinea',
+  ),
+]

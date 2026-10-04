@@ -1,24 +1,25 @@
+import { useState } from 'react'
 import { useProgress } from '../store/progress'
 import { dayOffset } from '../store/sessions'
-import { groupPieces } from '../store/songStats'
-import { setTomorrowFirst } from '../store/tomorrowFirst'
+import { setTomorrowFirst, tomorrowChoices } from '../store/tomorrowFirst'
 
-/** Card on the done screen letting her pick which song leads off tomorrow's practice. */
+/** Lets her pick which song leads off tomorrow's practice: her most-played few, with the rest behind "More songs". */
 export function TomorrowFirstPicker({ today }: { today: string }) {
   const { settings, piano } = useProgress()
+  const [showMore, setShowMore] = useState(false)
   const tomorrow = dayOffset(today, 1)
-  const pieces = groupPieces(settings.pianoPieces, piano.takes).week
-
-  if (pieces.length === 0) return null
-
   const chosen = piano.tomorrowFirst?.forDay === tomorrow ? piano.tomorrowFirst.pieceId : undefined
-  const chosenPiece = chosen ? pieces.find((p) => p.id === chosen) : undefined
+  const { top, more } = tomorrowChoices(settings.pianoPieces, piano.takes, today, chosen)
+
+  if (top.length === 0) return null
+
+  const chosenPiece = chosen ? [...top, ...more].find((p) => p.id === chosen) : undefined
+  const shown = showMore ? [...top, ...more] : top
 
   return (
-    <div className="cc-card" data-testid="tomorrow-first" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem', width: '100%', maxWidth: 360 }}>
-      <strong>⭐ Tomorrow, start with…</strong>
+    <div data-testid="tomorrow-first" style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', width: '100%' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: '0.5rem' }}>
-        {pieces.map((piece) => (
+        {shown.map((piece) => (
           <button
             key={piece.id}
             type="button"
@@ -32,6 +33,18 @@ export function TomorrowFirstPicker({ today }: { today: string }) {
           </button>
         ))}
       </div>
+      {more.length > 0 && (
+        <button
+          type="button"
+          className="cc-btn cc-btn-surface"
+          data-testid="tomorrow-more"
+          aria-expanded={showMore}
+          style={{ minHeight: 44 }}
+          onClick={() => setShowMore((v) => !v)}
+        >
+          {showMore ? 'Fewer songs ▲' : 'More songs ▼'}
+        </button>
+      )}
       {chosenPiece && (
         <p data-testid="tomorrow-saved" style={{ margin: 0, fontWeight: 700, color: 'var(--cc-success)', textAlign: 'center' }}>
           Great plan! Tomorrow starts with {chosenPiece.name} ⭐

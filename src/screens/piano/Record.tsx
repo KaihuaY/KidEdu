@@ -4,14 +4,17 @@ import { useProgress, type PianoPiece, type PianoTake, type Records } from '../.
 import { repetitionsForPiece, setSelfRating, setTakeGoalHit, tokenEmojis, usePiano } from '../../store/piano'
 import { goalProgress, practiceSecondsForDay, steadyBeatDots } from '../../store/pianoRewards'
 import { useRecords, type RecordKey } from '../../store/records'
-import { formatClock, localDay } from '../../store/sessions'
+import { dayOffset, formatClock, localDay } from '../../store/sessions'
 import { bumpLiveRepetition, dismiss, stopTake, useRecordingSession } from '../../audio/recordingSession'
 import { getLastTakeBpm, nudgeBpm, setRememberedBpm } from '../../audio/metronome'
 import { shouldAskFeeling } from '../../store/feeling'
+import { shouldRemindTeacher } from '../../store/teacherNotes'
+import { nudgeFor } from '../../store/journal'
 import { fireConfetti } from '../../components/Confetti'
 import { RingTimer } from '../../components/RingTimer'
 import { Aurora } from '../../components/Aurora'
 import { CoachCard } from '../../components/CoachCard'
+import { DoneRow } from '../../components/DoneRow'
 import { FeelingPicker } from '../../components/FeelingPicker'
 import { JournalNudge } from '../../components/JournalNudge'
 import { TomorrowFirstPicker } from '../../components/TomorrowFirstPicker'
@@ -39,18 +42,13 @@ function backToPiano(): void {
 /**
  * The surprise-song lines on the done screen: how many of today's 10 are done
  * (and how many are left for the gold box), the "too short to count" note, the
- * gold celebration, and a shortcut straight into the next spin.
+ * gold celebration. (The "next surprise song" button lives in the pinned bar.)
  */
 function RandomSongLine({ take, justEarned }: { take: PianoTake; justEarned: boolean }) {
   const progress = useProgress()
   const status = randomStatus(progress, take.day)
   const done = Math.min(status.done, status.goal)
   const left = Math.max(0, status.goal - status.done)
-
-  function nextSurprise() {
-    requestFreshSpin()
-    backToPiano()
-  }
 
   return (
     <>
@@ -70,11 +68,6 @@ function RandomSongLine({ take, justEarned }: { take: PianoTake; justEarned: boo
         <p data-testid="random-progress" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)', textAlign: 'center' }}>
           🎲 Surprise song {done} of {status.goal}! {left} more for the 🟡 gold box
         </p>
-      )}
-      {status.poolSize > 0 && !status.earned && (
-        <button type="button" data-testid="random-next" className="cc-btn cc-btn-accent" style={{ minHeight: 56 }} onClick={nextSurprise}>
-          🎲 Next surprise song
-        </button>
       )}
     </>
   )
@@ -98,6 +91,42 @@ function recordMessage(key: RecordKey, records: Records, pieces: PianoPiece[]): 
     case 'longestStreakDays':
       return `🏆 New record: ${entry.value}-day streak!`
   }
+}
+
+/**
+ * Body of the teacher fold row. TeacherReminder renders null once the store says
+ * "confirmed" or "dismissed", so on a fresh mount (the row was closed and
+ * reopened) show a short note instead of an empty row.
+ */
+function TeacherBody({ day, ringDone, isNote }: { day: string; ringDone: boolean; isNote: boolean }) {
+  const progress = useProgress()
+  const [showCard] = useState(() => Boolean(shouldRemindTeacher(progress, day, ringDone, isNote)))
+  if (showCard) return <TeacherReminder day={day} ringDone={ringDone} isNote={isNote} />
+  const confirmed = Boolean(progress.piano.days[day]?.teacherConfirmed)
+  return (
+    <p
+      data-testid={confirmed ? 'teacher-confirmed-today' : 'teacher-skipped-today'}
+      style={{ margin: 0, fontWeight: 700, color: confirmed ? 'var(--cc-success)' : 'var(--cc-ink-soft)' }}
+    >
+      {confirmed ? 'Confirmed ✅ for today' : 'Okay, not today 🙂'}
+    </p>
+  )
+}
+
+/** Body of the journal fold row: the nudge, or a short note once it has been answered (JournalNudge renders null then). */
+function JournalBody({ take, ringJustReached }: { take: PianoTake; ringJustReached: boolean }) {
+  const progress = useProgress()
+  const [showCard] = useState(() => nudgeFor(progress, take.day, ringJustReached, take.isNote ?? false) !== null)
+  if (showCard) return <JournalNudge take={take} ringJustReached={ringJustReached} />
+  const wrote = (progress.piano.journal ?? []).some((e) => e.takeIds?.includes(take.id))
+  return (
+    <p
+      data-testid={wrote ? 'journal-saved-today' : 'journal-skipped-today'}
+      style={{ margin: 0, fontWeight: 700, color: wrote ? 'var(--cc-success)' : 'var(--cc-ink-soft)' }}
+    >
+      {wrote ? 'Saved to your journal 📔' : 'Okay, maybe later 🙂'}
+    </p>
+  )
 }
 
 export function Record() {
@@ -127,6 +156,29 @@ export function Record() {
       : null
   const askFeeling = useMemo(
     () => (doneInfo ? shouldAskFeeling(progress, doneInfo.take.day, doneInfo.goalJustReached, doneInfo.take.isNote ?? false) : false),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [doneInfo?.take.id],
+  )
+
+  // Which fold rows exist on the done screen - memoised on the take id like
+  // askFeeling, so answering inside a row never makes the row vanish.
+  const teacherRow = useMemo(
+    () =>
+      doneInfo
+        ? Boolean(
+            shouldRemindTeacher(
+              progress,
+              doneInfo.take.day,
+              doneInfo.goalJustReached || Boolean(progress.piano.days[doneInfo.take.day]?.goalReachedAt),
+              doneInfo.take.isNote ?? false,
+            ),
+          )
+        : false,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [doneInfo?.take.id],
+  )
+  const journalNudge = useMemo(
+    () => (doneInfo ? nudgeFor(progress, doneInfo.take.day, doneInfo.goalJustReached, doneInfo.take.isNote ?? false) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [doneInfo?.take.id],
   )
@@ -280,121 +332,186 @@ export function Record() {
     const showFasterNudge = !take.isNote && (take.steadiness ?? 0) >= 0.8 && lastTakeBpm !== undefined
     const fasterBpm = lastTakeBpm !== undefined ? nudgeBpm(lastTakeBpm, 4) : undefined
 
+    const ringDone = session.goalJustReached || Boolean(progress.piano.days[take.day]?.goalReachedAt)
+    const dayState = progress.piano.days[take.day]
+    const feeling = dayState?.feeling
+    const showFeelingRow = askFeeling || feeling !== undefined
+    const dots = steadyBeatDots(take.steadiness)
+    const randomState = randomStatus(progress, take.day)
+    const showNextSurprise = Boolean(take.random) && !take.isNote && randomState.poolSize > 0 && !randomState.earned
+    const tomorrowDay = dayOffset(take.day, 1)
+    const tomorrowChoice = progress.piano.tomorrowFirst?.forDay === tomorrowDay ? progress.piano.tomorrowFirst.pieceId : undefined
+    const tomorrowName = tomorrowChoice ? progress.settings.pianoPieces.find((p) => p.id === tomorrowChoice)?.name.trim() : undefined
+    const showTomorrow = !take.isNote && ringDone
+    const journalAttention = journalNudge ? !(dayState?.nudges ?? []).includes(journalNudge.id) : false
+
     return (
-      <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center' }}>
-        <p style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>Nice playing, {kidName}! 🎶</p>
-        <p style={{ margin: 0, fontWeight: 700 }}>You practised for {formatClock(take.durationSec)}</p>
-        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
-          I heard you playing for {formatClock(take.activeSec)}
-        </p>
-        {steadyBeatDots(take.steadiness) && (
-          <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--cc-ink-soft)' }}>
-            Steady beat: <span style={{ letterSpacing: '0.15em', color: 'var(--cc-primary)' }}>{steadyBeatDots(take.steadiness)}</span>
+      <div
+        data-testid="done-screen"
+        style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1rem 1rem 0', alignItems: 'stretch', maxWidth: 440, margin: '0 auto', width: '100%' }}
+      >
+        <div
+          className="cc-card"
+          data-testid="done-summary"
+          style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', textAlign: 'center' }}
+        >
+          <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Nice playing, {kidName}! 🎶</h2>
+          <p data-testid="done-times" style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>
+            {formatClock(take.durationSec)} practised · heard {formatClock(take.activeSec)}
+            {dots && (
+              <>
+                {' · steady '}
+                <span style={{ letterSpacing: '0.15em', color: 'var(--cc-primary)' }}>{dots}</span>
+              </>
+            )}
           </p>
+          {session.goalJustReached && (
+            <>
+              <p data-testid="mark-reached-1" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>
+                You filled the ring! {tokenEmojis(session.marksJustReached.find((m) => m.index === 0)?.tokens ?? { gold: 0, silver: 0, bronze: 0 }) || '🎉'}
+              </p>
+              <p style={{ margin: 0, fontWeight: 700 }}>See you tomorrow! 🎹</p>
+            </>
+          )}
+          {(session.marksJustReached.find((m) => m.index === 0)?.sickBridged ?? 0) > 0 && (
+            <p data-testid="streak-sick" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>
+              🤒 Welcome back! Your {piano.streak.current}-day chain waited for you.
+            </p>
+          )}
+          {session.marksJustReached.find((m) => m.index === 0)?.frozenDay && (
+            <p data-testid="streak-frozen" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>
+              ❄️ Your streak freeze kept your {piano.streak.current}-day chain going!
+            </p>
+          )}
+          {session.marksJustReached
+            .filter((m) => m.index > 0)
+            .map((m) => (
+              <p key={m.index} data-testid={`mark-reached-${m.index + 1}`} style={{ margin: 0, fontWeight: 800, color: 'var(--cc-accent)' }}>
+                {m.minutes} minutes of piano today! {tokenEmojis(m.tokens) || '🎉'}
+              </p>
+            ))}
+          {session.songBeadIds && session.songBeadIds.length > 0 && (
+            <p data-testid="song-target-beads" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>
+              Target done! ✨ +2 beads 📿
+            </p>
+          )}
+          {take.random && !take.isNote && <RandomSongLine take={take} justEarned={session.randomGold} />}
+          {records &&
+            session.recordsBeaten.map((key) => {
+              const msg = recordMessage(key, records, progress.settings.pianoPieces)
+              if (!msg) return null
+              return (
+                <p key={key} data-testid="record-beaten" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>
+                  {msg}
+                </p>
+              )
+            })}
+          {showFasterNudge && fasterBpm !== undefined && (
+            fasterTempoSaved ? (
+              <p style={{ margin: 0, fontWeight: 700, color: 'var(--cc-success)' }}>Saved {fasterBpm} bpm for next time 🎯</p>
+            ) : (
+              <button
+                type="button"
+                className="cc-btn cc-btn-surface"
+                style={{ minHeight: 56, width: '100%' }}
+                onClick={() => {
+                  setRememberedBpm(take.pieceId, fasterBpm)
+                  setFasterTempoSaved(true)
+                }}
+              >
+                Steady! Try it a little faster next time: {fasterBpm} ▶
+              </button>
+            )
+          )}
+          {piece?.goal && !take.isNote && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'center', width: '100%' }}>
+              <strong style={{ textAlign: 'center' }}>🎯 {piece.goal} — did you do it?</strong>
+              {take.goalHit === undefined ? (
+                <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+                  <button type="button" className="cc-btn cc-btn-primary" style={{ minHeight: 56, flex: 1 }} onClick={() => setTakeGoalHit(take.id, true)}>
+                    ✅ Yes
+                  </button>
+                  <button type="button" className="cc-btn cc-btn-surface" style={{ minHeight: 56, flex: 1 }} onClick={() => setTakeGoalHit(take.id, false)}>
+                    Not yet
+                  </button>
+                </div>
+              ) : (
+                <span style={{ fontWeight: 700, color: take.goalHit ? 'var(--cc-success)' : 'var(--cc-ink-soft)' }}>
+                  {take.goalHit ? 'Goal done ✅' : 'Okay - next time! 💪'}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+          <SelfRatingButtons value={liveSelfRating} onChange={(rating) => setSelfRating(take.id, rating)} />
+          <CoachCard take={take} />
+        </div>
+
+        {showFeelingRow && (
+          <DoneRow id="feeling" icon="💗" title="How do you feel today?" status={feeling !== undefined ? `${feeling}/10` : undefined} attention={feeling === undefined}>
+            <FeelingPicker day={take.day} />
+          </DoneRow>
         )}
-        {showFasterNudge && fasterBpm !== undefined && (
-          fasterTempoSaved ? (
-            <p style={{ margin: 0, fontWeight: 700, color: 'var(--cc-success)' }}>Saved {fasterBpm} bpm for next time 🎯</p>
-          ) : (
+        {teacherRow && (
+          <DoneRow
+            id="teacher"
+            icon="📓"
+            title="Your teacher's note"
+            status={dayState?.teacherConfirmed ? '✅ confirmed' : undefined}
+            attention={!dayState?.teacherConfirmed}
+          >
+            <TeacherBody day={take.day} ringDone={ringDone} isNote={take.isNote ?? false} />
+          </DoneRow>
+        )}
+        {journalNudge && (
+          <DoneRow id="journal" icon="✍️" title="Write in your journal" attention={journalAttention}>
+            <JournalBody take={take} ringJustReached={session.goalJustReached} />
+          </DoneRow>
+        )}
+        {showTomorrow && (
+          <DoneRow id="tomorrow" icon="⭐" title="Tomorrow, start with…" status={tomorrowName} attention={!tomorrowName}>
+            <TomorrowFirstPicker today={take.day} />
+          </DoneRow>
+        )}
+        {take.hasAudio && (
+          <DoneRow id="listen" icon="▶" title="Listen to this take">
+            <TakePlayer take={take} />
+          </DoneRow>
+        )}
+
+        <div
+          data-testid="done-bar"
+          style={{
+            position: 'sticky',
+            bottom: 0,
+            zIndex: 5,
+            display: 'flex',
+            gap: '0.5rem',
+            padding: '0.75rem 0 0.75rem',
+            background: 'var(--cc-bg)',
+            borderTop: '1px solid var(--cc-border)',
+          }}
+        >
+          <button type="button" className="cc-btn cc-btn-primary" style={{ minHeight: 56, flex: 1 }} onClick={backToPiano}>
+            ✅ Done
+          </button>
+          {showNextSurprise && (
             <button
               type="button"
-              className="cc-btn cc-btn-surface"
-              style={{ minHeight: 56 }}
+              data-testid="random-next"
+              className="cc-btn cc-btn-accent"
+              style={{ minHeight: 56, flex: 1 }}
               onClick={() => {
-                setRememberedBpm(take.pieceId, fasterBpm)
-                setFasterTempoSaved(true)
+                requestFreshSpin()
+                backToPiano()
               }}
             >
-              Steady! Try it a little faster next time: {fasterBpm} ▶
+              🎲 Next surprise song
             </button>
-          )
-        )}
-        {session.goalJustReached && (
-          <>
-            <p data-testid="mark-reached-1" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>
-              You filled the ring! {tokenEmojis(session.marksJustReached.find((m) => m.index === 0)?.tokens ?? { gold: 0, silver: 0, bronze: 0 }) || '🎉'}
-            </p>
-            <p style={{ margin: 0, fontWeight: 700 }}>See you tomorrow! 🎹</p>
-          </>
-        )}
-        {(session.marksJustReached.find((m) => m.index === 0)?.sickBridged ?? 0) > 0 && (
-          <p data-testid="streak-sick" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)', textAlign: 'center' }}>
-            🤒 Welcome back! Your {piano.streak.current}-day chain waited for you.
-          </p>
-        )}
-        {session.marksJustReached.find((m) => m.index === 0)?.frozenDay && (
-          <p data-testid="streak-frozen" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>
-            ❄️ Your streak freeze kept your {piano.streak.current}-day chain going!
-          </p>
-        )}
-        {session.marksJustReached
-          .filter((m) => m.index > 0)
-          .map((m) => (
-            <p key={m.index} data-testid={`mark-reached-${m.index + 1}`} style={{ margin: 0, fontWeight: 800, color: 'var(--cc-accent)' }}>
-              {m.minutes} minutes of piano today! {tokenEmojis(m.tokens) || '🎉'}
-            </p>
-          ))}
-        {session.songBeadIds && session.songBeadIds.length > 0 && (
-          <p data-testid="song-target-beads" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>
-            Target done! ✨ +2 beads 📿
-          </p>
-        )}
-        {take.random && !take.isNote && <RandomSongLine take={take} justEarned={session.randomGold} />}
-        {records &&
-          session.recordsBeaten.map((key) => {
-            const msg = recordMessage(key, records, progress.settings.pianoPieces)
-            if (!msg) return null
-            return (
-              <p key={key} data-testid="record-beaten" style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>
-                {msg}
-              </p>
-            )
-          })}
-        {piece?.goal && !take.isNote && (
-          <div className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem', alignItems: 'center', width: '100%', maxWidth: 320 }}>
-            <strong style={{ textAlign: 'center' }}>🎯 {piece.goal} — Did you do it?</strong>
-            {take.goalHit === undefined ? (
-              <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
-                <button
-                  type="button"
-                  className="cc-btn cc-btn-primary"
-                  style={{ minHeight: 56, flex: 1 }}
-                  onClick={() => setTakeGoalHit(take.id, true)}
-                >
-                  ✅ Yes
-                </button>
-                <button
-                  type="button"
-                  className="cc-btn cc-btn-surface"
-                  style={{ minHeight: 56, flex: 1 }}
-                  onClick={() => setTakeGoalHit(take.id, false)}
-                >
-                  Not yet
-                </button>
-              </div>
-            ) : (
-              <span style={{ fontWeight: 700, color: take.goalHit ? 'var(--cc-success)' : 'var(--cc-ink-soft)' }}>
-                {take.goalHit ? 'Goal done ✅' : 'Okay - next time! 💪'}
-              </span>
-            )}
-          </div>
-        )}
-        <SelfRatingButtons value={liveSelfRating} onChange={(rating) => setSelfRating(take.id, rating)} />
-        <CoachCard take={take} />
-        {askFeeling && <FeelingPicker day={take.day} />}
-        <TeacherReminder
-          day={take.day}
-          ringDone={session.goalJustReached || Boolean(progress.piano.days[take.day]?.goalReachedAt)}
-          isNote={take.isNote ?? false}
-        />
-        <JournalNudge take={take} ringJustReached={session.goalJustReached} />
-        {!take.isNote && (session.goalJustReached || progress.piano.days[take.day]?.goalReachedAt) && (
-          <TomorrowFirstPicker today={take.day} />
-        )}
-        {take.hasAudio && <TakePlayer take={take} />}
-        <button type="button" className="cc-btn cc-btn-primary" style={{ minHeight: 56 }} onClick={backToPiano}>
-          ✅ Done
-        </button>
+          )}
+        </div>
       </div>
     )
   }

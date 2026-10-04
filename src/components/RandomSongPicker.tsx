@@ -9,7 +9,6 @@ import { useProgress, type PianoPiece } from '../store/progress'
 import { randomPool, randomStatus, readPick, reelSequence, respin, spin, type RandomPick } from '../store/randomSong'
 import { usePrefersReducedMotion } from '../utils/reducedMotion'
 import { fireConfetti } from './Confetti'
-import { SayIt } from './SayIt'
 
 const ROW = 64
 const ROLL_MS = 2600
@@ -212,7 +211,6 @@ export function RandomSongPicker({
             >
               Your surprise song: {piece.emoji} {piece.name}
             </p>
-            <SayIt text={`Your surprise song is ${piece.name}`} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
               <button
                 type="button"

@@ -23,7 +23,6 @@ import { BadgeToast } from '../../components/BadgeToast'
 import { CoachCard } from '../../components/CoachCard'
 import { Metronome } from '../../components/Metronome'
 import { RecordsCard } from '../../components/RecordsCard'
-import { SayIt } from '../../components/SayIt'
 import { SelfRatingButtons } from '../../components/SelfRatingButtons'
 import { TakePlayer } from '../../components/TakePlayer'
 import { TeacherNotesCard } from '../../components/TeacherNotesCard'
@@ -297,7 +296,6 @@ export function PianoHome() {
       <BadgeToast />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
         <h1 style={{ margin: 0, fontSize: '1.3rem' }}>Piano time, {kidName}! 🎹</h1>
-        <SayIt text={`Piano time, ${kidName}!`} />
       </div>
 
       {recoveredCount > 0 && (

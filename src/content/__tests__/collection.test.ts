@@ -34,8 +34,8 @@ const WHERE_PREFIXES: Record<CollectionSet, string[]> = {
   countries: ['Capital:'],
 }
 
-// PHASE 2: raise to gems 36, animals 50, space 26, birds 24, butterflies 16, countries 30
-const SET_SIZE: Record<CollectionSet, number> = { gems: 24, animals: 36, space: 16, birds: 0, butterflies: 0, countries: 0 }
+// Round 16 sizes. Raise these together with the content when a set grows.
+const SET_SIZE: Record<CollectionSet, number> = { gems: 36, animals: 50, space: 26, birds: 24, butterflies: 16, countries: 30 }
 const TOTAL = Object.values(SET_SIZE).reduce((a, b) => a + b, 0)
 const SET_IDS: CollectionSet[] = ['gems', 'animals', 'space', 'birds', 'butterflies', 'countries']
 
@@ -132,12 +132,12 @@ describe('COLLECTION', () => {
 
   it('has roughly the right rarity distribution per set, and exactly one legendary each', () => {
     const targets: Record<CollectionSet, Record<Rarity, number>> = {
-      gems: { common: 10, uncommon: 7, rare: 4, epic: 2, legendary: 1 },
-      animals: { common: 15, uncommon: 11, rare: 6, epic: 3, legendary: 1 },
-      space: { common: 6, uncommon: 5, rare: 3, epic: 1, legendary: 1 },
+      gems: { common: 15, uncommon: 11, rare: 6, epic: 3, legendary: 1 },
+      animals: { common: 21, uncommon: 15, rare: 9, epic: 4, legendary: 1 },
+      space: { common: 9, uncommon: 8, rare: 5, epic: 3, legendary: 1 },
       birds: { common: 10, uncommon: 7, rare: 4, epic: 2, legendary: 1 },
       butterflies: { common: 6, uncommon: 5, rare: 3, epic: 1, legendary: 1 },
-      countries: { common: 12, uncommon: 8, rare: 5, epic: 4, legendary: 1 },
+      countries: { common: 12, uncommon: 9, rare: 5, epic: 3, legendary: 1 },
     }
     for (const set of SETS.map((s) => s.id)) {
       if (itemsInSet(set).length === 0) continue // not filled yet
@@ -154,6 +154,9 @@ describe('COLLECTION', () => {
     expect(itemsInSet('gems').find((c) => c.rarity === 'legendary')?.id).toBe('diamond')
     expect(itemsInSet('animals').find((c) => c.rarity === 'legendary')?.id).toBe('blue-whale')
     expect(itemsInSet('space').find((c) => c.rarity === 'legendary')?.id).toBe('andromeda-galaxy')
+    expect(itemsInSet('birds').find((c) => c.rarity === 'legendary')?.id).toBe('harpy-eagle')
+    expect(itemsInSet('butterflies').find((c) => c.rarity === 'legendary')?.id).toBe('birdwing')
+    expect(itemsInSet('countries').find((c) => c.rarity === 'legendary')?.id).toBe('country-bhutan')
   })
 })
 

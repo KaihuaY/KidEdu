@@ -70,7 +70,9 @@ function ItemCardModal({ item, onClose }: { item: CollectionItem; onClose: () =>
         <div style={{ margin: '0 auto', filter: `drop-shadow(0 0 14px ${meta.colour}aa)` }}>
           <CardPhoto item={item} size={140} />
         </div>
-        <h2 style={{ margin: 0, fontSize: '1.25rem' }}>{item.name}</h2>
+        <h2 data-testid="card-title" style={{ margin: 0, fontSize: '1.25rem' }}>
+          {item.emoji} {item.name}
+        </h2>
         <RarityStars rarity={item.rarity} />
         <p style={{ margin: 0, color: 'var(--cc-ink-soft)', fontWeight: 700 }}>{item.where}</p>
         <p style={{ margin: 0 }}>{item.fact}</p>
