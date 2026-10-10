@@ -90,3 +90,8 @@ export function lockDevice(): void {
 export function kidKey(base: string, kid: KidId = getKid()): string {
   return kid === DEFAULT_KID ? base : `${base}.${kid}`
 }
+
+/** The other kid in the family (used to build her setup link / share the key). */
+export function otherKidId(id: KidId = getKid()): KidId {
+  return id === 'nora' ? 'amelia' : 'nora'
+}

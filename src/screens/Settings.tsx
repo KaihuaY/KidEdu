@@ -15,7 +15,9 @@ import { localDay } from '../store/sessions'
 import { pieceStatus } from '../store/songStats'
 import { RANDOM_GOAL, randomPool } from '../store/randomSong'
 import { canMovePiece, movePieceOrder, nextOrderFor } from '../store/pieceOrder'
-import { clearToken, getToken, setToken, start as startSync, stop as stopSync, useSyncStatus } from '../store/gistSync'
+import { clearToken, getToken, setToken, start as startSync, stop as stopSync, useLastSavedAt, useSyncStatus } from '../store/gistSync'
+import { copyText, readClipboardText, shareText } from '../utils/clipboard'
+import { agoLabel, isStandaloneApp } from '../utils/standalone'
 import { PinGate } from '../components/PinGate'
 import { navigate } from '../router'
 import { formatBytes, getRecordingStore } from '../store/recordings'
@@ -34,7 +36,7 @@ import { APP_BUILD } from '../buildInfo'
 import { DeviceOwner } from '../components/DeviceOwner'
 import { MarksEditor } from '../components/MarksEditor'
 import { SickDaysEditor } from '../components/SickDaysEditor'
-import { lockDevice } from '../store/kid'
+import { kidDisplayName, lockDevice, otherKidId as otherKid } from '../store/kid'
 import { clearLastCrash, readLastCrash } from '../components/ErrorBoundary'
 import type { Tier } from '../store/rewards'
 
@@ -601,6 +603,8 @@ function PianoPiecesEditor() {
 export function Settings() {
   const progress = useProgress()
   const syncStatus = useSyncStatus()
+  const lastSavedAt = useLastSavedAt()
+  const [syncNote, setSyncNote] = useState<string | null>(null)
   const [unlocked, setUnlocked] = useState(false)
   const [tokenInput, setTokenInput] = useState('')
   const [newPin, setNewPin] = useState('')
@@ -1265,52 +1269,128 @@ export function Settings() {
         </button>
       </section>
 
-      <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>GitHub sync</h2>
-        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>Status: {syncStatus}</p>
+      <section className="cc-card" data-testid="sync-section" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>👭 Family sharing</h2>
+        <p data-testid="sync-status" style={{ margin: 0, fontWeight: 700 }}>
+          {!getToken()
+            ? '⛔ Not sharing yet: this iPad has no sync key.'
+            : syncStatus === 'expired'
+              ? '⛔ The sync key has expired. Paste a new one below.'
+              : syncStatus === 'saved'
+                ? `✅ Sharing as ${kidDisplayName()}${lastSavedAt ? ` · last shared ${agoLabel(lastSavedAt)}` : ''}`
+                : syncStatus === 'saving' || syncStatus === 'loading'
+                  ? '⏳ Sharing…'
+                  : syncStatus === 'offline'
+                    ? `📴 Offline, will retry${lastSavedAt ? ` · last shared ${agoLabel(lastSavedAt)}` : ''}`
+                    : `⚠️ Sharing hit a problem${lastSavedAt ? ` · last shared ${agoLabel(lastSavedAt)}` : ''}`}
+        </p>
+        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+          One sync key is shared by every iPad in the family. Each kid keeps her own progress; the family board shows both.
+          {isStandaloneApp() && ' A setup link opened in Safari does not reach this Home Screen app, so paste the key here instead.'}
+        </p>
         {getToken() ? (
-          <button
-            type="button"
-            className="cc-btn cc-btn-surface"
-            onClick={() => {
-              clearToken()
-              stopSync()
-            }}
-          >
-            Disconnect
-          </button>
+          <>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                data-testid="sync-copy"
+                className="cc-btn cc-btn-primary"
+                style={{ minHeight: 56, flex: 1 }}
+                onClick={() => {
+                  void copyText(getToken() ?? '').then((done) => setSyncNote(done ? 'Copied ✅ Send it to the other iPad and paste it in its Settings.' : 'Could not copy. Long-press the key below to copy it.'))
+                }}
+              >
+                📋 Copy sync key
+              </button>
+              <button
+                type="button"
+                data-testid="sync-share"
+                className="cc-btn cc-btn-surface"
+                style={{ minHeight: 56, flex: 1 }}
+                onClick={() => {
+                  const other = otherKid()
+                  const link = `${window.location.origin}${window.location.pathname}#/setup?token=${encodeURIComponent(getToken() ?? '')}&kid=${other}`
+                  void shareText(`Practice setup link for ${kidDisplayName(other)}: open it on her iPad (in Safari, or paste the key inside the app)`, link).then((done) =>
+                    setSyncNote(done ? `Setup link for ${kidDisplayName(other)} shared.` : 'Could not open the share sheet; use Copy sync key instead.'),
+                  )
+                }}
+              >
+                📤 Share setup link
+              </button>
+            </div>
+            {syncNote && <p data-testid="sync-note" style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-success)' }}>{syncNote}</p>}
+            <details>
+              <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Show the key</summary>
+              <code data-testid="sync-key" style={{ display: 'block', marginTop: '0.4rem', fontSize: '0.75rem', wordBreak: 'break-all', userSelect: 'all' }}>{getToken()}</code>
+            </details>
+            <button
+              type="button"
+              className="cc-btn cc-btn-surface"
+              onClick={() => {
+                clearToken()
+                stopSync()
+              }}
+            >
+              Stop sharing on this iPad
+            </button>
+          </>
         ) : (
           <>
+            <p style={{ margin: 0, fontSize: '0.85rem' }}>
+              Got the key from the other iPad? (Settings → Family sharing → Copy sync key, then send it here.) Paste it below. Everything already on this iPad is kept and shared.
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <input
+                value={tokenInput}
+                data-testid="sync-input"
+                onChange={(e) => setTokenInput(e.target.value)}
+                placeholder="Paste sync key"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                style={{ flex: 1, minWidth: 0, minHeight: 56, borderRadius: 'var(--cc-radius)', border: '2px solid var(--cc-border)', padding: '0 0.75rem' }}
+              />
+              <button
+                type="button"
+                data-testid="sync-paste"
+                className="cc-btn cc-btn-surface"
+                style={{ minHeight: 56 }}
+                onClick={() => {
+                  void readClipboardText().then((text) => {
+                    if (text) setTokenInput(text.trim())
+                    else setSyncNote('Nothing to paste. Long-press the box and choose Paste.')
+                  })
+                }}
+              >
+                📥 Paste
+              </button>
+            </div>
+            <button
+              type="button"
+              data-testid="sync-save"
+              className="cc-btn cc-btn-primary"
+              style={{ minHeight: 56 }}
+              disabled={tokenInput.trim() === ''}
+              onClick={() => {
+                setToken(tokenInput.trim())
+                setTokenInput('')
+                setSyncNote(null)
+                startSync()
+              }}
+            >
+              Start sharing
+            </button>
+            {syncNote && <p data-testid="sync-note" style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>{syncNote}</p>}
             <details>
-              <summary style={{ cursor: 'pointer', fontWeight: 700 }}>How do I get a token?</summary>
+              <summary style={{ cursor: 'pointer', fontWeight: 700 }}>No key anywhere yet? How to make one</summary>
               <ol style={{ margin: '0.5rem 0 0', paddingLeft: '1.25rem', fontSize: '0.9rem' }}>
                 <li>Go to github.com and sign in</li>
                 <li>Settings → Developer settings → Fine-grained tokens</li>
                 <li>Generate new token, expiry 1 year</li>
                 <li>Under Account permissions, set Gists to "Read and write"</li>
-                <li>Generate, copy the token, and paste it below</li>
+                <li>Generate, copy the token, and paste it above</li>
               </ol>
             </details>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <input
-                value={tokenInput}
-                onChange={(e) => setTokenInput(e.target.value)}
-                placeholder="Paste GitHub token"
-                style={{ flex: 1, minWidth: 0 }}
-              />
-              <button
-                type="button"
-                className="cc-btn cc-btn-primary"
-                disabled={tokenInput.trim() === ''}
-                onClick={() => {
-                  setToken(tokenInput.trim())
-                  setTokenInput('')
-                  startSync()
-                }}
-              >
-                Connect
-              </button>
-            </div>
           </>
         )}
       </section>

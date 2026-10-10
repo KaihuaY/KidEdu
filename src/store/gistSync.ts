@@ -114,10 +114,46 @@ function setCachedGistId(id: string): void {
 let status: SyncStatus = 'off'
 const statusListeners = new Set<() => void>()
 
+// When this device last confirmed its progress is in the gist (ms). Persisted
+// so Settings can say "last shared 3 days ago" right after a cold start, which
+// is what tells a grown-up that an iPad has quietly stopped sharing.
+const LAST_SAVED_KEY = 'cubeclimb.gh.lastSavedAt'
+let lastSavedAt: number | null = readLastSavedAt()
+
+function readLastSavedAt(): number | null {
+  if (!hasLocalStorage()) return null
+  try {
+    const raw = localStorage.getItem(LAST_SAVED_KEY)
+    const n = raw ? Number(raw) : NaN
+    return Number.isFinite(n) && n > 0 ? n : null
+  } catch {
+    return null
+  }
+}
+
 function setStatus(next: SyncStatus): void {
+  if (next === 'saved') {
+    lastSavedAt = Date.now()
+    if (hasLocalStorage()) {
+      try {
+        localStorage.setItem(LAST_SAVED_KEY, String(lastSavedAt))
+      } catch {
+        // ignore
+      }
+    }
+  }
   if (status === next) return
   status = next
   for (const listener of statusListeners) listener()
+}
+
+/** When this device last confirmed its progress is in the gist, or null if never. */
+export function getLastSavedAt(): number | null {
+  return lastSavedAt
+}
+
+export function useLastSavedAt(): number | null {
+  return useSyncExternalStore(subscribeStatus, getLastSavedAt, getLastSavedAt)
 }
 
 export function getStatus(): SyncStatus {

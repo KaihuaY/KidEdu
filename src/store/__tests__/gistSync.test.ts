@@ -293,3 +293,36 @@ describe('truncated gist files (GitHub truncates content over ~1MB)', () => {
     vi.unstubAllGlobals()
   })
 })
+
+describe('a device that practised before it got the sync key', () => {
+  it('keeps every local take and shares them on the first sync (the Amelia case)', async () => {
+    // The gist already holds an old, empty shell for Amelia (written weeks ago).
+    const shell = { ...defaultDoc(), settings: { ...defaultDoc().settings, kidName: 'Amelia', updatedAt: 1 }, piano: { ...defaultDoc().piano, updatedAt: 1 }, profiles: { ...defaultDoc().profiles, updatedAt: 1 } }
+    const { fetch, gists } = fakeGithub([
+      { id: 'gist-1', files: { 'cubeclimb-progress.json': gistFile(docWithXp(11)), 'cubeclimb-progress.amelia.json': gistFile(shell) }, updated_at: new Date().toISOString() },
+    ])
+    vi.stubGlobal('fetch', fetch)
+    setKid('amelia')
+    // Weeks of local-only practice on her iPad.
+    update('piano', (p) => ({
+      ...p,
+      takes: Array.from({ length: 30 }, (_, i) => ({ id: 't' + i, day: '2026-10-0' + ((i % 9) + 1), pieceId: null, startedAt: i, durationSec: 120, activeSec: 100, mimeType: 'audio/mp4', sizeBytes: 1, hasAudio: false, deviceId: 'ipad' })),
+      streak: { current: 9, best: 9, lastDay: '2026-10-09' },
+    }))
+    update('profiles', (p) => ({ ...p, kid: { ...p.kid, xp: 55 } }))
+    setToken('tok')
+    start()
+
+    await vi.waitFor(() => expect(JSON.parse(gists[0].files['cubeclimb-progress.amelia.json'].content).piano.takes.length).toBe(30))
+    const uploaded = JSON.parse(gists[0].files['cubeclimb-progress.amelia.json'].content) as ProgressDoc
+    expect(uploaded.profiles.kid.xp).toBe(55)
+    expect(uploaded.piano.streak.current).toBe(9)
+    // Local doc untouched by the old shell.
+    expect(getDoc().piano.takes).toHaveLength(30)
+    expect(getDoc().profiles.kid.xp).toBe(55)
+    expect(JSON.parse(gists[0].files['cubeclimb-progress.json'].content).profiles.kid.xp).toBe(11)
+
+    stop()
+    vi.unstubAllGlobals()
+  })
+})

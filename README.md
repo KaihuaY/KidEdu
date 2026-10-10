@@ -811,3 +811,7 @@ is never part of the progress document. Tokens for the dark palette live in
 - Marking a day after the fact restores a streak that already reset. There is no limit on how many days.
 - Shown as 🤒 on the streak calendar and the week dots (and in the day view).
 - Stored as `piano.days[day].sickDay`.
+
+## Family sharing status and repair
+
+If an iPad has no sync key (or an expired one), Home shows an amber "Not sharing with the family yet" card that opens Settings. Settings > Family sharing shows a plain status ("Sharing as Amelia - last shared 2 min ago" / "Not sharing yet") with **Copy sync key**, **Share setup link** (for the other kid) and, on a device without a key, a **Paste** button and **Start sharing**. The first sync keeps everything already on that iPad and uploads it to that kid's own file. Note: on iOS the Home Screen app and Safari keep separate storage, so a setup link opened in Safari does not reach the installed app; paste the key inside the app instead.

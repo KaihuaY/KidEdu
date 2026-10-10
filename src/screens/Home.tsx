@@ -11,6 +11,7 @@ import { TokenPill } from '../components/TokenPill'
 import { NoteCard } from '../components/NoteCard'
 import { BadgeToast } from '../components/BadgeToast'
 import { FamilyBoard } from '../components/FamilyBoard'
+import { SharingCard } from '../components/SharingCard'
 import { BraceletStrand } from '../components/BraceletMaker'
 import { latestFinishedBracelet } from '../store/collection'
 import { COLLECTION } from '../content/collection'
@@ -104,6 +105,7 @@ export function Home() {
         {latestBracelet && <BraceletStrand bracelet={latestBracelet} width={300} />}
       </button>
 
+      <SharingCard />
       <FamilyBoard compact />
     </div>
   )
