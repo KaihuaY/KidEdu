@@ -326,3 +326,34 @@ describe('a device that practised before it got the sync key', () => {
     vi.unstubAllGlobals()
   })
 })
+
+describe('merge base is remembered per device and per kid', () => {
+  it('after a sync, a stale local profile tweak no longer overwrites newer remote XP', async () => {
+    const { clearMergeBase } = await import('../gistSync')
+    clearMergeBase()
+    // first sync: remote has xp 750; local identical
+    const base = docWithXp(750)
+    const { fetch, gists } = fakeGithub([{ id: 'gist-1', files: { 'cubeclimb-progress.json': gistFile(base) }, updated_at: new Date().toISOString() }])
+    vi.stubGlobal('fetch', fetch)
+    update('profiles', (p) => ({ ...p, kid: { ...p.kid, xp: 750 } }))
+    setToken('tok')
+    start()
+    await vi.waitFor(() => expect(localStorage.getItem('cubeclimb.gh.mergeBase')).not.toBeNull())
+    stop()
+    // the iPad meanwhile earned xp 830 in the gist
+    const remote = JSON.parse(gists[0].files['cubeclimb-progress.json'].content) as ProgressDoc
+    remote.profiles = { ...remote.profiles, kid: { ...remote.profiles.kid, xp: 830 }, updatedAt: Date.now() - 5000 }
+    gists[0].files['cubeclimb-progress.json'] = gistFile(remote)
+    gists[0].updated_at = new Date().toISOString()
+    // this device adds one gold on its stale copy (newer stamp), then syncs
+    update('profiles', (p) => ({ ...p, kid: { ...p.kid, tokens: { ...p.kid.tokens, gold: p.kid.tokens.gold + 1 } } }))
+    start()
+    await vi.waitFor(() => expect(getDoc().profiles.kid.xp).toBe(830))
+    expect(getDoc().profiles.kid.tokens.gold).toBe(1)
+    await vi.waitFor(() => expect(JSON.parse(gists[0].files['cubeclimb-progress.json'].content).profiles.kid.xp).toBe(830))
+    expect(JSON.parse(gists[0].files['cubeclimb-progress.json'].content).profiles.kid.tokens.gold).toBe(1)
+    stop()
+    clearMergeBase()
+    vi.unstubAllGlobals()
+  })
+})

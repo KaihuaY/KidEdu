@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { backupBeforeRisk, getDoc, importJson, mergeDocs, normalizeDoc, subscribe, type ProgressDoc } from './progress'
+import { backupBeforeRisk, getDoc, importJson, mergeBaseOf, mergeDocs, normalizeDoc, subscribe, type MergeBase, type ProgressDoc } from './progress'
 
 /**
  * The document as it is stored in the gist: COMPACT JSON. The human export (exportJson) is
@@ -183,6 +183,45 @@ let started = false
 // avoid immediately re-uploading what was just downloaded (an echo loop).
 let applyingRemote = false
 let lastSyncedJson: string | null = null
+
+// --- merge base: what this device last synced, per kid, persisted ---------
+const MERGE_BASE_KEY = 'cubeclimb.gh.mergeBase'
+
+function mergeBaseKey(): string {
+  return kidKey(MERGE_BASE_KEY)
+}
+
+function readMergeBase(): MergeBase | undefined {
+  if (!hasLocalStorage()) return undefined
+  try {
+    const raw = localStorage.getItem(mergeBaseKey())
+    if (!raw) return undefined
+    const parsed = JSON.parse(raw) as MergeBase
+    return parsed && typeof parsed === 'object' && parsed.sections ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Remembers that `doc` is now what the gist holds for this kid (after a pull-merge or a push). */
+function rememberSynced(doc: ProgressDoc): void {
+  if (!hasLocalStorage()) return
+  try {
+    localStorage.setItem(mergeBaseKey(), JSON.stringify(mergeBaseOf(doc)))
+  } catch {
+    // ignore - next sync simply falls back to the timestamp rules
+  }
+}
+
+/** Test/dev helper. */
+export function clearMergeBase(): void {
+  if (!hasLocalStorage()) return
+  try {
+    localStorage.removeItem(mergeBaseKey())
+  } catch {
+    // ignore
+  }
+}
 let lastKnownRemoteUpdatedAt: string | null = null
 
 interface GistFile {
@@ -323,6 +362,7 @@ async function pushToGist(content: string): Promise<void> {
   if (!res.ok) throw new Error(`CubeClimb: failed to save gist (${res.status})`)
   const data = (await res.json()) as GistDetail
   lastSyncedJson = content
+  rememberSynced(getDoc())
   lastKnownRemoteUpdatedAt = data.updated_at
   setStatus('saved')
   await harvestOtherKids(data)
@@ -358,12 +398,14 @@ function applyRemoteContent(remoteJson: string): boolean {
   applyingRemote = true
   try {
     const before = getDoc()
-    const merged = mergeDocs(before, remoteDoc)
+    const merged = mergeDocs(before, remoteDoc, readMergeBase())
     // mergePiano unions takes, so this cannot shrink any more - but if it ever
     // does, the old doc is one tap away in Settings -> Backup.
     if (merged.piano.takes.length < before.piano.takes.length || (before.profiles.kid.xp > 0 && merged.profiles.kid.xp === 0)) backupBeforeRisk('before sync')
     importJson(JSON.stringify(merged))
     lastSyncedJson = syncJson()
+    // After a merge the gist still holds the REMOTE doc until we push; the base is the remote.
+    rememberSynced(remoteDoc)
   } finally {
     applyingRemote = false
   }

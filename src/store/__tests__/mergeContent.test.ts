@@ -85,3 +85,62 @@ describe('piano merges by union', () => {
     expect(mergeDocs(a, b).piano).toBe(a.piano)
   })
 })
+
+// Three-way merge with a base (what this device last synced).
+describe('three-way merge with a remembered base', () => {
+  it("the 19:15 XP race: a laptop that only added one token must not drag the iPad's XP back", async () => {
+    const { mergeBaseOf } = await import('../progress')
+    // what the laptop last synced
+    const synced = realDoc(1_000_000)
+    synced.profiles.kid.xp = 750
+    synced.profiles.kid.tokens = { gold: 3, silver: 2, bronze: 1 }
+    const base = mergeBaseOf(synced)
+    // the iPad since then: earned a mark → xp 830 (tokens 3 → the mark's gold already counted), newer streak
+    const remote = realDoc(1_000_000)
+    remote.profiles = { ...synced.profiles, kid: { ...synced.profiles.kid, xp: 830, streak: { current: 5, best: 5, lastDay: '2026-10-10' } }, updatedAt: 1_500_000 }
+    // the laptop: grown-up added one gold on its stale copy, a bit later
+    const local = realDoc(1_000_000)
+    local.profiles = { ...synced.profiles, kid: { ...synced.profiles.kid, tokens: { gold: 4, silver: 2, bronze: 1 } }, updatedAt: 1_600_000 }
+    const merged = mergeDocs(local, remote, base)
+    expect(merged.profiles.kid.xp).toBe(830)
+    expect(merged.profiles.kid.tokens).toEqual({ gold: 4, silver: 2, bronze: 1 })
+    expect(merged.profiles.kid.streak).toEqual({ current: 5, best: 5, lastDay: '2026-10-10' })
+    expect(merged.profiles.updatedAt).toBe(1_600_000)
+  })
+
+  it('a section unchanged here since the last sync takes the remote copy even if its own stamp is newer', async () => {
+    const { mergeBaseOf } = await import('../progress')
+    const synced = realDoc(1_000_000)
+    const base = mergeBaseOf(synced)
+    const local = realDoc(1_000_000) // rewards untouched since sync
+    const remote = realDoc(900_000) // older stamp, but changed remotely: one more box
+    remote.rewards = { ...remote.rewards, boxHistory: [...remote.rewards.boxHistory, { tier: 'bronze', openedAt: 5, result: 'Fox' }], updatedAt: 900_000 }
+    const merged = mergeDocs(local, remote, base)
+    expect(merged.rewards.boxHistory).toHaveLength(2)
+  })
+
+  it('a field changed on both sides takes the newer section; without a base the content rules apply', async () => {
+    const { mergeBaseOf } = await import('../progress')
+    const synced = realDoc(1_000_000)
+    const base = mergeBaseOf(synced)
+    const a = realDoc(1_000_000)
+    a.profiles = { ...a.profiles, kid: { ...a.profiles.kid, xp: 200 }, updatedAt: 1_200_000 }
+    const b = realDoc(1_000_000)
+    b.profiles = { ...b.profiles, kid: { ...b.profiles.kid, xp: 300 }, updatedAt: 1_300_000 }
+    expect(mergeDocs(a, b, base).profiles.kid.xp).toBe(300)
+    expect(mergeDocs(b, a, base).profiles.kid.xp).toBe(300)
+    expect(mergeDocs(a, b).profiles.kid.xp).toBe(300)
+  })
+
+  it('piano is still unioned under a base: a take recorded here survives even when only the remote changed', async () => {
+    const { mergeBaseOf } = await import('../progress')
+    const synced = realDoc(1_000_000)
+    const base = mergeBaseOf(synced)
+    const local = realDoc(1_000_000)
+    local.piano = { ...local.piano, takes: [...local.piano.takes, take('t4', '2026-10-04', 1_000_500)] } // same stamp (edge), new take
+    const remote = realDoc(1_000_000)
+    remote.piano = { ...remote.piano, takes: [...remote.piano.takes, take('t5', '2026-10-05', 1_100_000)], updatedAt: 1_100_000 }
+    const ids = mergeDocs(local, remote, base).piano.takes.map((t) => t.id)
+    expect(ids).toEqual(['t1', 't2', 't3', 't4', 't5'])
+  })
+})

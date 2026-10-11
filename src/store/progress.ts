@@ -1142,18 +1142,94 @@ function mergePiano(local: PianoSection, remote: PianoSection | undefined): Pian
  * merge. Any top-level key outside the known sections is preserved too - see
  * mergeUnknownSections().
  */
-export function mergeDocs(local: ProgressDoc, remote: ProgressDoc): ProgressDoc {
+/**
+ * What this device last knew the gist to hold for its own file: each section's
+ * `updatedAt` plus a copy of the small profiles section. Lets mergeDocs tell
+ * "changed here since the last sync" from "changed there", instead of trusting
+ * timestamps alone - the 2026-10-10 XP loss happened because a stale device
+ * added one token and its whole (older) profile became the "newest" section.
+ */
+export interface MergeBase {
+  sections: Partial<Record<SectionKey, number>>
+  profiles?: Profiles
+}
+
+/** Three-way pick for a whole section: only the side that changed since the base wins; both changed → `both()`. */
+function threeWay<T extends { updatedAt: number }>(local: T, remote: T | undefined, baseStamp: number | undefined, both: () => T): T {
+  if (!remote) return local
+  if (baseStamp === undefined) return both()
+  const localChanged = local.updatedAt !== baseStamp
+  const remoteChanged = remote.updatedAt !== baseStamp
+  if (localChanged && !remoteChanged) return local
+  if (remoteChanged && !localChanged) return remote
+  if (!localChanged && !remoteChanged) return local
+  return both()
+}
+
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+
+/**
+ * Profiles, when both sides changed since the base: decided field by field.
+ * A field equal to the base on one side takes the other side's value; a field
+ * changed on both sides takes the newer section's. So a grown-up adding one
+ * token on a laptop never drags the kid's XP, streak or missions back to what
+ * the laptop last saw.
+ */
+function mergeProfilesFieldwise(local: Profiles, remote: Profiles, base: Profiles): Profiles {
+  const newest = newer(local, remote)
+  const other = newest === local ? remote : local
+  const kidKeys = new Set([...Object.keys(local.kid), ...Object.keys(remote.kid), ...Object.keys(base.kid)])
+  const kid: Record<string, unknown> = {}
+  const lk = local.kid as unknown as Record<string, unknown>
+  const rk = remote.kid as unknown as Record<string, unknown>
+  const bk = base.kid as unknown as Record<string, unknown>
+  for (const key of kidKeys) {
+    const localChanged = !same(lk[key], bk[key])
+    const remoteChanged = !same(rk[key], bk[key])
+    if (localChanged && !remoteChanged) kid[key] = lk[key]
+    else if (remoteChanged && !localChanged) kid[key] = rk[key]
+    else kid[key] = (newest.kid as unknown as Record<string, unknown>)[key]
+    if (kid[key] === undefined) delete kid[key]
+  }
+  const parent = same(local.parent, base.parent) ? remote.parent : same(remote.parent, base.parent) ? local.parent : newest.parent
+  return { ...other, ...newest, kid: kid as unknown as Profiles['kid'], parent, updatedAt: Math.max(local.updatedAt, remote.updatedAt) }
+}
+
+export function mergeDocs(local: ProgressDoc, remote: ProgressDoc, base?: MergeBase): ProgressDoc {
+  const stamp = (key: SectionKey) => base?.sections[key]
+  const profilesBoth = () =>
+    base?.profiles && !pristineProfiles(local.profiles) && !pristineProfiles(remote.profiles)
+      ? mergeProfilesFieldwise(local.profiles, remote.profiles, base.profiles)
+      : newerWithContent(local.profiles, remote.profiles, pristineProfiles)
   return {
     ...mergeUnknownSections(local, remote),
     schemaVersion: 1,
-    settings: newerWithContent(local.settings, remote.settings, pristineSettings),
-    profiles: newerWithContent(local.profiles, remote.profiles, pristineProfiles),
-    rewards: newerWithContent(local.rewards, remote.rewards, pristineRewards),
-    solveLog: newerWithContent(local.solveLog, remote.solveLog, pristineSolveLog),
+    settings: threeWay(local.settings, remote.settings, stamp('settings'), () => newerWithContent(local.settings, remote.settings, pristineSettings)),
+    profiles: threeWay(local.profiles, remote.profiles, stamp('profiles'), profilesBoth),
+    rewards: threeWay(local.rewards, remote.rewards, stamp('rewards'), () => newerWithContent(local.rewards, remote.rewards, pristineRewards)),
+    solveLog: threeWay(local.solveLog, remote.solveLog, stamp('solveLog'), () => newerWithContent(local.solveLog, remote.solveLog, pristineSolveLog)),
+    // piano is always unioned: even "only remote changed" must not drop a take recorded here
     piano: mergePiano(local.piano ?? emptyPiano(0), remote.piano),
-    notes: newerWithContent(local.notes ?? emptyNotes(0), remote.notes, pristineNotes),
-    collection: newerWithContent(local.collection ?? emptyCollection(0), remote.collection, pristineCollection),
-    teacherNotes: newerWithContent(local.teacherNotes ?? emptyTeacherNotes(0), remote.teacherNotes, pristineTeacherNotes),
+    notes: threeWay(local.notes ?? emptyNotes(0), remote.notes, stamp('notes'), () => newerWithContent(local.notes ?? emptyNotes(0), remote.notes, pristineNotes)),
+    collection: threeWay(local.collection ?? emptyCollection(0), remote.collection, stamp('collection'), () => newerWithContent(local.collection ?? emptyCollection(0), remote.collection, pristineCollection)),
+    teacherNotes: threeWay(local.teacherNotes ?? emptyTeacherNotes(0), remote.teacherNotes, stamp('teacherNotes'), () => newerWithContent(local.teacherNotes ?? emptyTeacherNotes(0), remote.teacherNotes, pristineTeacherNotes)),
+  }
+}
+
+/** The MergeBase describing `doc` - what a device should remember after it has synced `doc`. */
+export function mergeBaseOf(doc: ProgressDoc): MergeBase {
+  return {
+    sections: {
+      settings: doc.settings.updatedAt,
+      profiles: doc.profiles.updatedAt,
+      rewards: doc.rewards.updatedAt,
+      solveLog: doc.solveLog.updatedAt,
+      piano: doc.piano.updatedAt,
+      notes: doc.notes.updatedAt,
+      collection: doc.collection.updatedAt,
+      teacherNotes: doc.teacherNotes.updatedAt,
+    },
+    profiles: JSON.parse(JSON.stringify(doc.profiles)) as Profiles,
   }
 }
 
