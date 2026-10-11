@@ -21,6 +21,7 @@ import { agoLabel, isStandaloneApp } from '../utils/standalone'
 import { PinGate } from '../components/PinGate'
 import { navigate } from '../router'
 import { formatBytes, getRecordingStore } from '../store/recordings'
+import { rebuildTakesFromRecordings, type RebuildResult } from '../store/repair'
 import {
   lastProgressBackupDay,
   retryFailedUploads,
@@ -623,6 +624,7 @@ export function Settings() {
     null,
   )
   const [backups, setBackups] = useState(() => listBackups())
+  const [rebuild, setRebuild] = useState<{ busy: boolean; result?: RebuildResult; error?: string; confirming: boolean }>({ busy: false, confirming: false })
   const [confirmingRestoreIndex, setConfirmingRestoreIndex] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
@@ -1397,6 +1399,48 @@ export function Settings() {
 
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Backup</h2>
+        <div data-testid="repair-block" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.75rem', borderRadius: 'var(--cc-radius)', border: '1px solid var(--cc-border)' }}>
+          <strong>🛠 Recording list looks short?</strong>
+          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+            Every recording made on this iPad is also kept as an audio file here. This rebuilds the list of takes from those files (a backup is saved first). Tokens and XP cannot be rebuilt; use the box controls above for those.
+          </p>
+          {!rebuild.confirming ? (
+            <button type="button" data-testid="repair-rebuild" className="cc-btn cc-btn-surface" style={{ minHeight: 56 }} disabled={rebuild.busy} onClick={() => setRebuild((r) => ({ ...r, confirming: true, result: undefined, error: undefined }))}>
+              {rebuild.busy ? 'Rebuilding…' : 'Rebuild recording list from this iPad'}
+            </button>
+          ) : (
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                type="button"
+                data-testid="repair-confirm"
+                className="cc-btn cc-btn-primary"
+                style={{ minHeight: 56, flex: 1 }}
+                onClick={() => {
+                  setRebuild({ busy: true, confirming: false })
+                  rebuildTakesFromRecordings()
+                    .then((result) => {
+                      setRebuild({ busy: false, confirming: false, result })
+                      setBackups(listBackups())
+                    })
+                    .catch((err: unknown) => setRebuild({ busy: false, confirming: false, error: err instanceof Error ? err.message : String(err) }))
+                }}
+              >
+                Yes, rebuild
+              </button>
+              <button type="button" className="cc-btn cc-btn-surface" style={{ minHeight: 56, flex: 1 }} onClick={() => setRebuild((r) => ({ ...r, confirming: false }))}>
+                Cancel
+              </button>
+            </div>
+          )}
+          {rebuild.result && (
+            <p data-testid="repair-result" style={{ margin: 0, fontWeight: 700, color: 'var(--cc-success)' }}>
+              {rebuild.result.added === 0
+                ? 'Nothing to rebuild: every recording on this iPad is already in the list.'
+                : `Rebuilt ${rebuild.result.added} recording${rebuild.result.added === 1 ? '' : 's'}, re-stamped ${rebuild.result.daysRestamped} ring day${rebuild.result.daysRestamped === 1 ? '' : 's'} · streak ${rebuild.result.streak.current} (best ${rebuild.result.streak.best})`}
+            </p>
+          )}
+          {rebuild.error && <p style={{ margin: 0, color: 'var(--cc-danger)' }}>Could not rebuild: {rebuild.error}</p>}
+        </div>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           <button type="button" className="cc-btn cc-btn-surface" onClick={handleExport}>
             Export backup
@@ -1430,9 +1474,12 @@ export function Settings() {
             backups.map((b, index) => (
               <div
                 key={`${b.savedAt}-${index}`}
+                data-testid={`backup-row-${index}`}
                 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}
               >
-                <span style={{ flex: 1, fontSize: '0.85rem' }}>
+                <span style={{ flex: 1, fontSize: '0.85rem', minWidth: 0 }}>
+                  <strong>{b.summary}</strong>
+                  <br />
                   {new Date(b.savedAt).toLocaleString()} · build {b.buildId} · {formatBytes(b.bytes)}
                 </span>
                 {confirmingRestoreIndex === index ? (

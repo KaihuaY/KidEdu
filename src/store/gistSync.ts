@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { getDoc, importJson, mergeDocs, normalizeDoc, subscribe, type ProgressDoc } from './progress'
+import { backupBeforeRisk, getDoc, importJson, mergeDocs, normalizeDoc, subscribe, type ProgressDoc } from './progress'
 
 /**
  * The document as it is stored in the gist: COMPACT JSON. The human export (exportJson) is
@@ -357,7 +357,11 @@ function applyRemoteContent(remoteJson: string): boolean {
   }
   applyingRemote = true
   try {
-    const merged = mergeDocs(getDoc(), remoteDoc)
+    const before = getDoc()
+    const merged = mergeDocs(before, remoteDoc)
+    // mergePiano unions takes, so this cannot shrink any more - but if it ever
+    // does, the old doc is one tap away in Settings -> Backup.
+    if (merged.piano.takes.length < before.piano.takes.length || (before.profiles.kid.xp > 0 && merged.profiles.kid.xp === 0)) backupBeforeRisk('before sync')
     importJson(JSON.stringify(merged))
     lastSyncedJson = syncJson()
   } finally {

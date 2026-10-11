@@ -884,10 +884,23 @@ function pushBackup(json: string, buildId: string): void {
   writeBackups([...readBackups(), { savedAt: Date.now(), buildId, json }])
 }
 
+/** One line a grown-up can read to tell backups apart: "30 takes · XP 55 · 10 cards". */
+function summarizeBackup(json: string): string {
+  try {
+    const d = JSON.parse(json) as Partial<ProgressDoc>
+    const takes = d.piano?.takes?.length ?? 0
+    const xp = d.profiles?.kid?.xp ?? 0
+    const cards = d.collection?.items?.length ?? 0
+    return `${takes} take${takes === 1 ? '' : 's'} · XP ${xp} · ${cards} card${cards === 1 ? '' : 's'}`
+  } catch {
+    return 'unreadable'
+  }
+}
+
 /** Automatic-backup list for Settings -> Backup, newest first. */
-export function listBackups(): { savedAt: number; buildId: string; bytes: number }[] {
+export function listBackups(): { savedAt: number; buildId: string; bytes: number; summary: string }[] {
   return readBackups()
-    .map((b) => ({ savedAt: b.savedAt, buildId: b.buildId, bytes: b.json.length }))
+    .map((b) => ({ savedAt: b.savedAt, buildId: b.buildId, bytes: b.json.length , summary: summarizeBackup(b.json) }))
     .reverse()
 }
 
@@ -1038,30 +1051,119 @@ function mergeUnknownSections(local: ProgressDoc, remote: ProgressDoc): Record<s
   return out
 }
 
+// --- Content-aware merge ----------------------------------------------------
+// Added 2026-10-11 after a real loss: a fresh, never-used copy of the app
+// (the setup link opened in Safari) synced first and stamped EMPTY piano and
+// profile sections with "now"; two minutes later the kid's real iPad synced,
+// its sections were "older", and last-writer-wins replaced weeks of recordings
+// and XP with the empty ones. Two rules now stop that for good:
+//   1. a pristine (never-used) section never outranks one with content, no
+//      matter the timestamps;
+//   2. recordings, days and journal entries are UNIONED by id/key, so no
+//      device can ever delete another device's takes (there is no delete-take
+//      feature; metadata older than the retention window is pruned by
+//      saveTake on the next take).
+
+function pristineSettings(s: Settings): boolean {
+  return s.pianoPieces.length === 0 && !s.driveUpload
+}
+function pristineProfiles(p: Profiles): boolean {
+  const k = p.kid
+  return (
+    k.xp === 0 &&
+    k.sessions.length === 0 &&
+    Object.keys(k.holds ?? {}).length === 0 &&
+    k.tokens.gold + k.tokens.silver + k.tokens.bronze === 0 &&
+    k.streak.current === 0 &&
+    k.streak.best === 0
+  )
+}
+function pristineRewards(r: Rewards): boolean {
+  return r.boxHistory.length === 0 && (r.badges?.length ?? 0) === 0 && r.tickets.length === 0 && (r.stickers?.length ?? 0) === 0
+}
+function pristineSolveLog(s: SolveLog): boolean {
+  return s.solves.length === 0
+}
+function pristinePiano(p: PianoSection): boolean {
+  return p.takes.length === 0 && Object.keys(p.days).length === 0 && (p.journal?.length ?? 0) === 0 && p.streak.best === 0
+}
+function pristineNotes(n: NotesSection): boolean {
+  return n.items.length === 0
+}
+function pristineCollection(c: CollectionSection): boolean {
+  return c.items.length === 0 && Object.keys(c.beads ?? {}).length === 0 && c.bracelets.length === 0
+}
+function pristineTeacherNotes(t: TeacherNotesSection): boolean {
+  return t.items.length === 0
+}
+
+/** newer(), except a pristine section never outranks one with content. */
+function newerWithContent<T extends { updatedAt: number }>(local: T, remote: T | undefined, pristine: (x: T) => boolean): T {
+  if (!remote) return local
+  const localPristine = pristine(local)
+  const remotePristine = pristine(remote)
+  if (localPristine !== remotePristine) return localPristine ? remote : local
+  return newer(local, remote)
+}
+
+function unionById<T extends { id: string }>(base: T[], other: T[]): T[] {
+  const seen = new Set(base.map((x) => x.id))
+  const extra = other.filter((x) => !seen.has(x.id))
+  return extra.length ? [...base, ...extra] : base
+}
+
 /**
- * Merges two docs section-by-section: whichever side has the newer
- * `updatedAt` for a given section wins outright (sections are not merged
- * field-by-field - each section is a single unit). This keeps sync simple:
- * two devices editing *different* sections both survive; editing the *same*
- * section concurrently means the loser's edits to that section are dropped,
- * but nothing from other sections is ever lost. Every section goes through
- * `newer()` so a remote doc uploaded by an old build that doesn't know about
- * a given section (e.g. `piano`) never crashes the merge. Any top-level key
- * outside the known sections is preserved too - see mergeUnknownSections().
+ * Piano is append-mostly, so it merges by content: the richer/newer side is
+ * the base, then the other side's takes, days and journal entries that the
+ * base lacks are added back. Takes end up ordered by startedAt.
+ */
+function mergePiano(local: PianoSection, remote: PianoSection | undefined): PianoSection {
+  if (!remote) return local
+  const base = newerWithContent(local, remote, pristinePiano)
+  const other = base === local ? remote : local
+  const takes = unionById(base.takes, other.takes ?? [])
+  const sortedTakes = takes === base.takes ? takes : [...takes].sort((a, b) => a.startedAt - b.startedAt)
+  const missingDays = Object.keys(other.days ?? {}).filter((d) => !(d in base.days))
+  const days = missingDays.length ? { ...base.days, ...Object.fromEntries(missingDays.map((d) => [d, other.days[d]])) } : base.days
+  const journal = unionById(base.journal ?? [], other.journal ?? [])
+  const sortedJournal = journal === (base.journal ?? []) ? base.journal : [...journal].sort((a, b) => a.at - b.at)
+  if (sortedTakes === base.takes && days === base.days && sortedJournal === base.journal) return base
+  return { ...base, takes: sortedTakes, days, ...(sortedJournal ? { journal: sortedJournal } : {}) }
+}
+
+/**
+ * Merges two docs section-by-section. Each section is a single unit decided
+ * by `newerWithContent()` (newer `updatedAt` wins, but a never-used section
+ * never beats one with content), except `piano`, which is unioned - see
+ * mergePiano(). Two devices editing *different* sections both survive;
+ * editing the *same* non-piano section concurrently means the loser's edits
+ * to that section are dropped, but nothing from other sections is ever lost.
+ * A remote doc from an old build that lacks a section never crashes the
+ * merge. Any top-level key outside the known sections is preserved too - see
+ * mergeUnknownSections().
  */
 export function mergeDocs(local: ProgressDoc, remote: ProgressDoc): ProgressDoc {
   return {
     ...mergeUnknownSections(local, remote),
     schemaVersion: 1,
-    settings: newer(local.settings, remote.settings),
-    profiles: newer(local.profiles, remote.profiles),
-    rewards: newer(local.rewards, remote.rewards),
-    solveLog: newer(local.solveLog, remote.solveLog),
-    piano: newer(local.piano ?? emptyPiano(0), remote.piano),
-    notes: newer(local.notes ?? emptyNotes(0), remote.notes),
-    collection: newer(local.collection ?? emptyCollection(0), remote.collection),
-    teacherNotes: newer(local.teacherNotes ?? emptyTeacherNotes(0), remote.teacherNotes),
+    settings: newerWithContent(local.settings, remote.settings, pristineSettings),
+    profiles: newerWithContent(local.profiles, remote.profiles, pristineProfiles),
+    rewards: newerWithContent(local.rewards, remote.rewards, pristineRewards),
+    solveLog: newerWithContent(local.solveLog, remote.solveLog, pristineSolveLog),
+    piano: mergePiano(local.piano ?? emptyPiano(0), remote.piano),
+    notes: newerWithContent(local.notes ?? emptyNotes(0), remote.notes, pristineNotes),
+    collection: newerWithContent(local.collection ?? emptyCollection(0), remote.collection, pristineCollection),
+    teacherNotes: newerWithContent(local.teacherNotes ?? emptyTeacherNotes(0), remote.teacherNotes, pristineTeacherNotes),
   }
+}
+
+/**
+ * Saves an automatic backup of the current doc before something risky is
+ * applied to it (sync is about to replace sections, a rebuild is about to
+ * run). Same list as the migration backups: Settings -> Backup -> Restore.
+ */
+export function backupBeforeRisk(label: string): void {
+  pushBackup(exportJson(), `${APP_BUILD} (${label})`)
 }
 
 export function exportJson(): string {
