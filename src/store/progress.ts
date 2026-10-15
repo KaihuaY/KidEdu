@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { APP_BUILD } from '../buildInfo'
 import { kidDisplayName, kidKey } from './kid'
+import { backupDbAvailable, combineBackups, loadBackupList, saveBackupList, type StoredBackup } from './backupStore'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -853,13 +854,7 @@ function backupsKey(): string {
 const BUILD_ID_KEY = 'cubeclimb.buildId'
 const MAX_BACKUPS = 3
 
-interface StoredBackup {
-  savedAt: number
-  buildId: string
-  json: string
-}
-
-function readBackups(): StoredBackup[] {
+function readLegacyBackups(): StoredBackup[] {
   if (!hasLocalStorage()) return []
   try {
     const raw = localStorage.getItem(backupsKey())
@@ -871,17 +866,104 @@ function readBackups(): StoredBackup[] {
   }
 }
 
-function writeBackups(backups: StoredBackup[]): void {
-  if (!hasLocalStorage()) return
+function removeLegacyBackups(): boolean {
+  if (!hasLocalStorage()) return false
   try {
-    localStorage.setItem(backupsKey(), JSON.stringify(backups.slice(-MAX_BACKUPS)))
+    if (localStorage.getItem(backupsKey()) === null) return false
+    localStorage.removeItem(backupsKey())
+    return true
   } catch {
-    // Storage full/disabled - the backup just won't be available; not fatal.
+    return false
+  }
+}
+
+// With IndexedDB (every real browser) the backups live there - see
+// backupStore.ts for why they must stay out of localStorage. This in-memory
+// list is the session's copy: seeded from the old localStorage key (which is
+// then deleted to free the space the live doc needs), merged with what
+// IndexedDB already holds once that loads, and written back on every change.
+let backupCache: StoredBackup[] | null = null
+let backupCacheKey: string | null = null
+const backupListeners = new Set<() => void>()
+
+function notifyBackups(): void {
+  for (const cb of backupListeners) cb()
+}
+
+/** Called when the backup list changes (e.g. the IndexedDB copy finished loading). */
+export function subscribeBackups(cb: () => void): () => void {
+  backupListeners.add(cb)
+  return () => backupListeners.delete(cb)
+}
+
+function ensureBackupCache(): StoredBackup[] {
+  const key = backupsKey()
+  if (backupCache && backupCacheKey === key) return backupCache
+  backupCacheKey = key
+  const seeded = readLegacyBackups().slice(-MAX_BACKUPS)
+  backupCache = seeded
+  removeLegacyBackups()
+  void loadBackupList(key).then((stored) => {
+    if (backupCacheKey !== key) return
+    backupCache = combineBackups(stored, backupCache ?? seeded, MAX_BACKUPS)
+    void saveBackupList(key, backupCache)
+    notifyBackups()
+  })
+  return backupCache
+}
+
+/**
+ * Gets the old in-localStorage backups out of the way of the live doc: moved
+ * to IndexedDB when it exists (ensureBackupCache), else deleted. True if
+ * there was anything to free.
+ */
+function freeLegacyBackups(): boolean {
+  if (!hasLocalStorage()) return false
+  let had = false
+  try {
+    had = localStorage.getItem(backupsKey()) !== null
+  } catch {
+    return false
+  }
+  if (!had) return false
+  if (backupDbAvailable()) ensureBackupCache()
+  else removeLegacyBackups()
+  return true
+}
+
+function readBackups(): StoredBackup[] {
+  if (!backupDbAvailable()) return readLegacyBackups()
+  return ensureBackupCache()
+}
+
+function writeBackups(backups: StoredBackup[]): void {
+  const list = backups.slice(-MAX_BACKUPS)
+  if (!backupDbAvailable()) {
+    if (!hasLocalStorage()) return
+    try {
+      localStorage.setItem(backupsKey(), JSON.stringify(list))
+    } catch {
+      // Storage full/disabled - the backup just won't be available; not fatal.
+    }
+    return
+  }
+  ensureBackupCache()
+  backupCache = list
+  void saveBackupList(backupsKey(), list)
+  notifyBackups()
+}
+
+/** Backups are stored compact (no indentation): a pretty copy of a big doc is ~65% larger. */
+function compactJson(json: string): string {
+  try {
+    return JSON.stringify(JSON.parse(json))
+  } catch {
+    return json
   }
 }
 
 function pushBackup(json: string, buildId: string): void {
-  writeBackups([...readBackups(), { savedAt: Date.now(), buildId, json }])
+  writeBackups([...readBackups(), { savedAt: Date.now(), buildId, json: compactJson(json) }])
 }
 
 /** One line a grown-up can read to tell backups apart: "30 takes · XP 55 · 10 cards". */
@@ -913,8 +995,8 @@ export function restoreBackup(index: number): void {
   const newestFirst = readBackups().slice().reverse()
   const entry = newestFirst[index]
   if (!entry) throw new Error('No backup at that position')
-  pushBackup(exportJson(), APP_BUILD)
-  importJson(entry.json)
+  pushBackup(JSON.stringify(doc), APP_BUILD)
+  importJson(entry.json, { asEdit: true })
 }
 
 function loadInitialDoc(): ProgressDoc {
@@ -929,6 +1011,7 @@ function loadInitialDoc(): ProgressDoc {
     const shapeChanged = JSON.stringify(normalized) !== raw
     const buildChanged = localStorage.getItem(BUILD_ID_KEY) !== APP_BUILD
     if (shapeChanged || buildChanged) pushBackup(raw, APP_BUILD)
+    loadedBase = mergeBaseOf(normalized)
     try {
       localStorage.setItem(BUILD_ID_KEY, APP_BUILD)
     } catch {
@@ -941,7 +1024,17 @@ function loadInitialDoc(): ProgressDoc {
   }
 }
 
+// What the stored doc held at load time, before any edit this session - see
+// rebaseOnStaleLoad(). Declared before the first loadInitialDoc() call.
+let loadedBase: MergeBase | undefined
+let saveFailed = false
+const SAVE_FAILED_KEY = 'cubeclimb.saveFailedAt'
+const saveProblemListeners = new Set<() => void>()
+
 let doc: ProgressDoc = loadInitialDoc()
+// Move any old backups out of localStorage right away, so the live doc has
+// the room it needs from the first save on.
+if (backupDbAvailable()) ensureBackupCache()
 const listeners = new Set<() => void>()
 
 /**
@@ -949,18 +1042,67 @@ const listeners = new Set<() => void>()
  * by the "this device belongs to" switch (which reloads the page anyway).
  */
 export function reloadFromStorage(): void {
+  loadedBase = undefined
   doc = loadInitialDoc()
   notify()
 }
 
-function persist(): void {
-  if (!hasLocalStorage()) return
-  try {
-    localStorage.setItem(storageKey(), JSON.stringify(doc))
-  } catch {
-    // Storage can be full or disabled (private browsing); progress just
-    // won't survive a reload in that case, which is an acceptable fallback.
+/**
+ * Saves the doc to localStorage. A failure used to be swallowed silently,
+ * which is how the 2026-10-14 sync losses happened: the save failed (storage
+ * full), a reload brought back an old copy, and sync spread it. Now a failure
+ * first frees the space old in-localStorage backups took and retries; if it
+ * still fails, it is flagged (useSaveProblem) so a grown-up sees it.
+ */
+function persist(): boolean {
+  if (!hasLocalStorage()) return true
+  const json = JSON.stringify(doc)
+  const write = (): boolean => {
+    try {
+      localStorage.setItem(storageKey(), json)
+      return true
+    } catch {
+      return false
+    }
   }
+  let ok = write()
+  if (!ok && freeLegacyBackups()) ok = write()
+  if (ok === !saveFailed) return ok
+  saveFailed = !ok
+  try {
+    if (ok) localStorage.removeItem(SAVE_FAILED_KEY)
+    else localStorage.setItem(SAVE_FAILED_KEY, String(Date.now()))
+  } catch {
+    // ignore - the in-memory flag still drives the warning this session
+  }
+  for (const cb of saveProblemListeners) cb()
+  return ok
+}
+
+/** True while saving progress on this device is failing (storage full or disabled). */
+export function hasSaveProblem(): boolean {
+  return saveFailed
+}
+
+function subscribeSaveProblem(cb: () => void): () => void {
+  saveProblemListeners.add(cb)
+  return () => saveProblemListeners.delete(cb)
+}
+
+/** React hook for the "this device can't save" warning. */
+export function useSaveProblem(): boolean {
+  return useSyncExternalStore(subscribeSaveProblem, hasSaveProblem, hasSaveProblem)
+}
+
+/**
+ * The doc's section stamps (and profiles) exactly as they were loaded from
+ * storage, before any edit - returned once, for the first sync merge after
+ * loading (see rebaseOnStaleLoad), then cleared.
+ */
+export function consumeLoadedBase(): MergeBase | undefined {
+  const base = loadedBase
+  loadedBase = undefined
+  return base
 }
 
 function notify(): void {
@@ -990,7 +1132,21 @@ export function update<K extends SectionKey>(
   section: K,
   fn: (current: ProgressDoc[K]) => ProgressDoc[K],
 ): void {
-  const next = { ...fn(doc[section]), updatedAt: Date.now() } as ProgressDoc[K]
+  // Never earlier than the section's current stamp: a device whose clock runs
+  // behind another's still moves a section it just pulled forward in time, so
+  // the merge (which only counts newer-than-last-synced as a change) sees it.
+  const current = doc[section]
+  const result = fn(current)
+  if (result === current) {
+    // Nothing changed (fn returned the section as is): keep its stamp, so a
+    // no-op never looks like an edit to the merge. Still saves - callers use
+    // this to write a just-normalized doc back.
+    persist()
+    notify()
+    return
+  }
+  const previous = (current as { updatedAt?: number } | undefined)?.updatedAt ?? 0
+  const next = { ...result, updatedAt: Math.max(Date.now(), previous + 1) } as ProgressDoc[K]
   doc = { ...doc, [section]: next }
   persist()
   notify()
@@ -1154,16 +1310,52 @@ export interface MergeBase {
   profiles?: Profiles
 }
 
-/** Three-way pick for a whole section: only the side that changed since the base wins; both changed → `both()`. */
+/**
+ * Three-way pick for a whole section: only the side that changed since the
+ * base wins; both changed -> `both()`. "Changed" means NEWER than the base -
+ * a section only moves forward in time. A copy OLDER than what this device
+ * last synced is a rollback, never an edit: an old copy reloaded after a
+ * failed save, or an old copy another device pushed. Before 2026-10-15 any
+ * difference counted, so such a copy won and spread (Nora lost 18 boxes, 17
+ * cards and 60 XP that way). Edits are stamped monotonically (update()), so a
+ * real edit made after a pull is always newer than the base.
+ */
 function threeWay<T extends { updatedAt: number }>(local: T, remote: T | undefined, baseStamp: number | undefined, both: () => T): T {
   if (!remote) return local
   if (baseStamp === undefined) return both()
-  const localChanged = local.updatedAt !== baseStamp
-  const remoteChanged = remote.updatedAt !== baseStamp
+  const localChanged = local.updatedAt > baseStamp
+  const remoteChanged = remote.updatedAt > baseStamp
   if (localChanged && !remoteChanged) return local
   if (remoteChanged && !localChanged) return remote
-  if (!localChanged && !remoteChanged) return local
+  if (localChanged && remoteChanged) return both()
+  // Neither moved forward: keep whichever still sits exactly at the base.
+  if (local.updatedAt === baseStamp) return local
+  if (remote.updatedAt === baseStamp) return remote
   return both()
+}
+
+/**
+ * The base to merge with on the first sync after the app opened. If this
+ * device's saved doc is OLDER than what it last synced (its last save failed,
+ * then it reloaded), the remembered base would make that old copy look like
+ * fresh local edits. Rebasing those sections onto what was actually loaded
+ * makes the old copy count as unchanged, so the gist's newer data wins and
+ * only edits made since opening (e.g. today's plan) are kept.
+ */
+export function rebaseOnStaleLoad(base: MergeBase | undefined, loaded: MergeBase | undefined): MergeBase | undefined {
+  if (!base || !loaded) return base
+  const sections: Partial<Record<SectionKey, number>> = { ...base.sections }
+  let profiles = base.profiles
+  let changed = false
+  for (const key of Object.keys(loaded.sections) as SectionKey[]) {
+    const was = base.sections[key]
+    const now = loaded.sections[key]
+    if (was === undefined || now === undefined || now >= was) continue
+    sections[key] = now
+    changed = true
+    if (key === 'profiles') profiles = loaded.profiles
+  }
+  return changed ? { sections, profiles } : base
 }
 
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
@@ -1239,20 +1431,38 @@ export function mergeBaseOf(doc: ProgressDoc): MergeBase {
  * run). Same list as the migration backups: Settings -> Backup -> Restore.
  */
 export function backupBeforeRisk(label: string): void {
-  pushBackup(exportJson(), `${APP_BUILD} (${label})`)
+  pushBackup(JSON.stringify(doc), `${APP_BUILD} (${label})`)
 }
 
 export function exportJson(): string {
   return JSON.stringify(doc, null, 2)
 }
 
-/** Replaces the whole doc from a previously-exported JSON string. */
-export function importJson(text: string): void {
+/**
+ * Replaces the whole doc from a previously-exported JSON string. Sync uses it
+ * to apply a merge and keeps the merged stamps. A grown-up's restore or file
+ * import passes `asEdit`: every section is stamped "now", so the restored
+ * copy counts as a fresh change and wins the next sync instead of looking
+ * like a stale, older copy (which sync now deliberately ignores).
+ */
+export function importJson(text: string, options: { asEdit?: boolean } = {}): void {
   const parsed = JSON.parse(text) as Partial<ProgressDoc>
   if (!parsed || typeof parsed !== 'object' || parsed.schemaVersion !== 1) {
     throw new Error('Unrecognized practice progress file')
   }
-  doc = normalizeDoc(parsed)
+  const next = normalizeDoc(parsed)
+  if (options.asEdit) {
+    const now = Date.now()
+    const nextRecord = next as unknown as Record<string, { updatedAt?: number } | undefined>
+    const currentRecord = doc as unknown as Record<string, { updatedAt?: number } | undefined>
+    for (const key of Object.keys(mergeBaseOf(next).sections)) {
+      const section = nextRecord[key]
+      if (!section) continue
+      const stamp = Math.max(now, (currentRecord[key]?.updatedAt ?? 0) + 1, (section.updatedAt ?? 0) + 1)
+      nextRecord[key] = { ...section, updatedAt: stamp }
+    }
+  }
+  doc = next
   persist()
   notify()
 }

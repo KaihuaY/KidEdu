@@ -1,5 +1,6 @@
 import { navigate } from '../router'
 import { getToken, useLastSavedAt, useSyncStatus } from '../store/gistSync'
+import { useSaveProblem } from '../store/progress'
 import { kidDisplayName } from '../store/kid'
 import { agoLabel } from '../utils/standalone'
 
@@ -16,11 +17,17 @@ export function SharingCard() {
   const status = useSyncStatus()
   const lastSavedAt = useLastSavedAt()
   const hasToken = Boolean(getToken())
+  const saveProblem = useSaveProblem()
   const stale = hasToken && lastSavedAt !== null && Date.now() - lastSavedAt > STALE_MS && status !== 'saved' && status !== 'saving'
 
   let title: string | null = null
   let detail = ''
-  if (!hasToken) {
+  if (saveProblem) {
+    // Checked first: a device that cannot save is how old copies came back and
+    // overwrote newer progress (2026-10-14). A grown-up needs to see this.
+    title = '💾 This iPad could not save progress'
+    detail = 'Its storage is full. Practice still shares while the app stays open, but free up space on this iPad (Settings → General → iPad Storage).'
+  } else if (!hasToken) {
     title = '👭 Not sharing with the family yet'
     detail = `${kidDisplayName()}'s practice stays on this iPad until a grown-up adds the sync key in Settings.`
   } else if (status === 'expired') {

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { backupBeforeRisk, getDoc, importJson, mergeBaseOf, mergeDocs, normalizeDoc, subscribe, type MergeBase, type ProgressDoc } from './progress'
+import { backupBeforeRisk, getDoc, consumeLoadedBase, importJson, mergeBaseOf, mergeDocs, normalizeDoc, rebaseOnStaleLoad, subscribe, type MergeBase, type ProgressDoc } from './progress'
 
 /**
  * The document as it is stored in the gist: COMPACT JSON. The human export (exportJson) is
@@ -183,6 +183,10 @@ let started = false
 // avoid immediately re-uploading what was just downloaded (an echo loop).
 let applyingRemote = false
 let lastSyncedJson: string | null = null
+// The gist revision this device last pulled or pushed. Before every upload a
+// tiny request checks it is still the latest; if another device wrote in the
+// meantime, that is merged in first instead of being overwritten blindly.
+let lastKnownVersion: string | null = null
 
 // --- merge base: what this device last synced, per kid, persisted ---------
 const MERGE_BASE_KEY = 'cubeclimb.gh.mergeBase'
@@ -236,6 +240,7 @@ interface GistSummary {
 }
 interface GistDetail extends GistSummary {
   updated_at: string
+  history?: { version: string }[]
 }
 
 /**
@@ -263,6 +268,10 @@ async function githubFetch(path: string, init?: RequestInit): Promise<Response> 
   const token = getToken()
   if (!token) throw new Error('CubeClimb: no GitHub token set')
   return fetch(`https://api.github.com${path}`, {
+    // Never answer a read from the browser's HTTP cache: GitHub marks API
+    // responses cacheable for 60 s, and a stale read is exactly how a device
+    // ends up merging against (and then pushing) an out-of-date gist.
+    cache: 'no-store',
     ...init,
     headers: {
       Authorization: `Bearer ${token}`,
@@ -316,7 +325,21 @@ async function fetchGistDetail(id: string): Promise<GistDetail> {
     throw new Error('CubeClimb: GitHub token expired or invalid')
   }
   if (!res.ok) throw new Error(`CubeClimb: failed to fetch gist (${res.status})`)
-  return (await res.json()) as GistDetail
+  const detail = (await res.json()) as GistDetail
+  lastKnownVersion = detail.history?.[0]?.version ?? lastKnownVersion
+  return detail
+}
+
+/** The gist's newest revision id, from a one-item request (cheap even when the file is 1 MB). */
+async function fetchLatestVersion(id: string): Promise<string | null> {
+  const res = await githubFetch(`/gists/${id}/commits?per_page=1`)
+  if (res.status === 401) {
+    setStatus('expired')
+    throw new Error('CubeClimb: GitHub token expired or invalid')
+  }
+  if (!res.ok) throw new Error(`CubeClimb: failed to check gist (${res.status})`)
+  const commits = (await res.json()) as { version?: string }[]
+  return commits[0]?.version ?? null
 }
 
 /**
@@ -361,6 +384,7 @@ async function pushToGist(content: string): Promise<void> {
   }
   if (!res.ok) throw new Error(`CubeClimb: failed to save gist (${res.status})`)
   const data = (await res.json()) as GistDetail
+  lastKnownVersion = data.history?.[0]?.version ?? null
   lastSyncedJson = content
   rememberSynced(getDoc())
   lastKnownRemoteUpdatedAt = data.updated_at
@@ -398,7 +422,10 @@ function applyRemoteContent(remoteJson: string): boolean {
   applyingRemote = true
   try {
     const before = getDoc()
-    const merged = mergeDocs(before, remoteDoc, readMergeBase())
+    // The first merge after the app opens also guards against an old saved
+    // copy (rebaseOnStaleLoad); the as-loaded snapshot is used only once.
+    const base = rebaseOnStaleLoad(readMergeBase(), consumeLoadedBase())
+    const merged = mergeDocs(before, remoteDoc, base)
     // mergePiano unions takes, so this cannot shrink any more - but if it ever
     // does, the old doc is one tap away in Settings -> Backup.
     if (merged.piano.takes.length < before.piano.takes.length || (before.profiles.kid.xp > 0 && merged.profiles.kid.xp === 0)) backupBeforeRisk('before sync')
@@ -418,12 +445,33 @@ function scheduleUpload(): void {
   if (applyingRemote) return
   if (debounceTimer) clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {
-    const content = syncJson()
-    if (content === lastSyncedJson) return
-    pushToGist(content).catch(() => {
+    if (syncJson() === lastSyncedJson) return
+    pushLatest().catch(() => {
       if (status !== 'expired') scheduleRetry()
     })
   }, DEBOUNCE_MS)
+}
+
+/**
+ * Uploads this device's doc, but only on top of the gist's latest revision:
+ * if another device wrote since this one last pulled, pull and merge first.
+ * Without this an upload simply replaced the file, so the other device's
+ * newer sections were overwritten until it noticed and re-sent them.
+ */
+async function pushLatest(force = false): Promise<void> {
+  if (gistId && lastKnownVersion) {
+    const latest = await fetchLatestVersion(gistId)
+    if (latest && latest !== lastKnownVersion) {
+      const detail = await fetchGistDetail(gistId)
+      lastKnownRemoteUpdatedAt = detail.updated_at
+      await harvestOtherKids(detail)
+      const ownFile = detail.files[fileNameForKid()]
+      applyRemoteContent(ownFile ? await resolveFileContent(ownFile) : '')
+    }
+  }
+  const content = syncJson()
+  if (!force && content === lastSyncedJson) return
+  await pushToGist(content)
 }
 
 function scheduleRetry(): void {
@@ -436,7 +484,7 @@ function scheduleRetry(): void {
 
 /** Pushes the current doc immediately (bypassing the debounce) after a merge revealed the remote is behind. */
 function pushMergedResult(): void {
-  pushToGist(syncJson()).catch(() => {
+  pushLatest(true).catch(() => {
     if (status !== 'expired') scheduleRetry()
   })
 }
@@ -517,4 +565,5 @@ export function stop(): void {
   gistId = null
   lastSyncedJson = null
   lastKnownRemoteUpdatedAt = null
+  lastKnownVersion = null
 }

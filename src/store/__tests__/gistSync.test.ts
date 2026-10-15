@@ -342,7 +342,8 @@ describe('merge base is remembered per device and per kid', () => {
     stop()
     // the iPad meanwhile earned xp 830 in the gist
     const remote = JSON.parse(gists[0].files['cubeclimb-progress.json'].content) as ProgressDoc
-    remote.profiles = { ...remote.profiles, kid: { ...remote.profiles.kid, xp: 830 }, updatedAt: Date.now() - 5000 }
+    // stamped after this device's last sync, as the iPad's monotonic stamps guarantee
+    remote.profiles = { ...remote.profiles, kid: { ...remote.profiles.kid, xp: 830 }, updatedAt: remote.profiles.updatedAt + 5000 }
     gists[0].files['cubeclimb-progress.json'] = gistFile(remote)
     gists[0].updated_at = new Date().toISOString()
     // this device adds one gold on its stale copy (newer stamp), then syncs

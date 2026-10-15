@@ -108,13 +108,37 @@ describe('three-way merge with a remembered base', () => {
     expect(merged.profiles.updatedAt).toBe(1_600_000)
   })
 
-  it('a section unchanged here since the last sync takes the remote copy even if its own stamp is newer', async () => {
+  it('a section unchanged here since the last sync takes the remote copy when the remote moved forward', async () => {
     const { mergeBaseOf } = await import('../progress')
     const synced = realDoc(1_000_000)
     const base = mergeBaseOf(synced)
     const local = realDoc(1_000_000) // rewards untouched since sync
-    const remote = realDoc(900_000) // older stamp, but changed remotely: one more box
-    remote.rewards = { ...remote.rewards, boxHistory: [...remote.rewards.boxHistory, { tier: 'bronze', openedAt: 5, result: 'Fox' }], updatedAt: 900_000 }
+    const remote = realDoc(1_000_000) // changed remotely after the sync: one more box
+    remote.rewards = { ...remote.rewards, boxHistory: [...remote.rewards.boxHistory, { tier: 'bronze', openedAt: 5, result: 'Fox' }], updatedAt: 1_100_000 }
+    const merged = mergeDocs(local, remote, base)
+    expect(merged.rewards.boxHistory).toHaveLength(2)
+  })
+
+  it('a remote copy OLDER than the last sync is a rollback and never replaces newer local data (2026-10-14)', async () => {
+    const { mergeBaseOf } = await import('../progress')
+    const synced = realDoc(1_000_000)
+    synced.rewards = { ...synced.rewards, boxHistory: [...synced.rewards.boxHistory, { tier: 'bronze', openedAt: 5, result: 'Fox' }], updatedAt: 1_000_000 }
+    const base = mergeBaseOf(synced)
+    const local = JSON.parse(JSON.stringify(synced)) as typeof synced
+    // another device pushed its weeks-old copy: fewer boxes, older stamp
+    const remote = realDoc(500_000)
+    const merged = mergeDocs(local, remote, base)
+    expect(merged.rewards.boxHistory).toHaveLength(2)
+    expect(merged.rewards.updatedAt).toBe(1_000_000)
+  })
+
+  it('a LOCAL copy older than the last sync (an old save reloaded) never replaces the newer remote', async () => {
+    const { mergeBaseOf } = await import('../progress')
+    const synced = realDoc(1_000_000)
+    synced.rewards = { ...synced.rewards, boxHistory: [...synced.rewards.boxHistory, { tier: 'bronze', openedAt: 5, result: 'Fox' }], updatedAt: 1_000_000 }
+    const base = mergeBaseOf(synced)
+    const remote = JSON.parse(JSON.stringify(synced)) as typeof synced
+    const local = realDoc(500_000) // the old copy the device reloaded after its save failed
     const merged = mergeDocs(local, remote, base)
     expect(merged.rewards.boxHistory).toHaveLength(2)
   })

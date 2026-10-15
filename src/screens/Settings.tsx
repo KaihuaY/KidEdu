@@ -6,6 +6,8 @@ import {
   importJson,
   listBackups,
   restoreBackup,
+  subscribeBackups,
+  useSaveProblem,
   resetAll,
   setGoalMinutes,
   type PianoPiece,
@@ -633,6 +635,9 @@ export function Settings() {
   function refreshBackups() {
     setBackups(listBackups())
   }
+  // The backup list loads from IndexedDB in the background - refresh when it lands.
+  useEffect(() => subscribeBackups(() => setBackups(listBackups())), [])
+  const saveProblem = useSaveProblem()
 
   async function refreshStorageStatus() {
     try {
@@ -742,7 +747,7 @@ export function Settings() {
     setImportError(null)
     try {
       const text = await file.text()
-      importJson(text)
+      importJson(text, { asEdit: true })
       refreshBackups() // importJson doesn't itself take an automatic backup, but restoreBackup below does - keep the list fresh either way
     } catch (err) {
       setImportError(err instanceof Error ? err.message : 'That file did not look like a practice backup.')
@@ -1286,6 +1291,11 @@ export function Settings() {
                     ? `📴 Offline, will retry${lastSavedAt ? ` · last shared ${agoLabel(lastSavedAt)}` : ''}`
                     : `⚠️ Sharing hit a problem${lastSavedAt ? ` · last shared ${agoLabel(lastSavedAt)}` : ''}`}
         </p>
+        {saveProblem && (
+          <p data-testid="save-problem" style={{ margin: 0, fontWeight: 700 }}>
+            💾 This iPad could not save progress: its storage is full. Free up space (Settings → General → iPad Storage), then reopen the app.
+          </p>
+        )}
         <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
           One sync key is shared by every iPad in the family. Each kid keeps her own progress; the family board shows both.
           {isStandaloneApp() && ' A setup link opened in Safari does not reach this Home Screen app, so paste the key here instead.'}

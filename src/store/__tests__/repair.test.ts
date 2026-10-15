@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { getDoc, resetAll, update } from '../progress'
+import { listBackups, getDoc, resetAll, update } from '../progress'
 import { getRecordingStore } from '../recordings'
 import { rebuildTakesFromRecordings, takeFromRecording } from '../repair'
 import { clearKid } from '../kid'
@@ -54,13 +54,15 @@ describe('rebuildTakesFromRecordings', () => {
     expect(result.daysRestamped).toBe(1)
     expect(getDoc().piano.streak.current).toBeGreaterThanOrEqual(1)
     // a backup was saved before touching the doc
-    const backups = JSON.parse(localStorage.getItem('cubeclimb.progress.backups') ?? '[]') as { buildId: string }[]
-    expect(backups.some((b) => /before rebuild/.test(b.buildId))).toBe(true)
+    // (with IndexedDB present the backups live there, not in localStorage - see backupStore.ts)
+    expect(listBackups().some((b) => /before rebuild/.test(b.buildId))).toBe(true)
+    expect(localStorage.getItem('cubeclimb.progress.backups')).toBeNull()
   })
 
   it('is a no-op when every recording is already listed', async () => {
+    const backupsBefore = listBackups().length
     const result = await rebuildTakesFromRecordings(async () => 100)
     expect(result.added).toBe(0)
-    expect(localStorage.getItem('cubeclimb.progress.backups')).toBeNull()
+    expect(listBackups().length).toBe(backupsBefore) // no backup taken for a no-op
   })
 })
