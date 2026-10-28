@@ -74,7 +74,7 @@ export function startBracelet(name: string): string {
 }
 
 export function renameBracelet(id: string, name: string): void {
-  const next = name.trim()
+  const next = name.trim().slice(0, 30).trim()
   if (!next) return
   update('collection', (c) => ({
     ...c,

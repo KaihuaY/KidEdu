@@ -615,8 +615,9 @@ are spent on the **Box** screen, which now has four tabs:
   drops beads (bronze 1, silver 1–2, gold 2–3), and a card she already owns
   turns into extra beads instead (1/2/3/5/8 by rarity), so no box is ever a
   dud. The prize-ticket roll is unchanged.
-- **📷 Cards.** The album: three sets (💎 Gems & minerals 24, 🦊 Animals
-  36, 🪐 Space 16) with a "12 / 24" count each. Cards she owns show the
+- **📷 Cards.** The album: six sets (💎 Gems & minerals 46, 🦊 Animals
+  60, 🪐 Space 36, 🐦 Birds 34, 🦋 Butterflies 26, 🌍 Countries 40; 242
+  cards after round 17 added 10 to each) with a "12 / 46" count each. Cards she owns show the
   photo; the rest are dark silhouettes with a "?" and their rarity colour,
   so she can see what is still out there. Tapping an owned card opens it
   big with the fact and a Say it button. Completing a set earns a badge
@@ -624,14 +625,22 @@ are spent on the **Box** screen, which now has four tabs:
   the first legendary and the first finished bracelet have badges too. Old
   emoji stickers stay visible in a collapsed "Old stickers" section.
 - **📿 Bracelets.** The bead tray shows every bead she has (round, star,
-  heart, flower, and letter beads that spell both girls' names). "New
-  bracelet" starts an 18-slot strand; tap a bead then a slot (or drag it
-  there) to place it, tap a placed bead to take it back, name it, and
-  "✨ Finish" once it has at least 6 beads. Finished bracelets sit in a
-  gallery, and the latest one shows on Home under "🃏 My cards".
+  heart, flower, and letter beads A to Z, sorted at the end of the tray;
+  letters drop as the epic bead tier, weight 8). "New bracelet" starts an
+  18-slot strand; tap a bead then a slot (or drag it there) to place it,
+  tap a placed bead to take it back, and "✨ Finish" once it has at least
+  6 beads. **✏️ Name it** (on the bracelet being made and on every
+  finished one) opens a big name box with suggestion chips, up to 30
+  letters. Finished bracelets sit in a gallery, and the latest one shows on
+  Home under "🃏 My cards". **📤 Share** turns a finished bracelet into a
+  picture card (its name, "Made by Nora" and the date) and opens the iPad
+  share sheet to send it to a friend; where sharing pictures is not
+  possible the picture downloads instead. If the iPad refuses the first
+  share because making the picture took too long, the button says "Picture
+  ready! Tap Share again" and the second tap shares at once.
 - **🎟️ Tickets.** As before.
 
-The 76 photos live in `public/collection/` and come from Wikimedia
+The 242 photos live in `public/collection/` and come from Wikimedia
 Commons under free licences (public domain, CC0, CC BY, CC BY-SA).
 **Settings → Photo credits** (also `#/credits`) lists every photographer and
 licence. Beads are in `src/content/beads.ts`.

@@ -1,7 +1,7 @@
 import type { CollectionItem } from './item'
 import { item } from './item'
 
-// Animals (36).
+// Animals (60).
 export const ANIMALS: CollectionItem[] = [
   item(
     'fox',
@@ -462,5 +462,99 @@ export const ANIMALS: CollectionItem[] = [
     'The aye-aye taps on trees with one long thin finger and listens for grubs hiding inside. Then it gnaws a small hole and fishes the grubs out.',
     'Lives in: rainforests of Madagascar',
     'Say: EYE-eye',
+  ),
+  // --- Round 17 additions
+  item(
+    'wolf',
+    'animals',
+    'Wolf',
+    'common',
+    '🐺',
+    'Wolves live and hunt in families called packs, and every wolf has its own howl. A howl can travel for several kilometres to call the pack together.',
+    'Lives in: forests, tundra and mountains of the northern world',
+  ),
+  item(
+    'brown-bear',
+    'animals',
+    'Brown bear',
+    'common',
+    '🐻',
+    'Brown bears eat so much in autumn that they grow a thick layer of fat for winter. Then they sleep in a cosy den for months while the snow falls.',
+    'Lives in: forests and mountains of Europe, Asia and North America',
+  ),
+  item(
+    'camel',
+    'animals',
+    'Camel',
+    'common',
+    '🐪',
+    'A camel\'s hump stores fat, not water, and that fat gives it energy on long desert walks. Thick eyelashes and nostrils that close keep out blowing sand.',
+    'Lives in: deserts of Africa and Asia',
+  ),
+  item(
+    'hippopotamus',
+    'animals',
+    'Hippopotamus',
+    'common',
+    '🦛',
+    'A hippo spends most of the day in water to keep cool, and its skin makes its own oily sunscreen. Even though it is so heavy, it walks along the bottom of the river.',
+    'Lives in: rivers and lakes in Africa',
+  ),
+  item(
+    'gorilla',
+    'animals',
+    'Gorilla',
+    'uncommon',
+    '🦍',
+    'Gorillas live in families led by a big silverback male, named for the silver hair on his back. They build a fresh leafy nest to sleep in almost every night.',
+    'Lives in: rainforests and mountain forests in Africa',
+  ),
+  item(
+    'cheetah',
+    'animals',
+    'Cheetah',
+    'uncommon',
+    '🐆',
+    'The cheetah is the fastest land animal, and it can sprint faster than a car drives in town. Dark lines run from its eyes like tear marks and help block the sun\'s glare.',
+    'Lives in: grasslands in Africa',
+    'Say: CHEE-tuh',
+  ),
+  item(
+    'walrus',
+    'animals',
+    'Walrus',
+    'uncommon',
+    '🦭',
+    'Walruses use their long tusks like ice picks to help haul their heavy bodies onto the ice. They feel for clams on the dark sea floor with their sensitive whiskers.',
+    'Lives in: Arctic seas and icy shores',
+  ),
+  item(
+    'fennec-fox',
+    'animals',
+    'Fennec fox',
+    'rare',
+    '🦊',
+    'The fennec fox is the smallest fox in the world, and its huge ears let extra body heat escape in the hot desert. Furry feet keep its paws safe on scorching sand.',
+    'Lives in: the Sahara desert in North Africa',
+    'Say: FEN-ik',
+  ),
+  item(
+    'wombat',
+    'animals',
+    'Wombat',
+    'rare',
+    '🐾',
+    'A wombat makes poo shaped like little cubes, which stay put when it marks its home. Its pouch faces backwards, so digging does not fill it with dirt.',
+    'Lives in: forests and hills of Australia',
+  ),
+  item(
+    'pallas-cat',
+    'animals',
+    'Pallas\'s cat',
+    'epic',
+    '🐱',
+    'Pallas\'s cat has a flat, fluffy face and small round ears set low on its head, which help it hide among rocks. Its fur is among the thickest and fluffiest of any cat.',
+    'Lives in: grasslands and rocky hills of Central Asia',
+    'Say: PAL-us',
   ),
 ]

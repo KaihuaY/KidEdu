@@ -4,8 +4,11 @@
 // as a pure, prop-only SVG so other screens (Home) can draw a finished
 // bracelet without pulling in any of this file's interactive state.
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { findBead, type BeadDef } from '../content/beads'
+import { heartPath, slotPositions, starPoints, strandPath } from '../content/braceletGeometry'
+import { kidDisplayName } from '../store/kid'
+import { braceletCardFile, shareBraceletFile, type ShareResult } from '../utils/braceletImage'
 import { awardNewBadges } from '../store/badges'
 import {
   BRACELET_SLOTS,
@@ -22,48 +25,6 @@ import {
 } from '../store/collection'
 import type { Bracelet } from '../store/progress'
 import { fireConfetti } from './Confetti'
-
-/** The oval the beads sit on: a closed loop like a real bracelet, inset so the beads never clip the edge. */
-function strandOval(width: number, height: number): { cx: number; cy: number; rx: number; ry: number } {
-  const inset = Math.max(20, width * 0.075)
-  return { cx: width / 2, cy: height / 2, rx: width / 2 - inset, ry: height / 2 - inset }
-}
-
-/**
- * One {x,y} per slot, evenly spaced around the oval starting at the top.
- * With 18 slots on a 340-wide strand the beads sit ~41 px apart, so the
- * 38 px hit circles in the editor never overlap a neighbour.
- */
-function slotPositions(count: number, width: number, height: number): { x: number; y: number }[] {
-  const { cx, cy, rx, ry } = strandOval(width, height)
-  const positions: { x: number; y: number }[] = []
-  for (let i = 0; i < count; i++) {
-    const a = -Math.PI / 2 + (i / Math.max(1, count)) * Math.PI * 2
-    positions.push({ x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a) })
-  }
-  return positions
-}
-
-/** The string underneath the beads: the same closed oval. */
-function strandPath(width: number, height: number): string {
-  const { cx, cy, rx, ry } = strandOval(width, height)
-  return `M ${cx} ${cy - ry} A ${rx} ${ry} 0 1 1 ${cx - 0.01} ${cy - ry} Z`
-}
-
-function starPoints(cx: number, cy: number, outerR: number, innerR: number): string {
-  const pts: string[] = []
-  for (let i = 0; i < 10; i++) {
-    const r = i % 2 === 0 ? outerR : innerR
-    const angle = (Math.PI / 5) * i - Math.PI / 2
-    pts.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`)
-  }
-  return pts.join(' ')
-}
-
-function heartPath(cx: number, cy: number, r: number): string {
-  const s = r
-  return `M ${cx} ${cy + s * 0.35} C ${cx - s} ${cy - s * 0.35}, ${cx - s * 0.5} ${cy - s}, ${cx} ${cy - s * 0.35} C ${cx + s * 0.5} ${cy - s}, ${cx + s} ${cy - s * 0.35}, ${cx} ${cy + s * 0.35} Z`
-}
 
 function FlowerPetals({ cx, cy, r, colour }: { cx: number; cy: number; r: number; colour: string }) {
   const petalR = r * 0.55
@@ -120,6 +81,131 @@ export function BraceletStrand({ bracelet, width }: { bracelet: Bracelet; width:
   )
 }
 
+/** Tray beads: everything else in the order collected, then letter beads A-Z. */
+function sortedTray(collection: ReturnType<typeof useCollection>): [string, number][] {
+  const all = trayBeads(collection)
+  const isLetter = (id: string) => findBead(id)?.shape === 'letter'
+  const letters = all.filter(([id]) => isLetter(id)).sort((a, b) => (findBead(a[0])?.letter ?? '').localeCompare(findBead(b[0])?.letter ?? ''))
+  return [...all.filter(([id]) => !isLetter(id)), ...letters]
+}
+
+function NameBraceletDialog({ bracelet, onClose }: { bracelet: Bracelet; onClose: () => void }) {
+  const [value, setValue] = useState(bracelet.name)
+  const kid = kidDisplayName()
+  const chips = ['Rainbow', 'Sparkle', 'Ocean', 'Sunshine', 'Best friends', `${kid}'s bracelet`]
+  const canSave = value.trim().length > 0
+  function save() {
+    if (!canSave) return
+    renameBracelet(bracelet.id, value)
+    onClose()
+  }
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Name your bracelet"
+      style={{ position: 'fixed', inset: 0, background: 'var(--cc-scrim)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', zIndex: 50 }}
+    >
+      <div className="cc-card" style={{ padding: '1.5rem', width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Name your bracelet</h2>
+        <input
+          type="text"
+          data-testid="bracelet-name-input"
+          aria-label="Bracelet name"
+          autoFocus
+          maxLength={30}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onFocus={(e) => e.currentTarget.select()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') save()
+          }}
+          style={{ minHeight: 56, fontSize: '1.2rem', fontWeight: 700, borderRadius: '0.85rem', border: '2px solid var(--cc-border)', padding: '0 1rem' }}
+        />
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+          {chips.map((chip, i) => (
+            <button key={chip} type="button" className="cc-btn cc-btn-surface" data-testid={`bracelet-name-chip-${i}`} onClick={() => setValue(chip.slice(0, 30))}>
+              {chip}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button type="button" className="cc-btn cc-btn-surface" style={{ flex: 1, minHeight: 56 }} onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="cc-btn cc-btn-primary" style={{ flex: 1, minHeight: 56 }} data-testid="bracelet-name-save" disabled={!canSave} onClick={save}>
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FinishedBraceletCard({ bracelet: b }: { bracelet: Bracelet }) {
+  const [naming, setNaming] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState('')
+  const alive = useRef(true)
+  useEffect(() => {
+    alive.current = true
+    return () => {
+      alive.current = false
+    }
+  }, [])
+  const date = b.finishedAt ? new Date(b.finishedAt).toLocaleDateString() : ''
+  // The picture, kept once made (for this name and these beads), so a second
+  // tap can open the share sheet instantly - see shareBraceletFile.
+  const made = useRef<{ key: string; file: File } | null>(null)
+  const pictureKey = `${b.name}|${b.beads.join(',')}`
+  async function onShare() {
+    setBusy(true)
+    setStatus('')
+    const opts = { kidName: kidDisplayName(), date }
+    let result: ShareResult
+    try {
+      if (!made.current || made.current.key !== pictureKey) made.current = { key: pictureKey, file: await braceletCardFile(b, opts) }
+      result = await shareBraceletFile(made.current.file, b, opts)
+    } catch {
+      result = 'failed'
+    }
+    if (!alive.current) return
+    setBusy(false)
+    setStatus(
+      result === 'shared'
+        ? 'Shared! 🎉'
+        : result === 'downloaded'
+          ? 'Saved the picture 📥'
+          : result === 'needs-tap'
+            ? 'Picture ready! Tap 📤 Share again.'
+            : result === 'failed'
+              ? 'Could not share - try again'
+              : '',
+    )
+  }
+  return (
+    <div className="cc-card" style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'center' }}>
+      <BraceletStrand bracelet={b} width={260} />
+      <strong>{b.name}</strong>
+      <span style={{ fontSize: '0.8rem', color: 'var(--cc-ink-soft)' }}>{date}</span>
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+        <button type="button" className="cc-btn cc-btn-surface" style={{ minHeight: 56 }} data-testid={`bracelet-name-edit-${b.id}`} onClick={() => setNaming(true)}>
+          ✏️ Name it
+        </button>
+        <button type="button" className="cc-btn cc-btn-surface" style={{ minHeight: 56 }} data-testid={`bracelet-share-${b.id}`} disabled={busy} onClick={onShare}>
+          {busy ? 'Making the picture…' : '📤 Share'}
+        </button>
+      </div>
+      {status && (
+        <span role="status" style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--cc-ink-soft)' }}>
+          {status}
+        </span>
+      )}
+      {naming && <NameBraceletDialog bracelet={b} onClose={() => setNaming(false)} />}
+    </div>
+  )
+}
+
 const SLOT_R = 13
 const SLOT_HIT_R = 19
 
@@ -134,8 +220,7 @@ function BraceletEditor({ bracelet }: { bracelet: Bracelet }) {
   const pressStart = useRef<{ x: number; y: number } | null>(null)
   const dragged = useRef(false)
   const swallowClick = useRef(false)
-  const [name, setName] = useState(bracelet.name)
-
+  const [naming, setNaming] = useState(false)
 
   const width = 340
   const height = Math.round(width * 0.66)
@@ -200,6 +285,13 @@ function BraceletEditor({ bracelet }: { bracelet: Bracelet }) {
 
   return (
     <div className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+        <strong style={{ fontSize: '1.15rem', overflowWrap: 'anywhere' }}>{bracelet.name}</strong>
+        <button type="button" className="cc-btn cc-btn-surface" style={{ minHeight: 56 }} data-testid={`bracelet-name-edit-${bracelet.id}`} onClick={() => setNaming(true)}>
+          ✏️ Name it
+        </button>
+      </div>
+      {naming && <NameBraceletDialog bracelet={bracelet} onClose={() => setNaming(false)} />}
       <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height} style={{ maxWidth: '100%' }}>
         <path d={strandPath(width, height)} stroke="var(--cc-muted)" strokeWidth={3} fill="none" strokeLinecap="round" />
         {bracelet.beads.map((beadId, i) => {
@@ -230,7 +322,7 @@ function BraceletEditor({ bracelet }: { bracelet: Bracelet }) {
       </p>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-        {trayBeads(collection).map(([id, count]) => {
+        {sortedTray(collection).map(([id, count]) => {
           const bead = findBead(id)
           if (!bead) return null
           const selected = selectedBeadId === id
@@ -277,25 +369,8 @@ function BraceletEditor({ bracelet }: { bracelet: Bracelet }) {
             </button>
           )
         })}
-        {trayBeads(collection).length === 0 && <p style={{ margin: 0, color: 'var(--cc-ink-soft)' }}>No beads in the tray yet - open a box!</p>}
+        {sortedTray(collection).length === 0 && <p style={{ margin: 0, color: 'var(--cc-ink-soft)' }}>No beads in the tray yet - open a box!</p>}
       </div>
-
-      <input
-        type="text"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        onBlur={() => renameBracelet(bracelet.id, name)}
-        placeholder="Name it"
-        aria-label="Bracelet name"
-        style={{
-          minHeight: 56,
-          borderRadius: '0.85rem',
-          border: '2px solid var(--cc-border)',
-          padding: '0 1rem',
-          fontSize: '1rem',
-          fontWeight: 700,
-        }}
-      />
 
       <div style={{ display: 'flex', gap: '0.5rem' }}>
         <button type="button" className="cc-btn cc-btn-surface" style={{ flex: 1 }} onClick={onStartOver}>
@@ -334,11 +409,7 @@ export function BraceletMaker() {
         <section style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
           <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Finished bracelets</h2>
           {finished.map((b) => (
-            <div key={b.id} className="cc-card" style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'center' }}>
-              <BraceletStrand bracelet={b} width={260} />
-              <strong>{b.name}</strong>
-              <span style={{ fontSize: '0.8rem', color: 'var(--cc-ink-soft)' }}>{b.finishedAt ? new Date(b.finishedAt).toLocaleDateString() : ''}</span>
-            </div>
+            <FinishedBraceletCard key={b.id} bracelet={b} />
           ))}
         </section>
       )}

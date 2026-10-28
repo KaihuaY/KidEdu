@@ -9,6 +9,7 @@ import {
   finishBracelet,
   latestFinishedBracelet,
   placeBead,
+  renameBracelet,
   scrapBracelet,
   startBracelet,
   totalTrayBeads,
@@ -84,6 +85,19 @@ describe('beads and bracelets', () => {
     expect(beadsOn(latestFinishedBracelet()!)).toBe(6)
     expect(placeBead(id, 6, 'blue-round')).toBe(false)
     expect(currentBracelet()).toBeUndefined()
+  })
+
+  it('renames a finished bracelet, trims, caps at 30 characters and ignores blanks', () => {
+    awardBeads(Array<string>(6).fill('blue-round'))
+    const id = startBracelet('Ocean')
+    for (let i = 0; i < 6; i++) placeBead(id, i, 'blue-round')
+    finishBracelet(id)
+    renameBracelet(id, '   ')
+    expect(latestFinishedBracelet()?.name).toBe('Ocean')
+    renameBracelet(id, '  Sunshine  ')
+    expect(latestFinishedBracelet()?.name).toBe('Sunshine')
+    renameBracelet(id, 'x'.repeat(50))
+    expect(latestFinishedBracelet()?.name).toHaveLength(30)
   })
 
   it('scrapping an unfinished bracelet returns its beads', () => {

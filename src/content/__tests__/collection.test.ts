@@ -35,7 +35,8 @@ const WHERE_PREFIXES: Record<CollectionSet, string[]> = {
 }
 
 // Round 16 sizes. Raise these together with the content when a set grows.
-const SET_SIZE: Record<CollectionSet, number> = { gems: 36, animals: 50, space: 26, birds: 24, butterflies: 16, countries: 30 }
+// Round 17: every set grew by 10 (4 common, 3 uncommon, 2 rare, 1 epic; still one legendary each).
+const SET_SIZE: Record<CollectionSet, number> = { gems: 46, animals: 60, space: 36, birds: 34, butterflies: 26, countries: 40 }
 const TOTAL = Object.values(SET_SIZE).reduce((a, b) => a + b, 0)
 const SET_IDS: CollectionSet[] = ['gems', 'animals', 'space', 'birds', 'butterflies', 'countries']
 
@@ -132,12 +133,12 @@ describe('COLLECTION', () => {
 
   it('has roughly the right rarity distribution per set, and exactly one legendary each', () => {
     const targets: Record<CollectionSet, Record<Rarity, number>> = {
-      gems: { common: 15, uncommon: 11, rare: 6, epic: 3, legendary: 1 },
-      animals: { common: 21, uncommon: 15, rare: 9, epic: 4, legendary: 1 },
-      space: { common: 9, uncommon: 8, rare: 5, epic: 3, legendary: 1 },
-      birds: { common: 10, uncommon: 7, rare: 4, epic: 2, legendary: 1 },
-      butterflies: { common: 6, uncommon: 5, rare: 3, epic: 1, legendary: 1 },
-      countries: { common: 12, uncommon: 9, rare: 5, epic: 3, legendary: 1 },
+      gems: { common: 19, uncommon: 14, rare: 8, epic: 4, legendary: 1 },
+      animals: { common: 25, uncommon: 18, rare: 11, epic: 5, legendary: 1 },
+      space: { common: 13, uncommon: 11, rare: 7, epic: 4, legendary: 1 },
+      birds: { common: 14, uncommon: 10, rare: 6, epic: 3, legendary: 1 },
+      butterflies: { common: 10, uncommon: 8, rare: 5, epic: 2, legendary: 1 },
+      countries: { common: 16, uncommon: 12, rare: 7, epic: 4, legendary: 1 },
     }
     for (const set of SETS.map((s) => s.id)) {
       if (itemsInSet(set).length === 0) continue // not filled yet

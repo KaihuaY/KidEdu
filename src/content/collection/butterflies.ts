@@ -1,7 +1,7 @@
 import type { CollectionItem } from './item'
 import { item } from './item'
 
-// Butterflies & moths (16).
+// Butterflies & moths (26).
 export const BUTTERFLIES: CollectionItem[] = [
   item(
     'small-tortoiseshell',
@@ -147,5 +147,98 @@ export const BUTTERFLIES: CollectionItem[] = [
     '🦋',
     "Queen Alexandra's birdwing is the biggest butterfly in the world, with wings about 25 centimetres across. It lives only in a small patch of rainforest in Papua New Guinea.",
     'Found in: rainforests in Papua New Guinea',
+  ),
+  // --- Round 17 additions
+  item(
+    'brimstone',
+    'butterflies',
+    'Common brimstone',
+    'common',
+    '🦋',
+    'Brimstone butterflies look like pale yellow leaves when they fold their wings. Some live for nearly a year, much longer than most butterflies.',
+    'Found in: woods, hedges and gardens across Europe and Asia',
+  ),
+  item(
+    'orange-tip',
+    'butterflies',
+    'Orange-tip',
+    'common',
+    '🦋',
+    'Only male orange-tips have bright orange wingtips, and females have black tips. Their undersides are mottled green, so they hide well among flowers.',
+    'Found in: meadows and lanes across Europe and Asia',
+  ),
+  item(
+    'comma',
+    'butterflies',
+    'Comma',
+    'common',
+    '🦋',
+    'The comma butterfly has ragged wing edges and a tiny white mark on its underside shaped like a comma. With its wings shut, it looks just like a dead leaf.',
+    'Found in: woods and gardens across Europe and Asia',
+  ),
+  item(
+    'small-copper',
+    'butterflies',
+    'Small copper',
+    'common',
+    '🦋',
+    'The small copper is tiny but speedy, with shiny coppery-orange wings dotted with black. Males guard a sunny spot and zoom out to chase away other butterflies.',
+    'Found in: grassy places across Europe, Asia, Africa and North America',
+  ),
+  item(
+    'zebra-longwing',
+    'butterflies',
+    'Zebra longwing',
+    'uncommon',
+    '🦋',
+    'Zebra longwings have long black wings with yellow stripes, and they are the state butterfly of Florida. They eat pollen as well as nectar, which helps them live for months.',
+    'Found in: forests and gardens in the southern United States and Central America',
+  ),
+  item(
+    'owl-butterfly',
+    'butterflies',
+    'Owl butterfly',
+    'uncommon',
+    '🦋',
+    'An owl butterfly has big eyespots on its wings that look just like an owl\'s eyes. It flies mostly at dusk, when birds are less likely to spot it.',
+    'Found in: rainforests in Central and South America',
+  ),
+  item(
+    'malachite-butterfly',
+    'butterflies',
+    'Malachite butterfly',
+    'uncommon',
+    '🦋',
+    'The malachite butterfly is bright green, like the gemstone it is named after. When it folds its wings, it looks like a leaf, and it loves to sip juice from rotting fruit.',
+    'Found in: rainforests and gardens in Central and South America',
+    'Say: MAL-uh-kite',
+  ),
+  item(
+    'purple-emperor',
+    'butterflies',
+    'Purple emperor',
+    'rare',
+    '🦋',
+    'The male purple emperor\'s wings flash deep purple-blue in the sunlight, like a hidden jewel. It lives high in the oak trees and prefers tree sap to flowers.',
+    'Found in: oak woods across Europe and Asia',
+  ),
+  item(
+    'ulysses-butterfly',
+    'butterflies',
+    'Ulysses butterfly',
+    'rare',
+    '🦋',
+    'The Ulysses butterfly flashes electric blue wings as it flutters through the forest. Its blue comes from tiny scales that bounce the light.',
+    'Found in: rainforests in Australia, New Guinea and nearby islands',
+    'Say: yoo-LIS-eez',
+  ),
+  item(
+    'rosy-maple-moth',
+    'butterflies',
+    'Rosy maple moth',
+    'epic',
+    '🦋',
+    'The rosy maple moth is a fluffy pink and yellow moth that looks like a scoop of sherbet. Its caterpillars eat maple leaves, and the adults do not eat at all.',
+    'Found in: maple woods in eastern North America',
   ),
 ]

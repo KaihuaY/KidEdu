@@ -1,7 +1,7 @@
 import type { CollectionItem } from './item'
 import { item } from './item'
 
-// Birds (24).
+// Birds (34).
 export const BIRDS: CollectionItem[] = [
   item(
     'european-robin',
@@ -221,5 +221,99 @@ export const BIRDS: CollectionItem[] = [
     '🦅',
     "Harpy eagles have talons about as long as a bear's claws, and they snatch sloths and monkeys from the treetops. The feathers on their head can rise up like a crown.",
     'Lives in: rainforests in Central and South America',
+  ),
+  // --- Round 17 additions
+  item(
+    'mallard',
+    'birds',
+    'Mallard',
+    'common',
+    '🦆',
+    'Only male mallards have a shiny green head, while females are speckled brown. Mother mallards lead their fluffy ducklings in a line to the water.',
+    'Lives in: ponds, lakes and rivers worldwide',
+  ),
+  item(
+    'rooster',
+    'birds',
+    'Rooster',
+    'common',
+    '🐓',
+    'A rooster crows to say "this is my patch" and to greet the morning. Hens talk to their chicks with soft clucks, even before the chicks hatch.',
+    'Lives in: farms and villages worldwide',
+  ),
+  item(
+    'magpie',
+    'birds',
+    'Magpie',
+    'common',
+    '🐦',
+    'Magpies are clever enough to recognise themselves in a mirror, which very few animals can do. Their black and white feathers gleam blue and green in the sun.',
+    'Lives in: fields, parks and towns across Europe and Asia',
+  ),
+  item(
+    'blackbird',
+    'birds',
+    'Common blackbird',
+    'common',
+    '🐦',
+    'Only the male common blackbird is black with a bright orange-yellow beak, while the female is brown. He sings a flute-like song from rooftops at dawn and dusk.',
+    'Lives in: gardens and woods across Europe',
+  ),
+  item(
+    'brown-pelican',
+    'birds',
+    'Brown pelican',
+    'uncommon',
+    '🐦',
+    'A pelican\'s big beak has a stretchy pouch that scoops up fish and water together. Brown pelicans dive headfirst from the air to catch their meals.',
+    'Lives in: coasts of the Americas',
+  ),
+  item(
+    'hoopoe',
+    'birds',
+    'Hoopoe',
+    'uncommon',
+    '🐦',
+    'A hoopoe has a crown of feathers that it can raise like a fan when it is excited. It probes the ground with its long curved beak to find insects.',
+    'Lives in: open woods and fields in Europe, Africa and Asia',
+    'Say: HOO-poo',
+  ),
+  item(
+    'rainbow-lorikeet',
+    'birds',
+    'Rainbow lorikeet',
+    'uncommon',
+    '🦜',
+    'Rainbow lorikeets have a brush-tipped tongue for lapping up pollen and sweet nectar from flowers. Their feathers are so bright that they look like a rainbow.',
+    'Lives in: forests and city parks in eastern Australia',
+    'Say: LOR-ih-keet',
+  ),
+  item(
+    'lilac-breasted-roller',
+    'birds',
+    'Lilac-breasted roller',
+    'rare',
+    '🐦',
+    'The lilac-breasted roller is named for the way it tumbles and rolls through the air in a show-off display. Its feathers shine in turquoise, lilac, green and blue.',
+    'Lives in: savannas in eastern and southern Africa',
+  ),
+  item(
+    'great-hornbill',
+    'birds',
+    'Great hornbill',
+    'rare',
+    '🐦',
+    'The great hornbill has a big yellow casque on top of its beak, like a helmet. Mothers stay inside a tree hole with their eggs while the father brings food.',
+    'Lives in: rainforests in India and Southeast Asia',
+  ),
+  item(
+    'blue-footed-booby',
+    'birds',
+    'Blue-footed booby',
+    'epic',
+    '🐦',
+    'The blue-footed booby has bright blue feet, and the bluer they are, the more others notice. The male lifts his feet one at a time in a funny dance to impress a female.',
+    'Lives in: coasts and islands, especially the Galapagos',
+    'Say: BOO-bee',
   ),
 ]

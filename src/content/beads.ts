@@ -49,6 +49,24 @@ export const BEADS: BeadDef[] = [
   bead('letter-e', 'Letter E', '#fde68a', 'letter', 'epic', 'E'),
   bead('letter-l', 'Letter L', '#fde68a', 'letter', 'epic', 'L'),
   bead('letter-i', 'Letter I', '#fde68a', 'letter', 'epic', 'I'),
+  bead('letter-b', 'Letter B', '#fde68a', 'letter', 'epic', 'B'),
+  bead('letter-c', 'Letter C', '#fde68a', 'letter', 'epic', 'C'),
+  bead('letter-d', 'Letter D', '#fde68a', 'letter', 'epic', 'D'),
+  bead('letter-f', 'Letter F', '#fde68a', 'letter', 'epic', 'F'),
+  bead('letter-g', 'Letter G', '#fde68a', 'letter', 'epic', 'G'),
+  bead('letter-h', 'Letter H', '#fde68a', 'letter', 'epic', 'H'),
+  bead('letter-j', 'Letter J', '#fde68a', 'letter', 'epic', 'J'),
+  bead('letter-k', 'Letter K', '#fde68a', 'letter', 'epic', 'K'),
+  bead('letter-p', 'Letter P', '#fde68a', 'letter', 'epic', 'P'),
+  bead('letter-q', 'Letter Q', '#fde68a', 'letter', 'epic', 'Q'),
+  bead('letter-s', 'Letter S', '#fde68a', 'letter', 'epic', 'S'),
+  bead('letter-t', 'Letter T', '#fde68a', 'letter', 'epic', 'T'),
+  bead('letter-u', 'Letter U', '#fde68a', 'letter', 'epic', 'U'),
+  bead('letter-v', 'Letter V', '#fde68a', 'letter', 'epic', 'V'),
+  bead('letter-w', 'Letter W', '#fde68a', 'letter', 'epic', 'W'),
+  bead('letter-x', 'Letter X', '#fde68a', 'letter', 'epic', 'X'),
+  bead('letter-y', 'Letter Y', '#fde68a', 'letter', 'epic', 'Y'),
+  bead('letter-z', 'Letter Z', '#fde68a', 'letter', 'epic', 'Z'),
 ]
 
 export function findBead(id: string): BeadDef | undefined {
@@ -60,7 +78,7 @@ export const BEAD_RARITY_WEIGHTS: Record<Rarity, number> = {
   common: 60,
   uncommon: 25,
   rare: 10,
-  epic: 5,
+  epic: 8,
   legendary: 0,
 }
 
