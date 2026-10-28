@@ -128,6 +128,37 @@ export function finishBracelet(id: string): boolean {
   return true
 }
 
+/**
+ * Sends a finished bracelet to her sister: it then shows on the sister's iPad
+ * under "From <name>" (read from this kid's synced file, nothing is copied).
+ * Idempotent. Returns false for an unfinished or unknown bracelet.
+ */
+export function shareBracelet(id: string): boolean {
+  const bracelet = getDoc().collection.bracelets.find((b) => b.id === id)
+  if (!bracelet || !bracelet.finishedAt) return false
+  if (bracelet.sharedAt) return true
+  update('collection', (c) => ({
+    ...c,
+    bracelets: c.bracelets.map((b) => (b.id === id ? { ...b, sharedAt: Date.now() } : b)),
+  }))
+  return true
+}
+
+/** Takes a sent bracelet back: her sister no longer sees it. */
+export function unshareBracelet(id: string): void {
+  const bracelet = getDoc().collection.bracelets.find((b) => b.id === id)
+  if (!bracelet?.sharedAt) return
+  update('collection', (c) => ({
+    ...c,
+    bracelets: c.bracelets.map((b) => {
+      if (b.id !== id) return b
+      const { sharedAt: _drop, ...rest } = b
+      void _drop
+      return rest
+    }),
+  }))
+}
+
 /** Deletes an unfinished bracelet, returning its beads to the tray. */
 export function scrapBracelet(id: string): void {
   const bracelet = getDoc().collection.bracelets.find((b) => b.id === id)

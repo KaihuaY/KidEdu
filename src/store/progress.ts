@@ -265,6 +265,8 @@ export interface Bracelet {
   beads: (string | null)[]
   startedAt: number
   finishedAt?: number
+  /** Set when she sent this finished bracelet to her sister (it shows on the sister's iPad under "From <name>"). */
+  sharedAt?: number
 }
 
 export interface CollectionSection {

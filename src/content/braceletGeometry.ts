@@ -1,5 +1,5 @@
-// Pure geometry for drawing a bracelet strand (shared by the React component
-// and the share-picture generator in src/utils/braceletImage.ts).
+// Pure geometry for drawing a bracelet strand (used by the strand SVGs in
+// src/components/BraceletMaker.tsx).
 
 /** The oval the beads sit on: a closed loop like a real bracelet, inset so the beads never clip the edge. */
 export function strandOval(width: number, height: number): { cx: number; cy: number; rx: number; ry: number } {

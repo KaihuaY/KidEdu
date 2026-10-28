@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { clearRemoteKids, getRemoteKid, setRemoteKid, summarize } from '../family'
+import { clearRemoteKids, getRemoteKid, setRemoteKid, sharedBracelets, summarize } from '../family'
 import { defaultDoc, type PianoDay, type PianoTake, type ProgressDoc } from '../progress'
 
 function baseDoc(): ProgressDoc {
@@ -164,5 +164,22 @@ describe('remote kid store', () => {
     newer.profiles.kid.xp = 99
     setRemoteKid('amelia', newer, 2000)
     expect(getRemoteKid('amelia')).toEqual({ doc: newer, updatedAt: 2000 })
+  })
+})
+
+describe('sharedBracelets (what her sister sent)', () => {
+  it('lists only finished, sent bracelets, newest sent first, and tolerates an old doc without a collection', () => {
+    const doc = defaultDoc()
+    const strand = Array(18).fill(null)
+    doc.collection.bracelets = [
+      { id: 'a', name: 'Sent first', beads: strand, startedAt: 1, finishedAt: 2, sharedAt: 10 },
+      { id: 'b', name: 'Not sent', beads: strand, startedAt: 1, finishedAt: 2 },
+      { id: 'c', name: 'Sent later', beads: strand, startedAt: 1, finishedAt: 3, sharedAt: 20 },
+      { id: 'd', name: 'Unfinished', beads: strand, startedAt: 1, sharedAt: 30 },
+    ]
+    expect(sharedBracelets(doc).map((b) => b.id)).toEqual(['c', 'a'])
+    const old = { ...defaultDoc() } as Partial<ProgressDoc>
+    delete old.collection
+    expect(sharedBracelets(old as ProgressDoc)).toEqual([])
   })
 })

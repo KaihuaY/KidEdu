@@ -632,12 +632,12 @@ are spent on the **Box** screen, which now has four tabs:
   6 beads. **✏️ Name it** (on the bracelet being made and on every
   finished one) opens a big name box with suggestion chips, up to 30
   letters. Finished bracelets sit in a gallery, and the latest one shows on
-  Home under "🃏 My cards". **📤 Share** turns a finished bracelet into a
-  picture card (its name, "Made by Nora" and the date) and opens the iPad
-  share sheet to send it to a friend; where sharing pictures is not
-  possible the picture downloads instead. If the iPad refuses the first
-  share because making the picture took too long, the button says "Picture
-  ready! Tap Share again" and the second tap shares at once.
+  Home under "🃏 My cards". **💌 Send to Amelia** (or "to Nora") on a
+  finished bracelet marks it as shared (`sharedAt`); her sister's iPad then
+  shows it in a "💌 From Nora" section of the Bracelets tab, read from the
+  sender's synced file (nothing is copied, and it needs both iPads to have
+  the family sync key). Tapping "✅ Sent to Amelia" again offers to take it
+  back.
 - **🎟️ Tickets.** As before.
 
 The 242 photos live in `public/collection/` and come from Wikimedia

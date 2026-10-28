@@ -11,7 +11,9 @@ import {
   placeBead,
   renameBracelet,
   scrapBracelet,
+  shareBracelet,
   startBracelet,
+  unshareBracelet,
   totalTrayBeads,
 } from '../collection'
 import { BEADS, BEAD_RARITY_WEIGHTS, findBead, randomBeadIds } from '../../content/beads'
@@ -107,6 +109,24 @@ describe('beads and bracelets', () => {
     scrapBracelet(id)
     expect(getDoc().collection.bracelets).toEqual([])
     expect(getDoc().collection.beads).toEqual({ 'pink-heart': 2 })
+  })
+})
+
+describe('sending a bracelet to her sister', () => {
+  it('only a finished bracelet can be sent; sending twice keeps the first time; it can be taken back', () => {
+    awardBeads(Array(6).fill('red-round'))
+    const id = startBracelet('Ruby')
+    expect(shareBracelet(id)).toBe(false) // not finished yet
+    for (let i = 0; i < 6; i++) placeBead(id, i, 'red-round')
+    expect(finishBracelet(id)).toBe(true)
+    expect(shareBracelet(id)).toBe(true)
+    const first = getDoc().collection.bracelets.find((b) => b.id === id)?.sharedAt
+    expect(first).toBeTypeOf('number')
+    expect(shareBracelet(id)).toBe(true)
+    expect(getDoc().collection.bracelets.find((b) => b.id === id)?.sharedAt).toBe(first)
+    unshareBracelet(id)
+    expect(getDoc().collection.bracelets.find((b) => b.id === id)?.sharedAt).toBeUndefined()
+    expect(shareBracelet('nope')).toBe(false)
   })
 })
 

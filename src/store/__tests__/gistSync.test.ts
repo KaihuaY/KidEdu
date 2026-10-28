@@ -358,3 +358,58 @@ describe('merge base is remembered per device and per kid', () => {
     vi.unstubAllGlobals()
   })
 })
+
+describe('uploading after another device wrote (2026-10-27)', () => {
+  /** A fake gist that, like GitHub, versions every write and answers /commits?per_page=1. */
+  function versionedGithub(initial: Record<string, string>) {
+    const files = { ...initial }
+    let version = 1
+    const patches: string[] = []
+    const body = () => JSON.stringify({ id: 'gist-v', updated_at: new Date(1_800_000_000_000 + version).toISOString(), history: [{ version: `v${version}` }], files: Object.fromEntries(Object.entries(files).map(([n, c]) => [n, { content: c }])) })
+    const fetchFn = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      const url = new URL(String(input))
+      const method = init?.method ?? 'GET'
+      if (url.pathname === '/gists' && method === 'GET') return new Response(`[${body()}]`, { status: 200 })
+      if (url.pathname === '/gists/gist-v/commits') return new Response(JSON.stringify([{ version: `v${version}` }]), { status: 200 })
+      if (url.pathname === '/gists/gist-v' && method === 'PATCH') {
+        const b = JSON.parse(init!.body as string) as { files: Record<string, { content: string }> }
+        for (const [n, f] of Object.entries(b.files)) files[n] = f.content
+        version++
+        patches.push(Object.keys(b.files).join(','))
+        return new Response(body(), { status: 200 })
+      }
+      if (url.pathname === '/gists/gist-v') return new Response(body(), { status: 200 })
+      return new Response('not found', { status: 404 })
+    })
+    /** Another device writes this kid's file (a new revision). */
+    const otherDeviceWrites = (doc: ProgressDoc) => {
+      files['cubeclimb-progress.json'] = JSON.stringify(doc)
+      version++
+    }
+    return { fetch: fetchFn, files, patches, otherDeviceWrites }
+  }
+
+  it("an edit made after another device wrote reaches the gist straight away, merged with the other device's change", async () => {
+    const start0 = docWithXp(100)
+    const gh = versionedGithub({ 'cubeclimb-progress.json': JSON.stringify(start0) })
+    vi.stubGlobal('fetch', gh.fetch)
+    setToken('tok')
+    start()
+    await vi.waitFor(() => expect(getDoc().profiles.kid.xp).toBe(100))
+
+    // the other iPad earns XP (a newer profiles section)
+    const remote = JSON.parse(gh.files['cubeclimb-progress.json']) as ProgressDoc
+    remote.profiles = { ...remote.profiles, kid: { ...remote.profiles.kid, xp: 130 }, updatedAt: remote.profiles.updatedAt + 10_000 }
+    gh.otherDeviceWrites(remote)
+
+    // this iPad then names a bracelet (another section)
+    update('collection', (c) => ({ ...c, bracelets: [{ id: 'b1', name: 'Shared one', beads: [], startedAt: 1, finishedAt: 2, sharedAt: 3 }] }))
+    await vi.waitFor(() => {
+      const now = JSON.parse(gh.files['cubeclimb-progress.json']) as ProgressDoc
+      expect(now.collection.bracelets[0]?.sharedAt).toBe(3)
+      expect(now.profiles.kid.xp).toBe(130)
+    }, { timeout: 5000 })
+    stop()
+    vi.unstubAllGlobals()
+  })
+})

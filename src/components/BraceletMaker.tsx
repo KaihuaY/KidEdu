@@ -4,11 +4,11 @@
 // as a pure, prop-only SVG so other screens (Home) can draw a finished
 // bracelet without pulling in any of this file's interactive state.
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { findBead, type BeadDef } from '../content/beads'
 import { heartPath, slotPositions, starPoints, strandPath } from '../content/braceletGeometry'
-import { kidDisplayName } from '../store/kid'
-import { braceletCardFile, shareBraceletFile, type ShareResult } from '../utils/braceletImage'
+import { kidDisplayName, otherKidId } from '../store/kid'
+import { useBraceletsFromFamily } from '../store/family'
 import { awardNewBadges } from '../store/badges'
 import {
   BRACELET_SLOTS,
@@ -19,6 +19,8 @@ import {
   placeBead,
   renameBracelet,
   scrapBracelet,
+  shareBracelet,
+  unshareBracelet,
   startBracelet,
   trayBeads,
   useCollection,
@@ -144,44 +146,15 @@ function NameBraceletDialog({ bracelet, onClose }: { bracelet: Bracelet; onClose
 
 function FinishedBraceletCard({ bracelet: b }: { bracelet: Bracelet }) {
   const [naming, setNaming] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [status, setStatus] = useState('')
-  const alive = useRef(true)
-  useEffect(() => {
-    alive.current = true
-    return () => {
-      alive.current = false
-    }
-  }, [])
   const date = b.finishedAt ? new Date(b.finishedAt).toLocaleDateString() : ''
-  // The picture, kept once made (for this name and these beads), so a second
-  // tap can open the share sheet instantly - see shareBraceletFile.
-  const made = useRef<{ key: string; file: File } | null>(null)
-  const pictureKey = `${b.name}|${b.beads.join(',')}`
-  async function onShare() {
-    setBusy(true)
-    setStatus('')
-    const opts = { kidName: kidDisplayName(), date }
-    let result: ShareResult
-    try {
-      if (!made.current || made.current.key !== pictureKey) made.current = { key: pictureKey, file: await braceletCardFile(b, opts) }
-      result = await shareBraceletFile(made.current.file, b, opts)
-    } catch {
-      result = 'failed'
+  const sister = kidDisplayName(otherKidId())
+  function onSend() {
+    if (b.sharedAt) {
+      if (typeof window !== 'undefined' && !window.confirm(`Take it back? ${sister} won't see it any more.`)) return
+      unshareBracelet(b.id)
+      return
     }
-    if (!alive.current) return
-    setBusy(false)
-    setStatus(
-      result === 'shared'
-        ? 'Shared! 🎉'
-        : result === 'downloaded'
-          ? 'Saved the picture 📥'
-          : result === 'needs-tap'
-            ? 'Picture ready! Tap 📤 Share again.'
-            : result === 'failed'
-              ? 'Could not share - try again'
-              : '',
-    )
+    if (shareBracelet(b.id)) fireConfetti('small')
   }
   return (
     <div className="cc-card" style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'center' }}>
@@ -192,17 +165,43 @@ function FinishedBraceletCard({ bracelet: b }: { bracelet: Bracelet }) {
         <button type="button" className="cc-btn cc-btn-surface" style={{ minHeight: 56 }} data-testid={`bracelet-name-edit-${b.id}`} onClick={() => setNaming(true)}>
           ✏️ Name it
         </button>
-        <button type="button" className="cc-btn cc-btn-surface" style={{ minHeight: 56 }} data-testid={`bracelet-share-${b.id}`} disabled={busy} onClick={onShare}>
-          {busy ? 'Making the picture…' : '📤 Share'}
+        <button
+          type="button"
+          className={b.sharedAt ? 'cc-btn cc-btn-surface' : 'cc-btn cc-btn-primary'}
+          style={{ minHeight: 56 }}
+          data-testid={`bracelet-send-${b.id}`}
+          onClick={onSend}
+        >
+          {b.sharedAt ? `✅ Sent to ${sister}` : `💌 Send to ${sister}`}
         </button>
       </div>
-      {status && (
-        <span role="status" style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--cc-ink-soft)' }}>
-          {status}
-        </span>
-      )}
       {naming && <NameBraceletDialog bracelet={b} onClose={() => setNaming(false)} />}
     </div>
+  )
+}
+
+/** Bracelets her sister sent her, read from the sister's synced file. */
+function FromFamily() {
+  const senders = useBraceletsFromFamily()
+  if (senders.length === 0) return null
+  return (
+    <>
+      {senders.map((s) => (
+        <section key={s.id} data-testid={`bracelets-from-${s.id}`} style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+          <h2 style={{ margin: 0, fontSize: '1.05rem' }}>💌 From {s.name}</h2>
+          {s.bracelets.map((b) => (
+            <div key={b.id} className="cc-card" style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'center' }}>
+              <BraceletStrand bracelet={b} width={260} />
+              <strong>{b.name}</strong>
+              <span style={{ fontSize: '0.8rem', color: 'var(--cc-ink-soft)' }}>
+                from {s.name}
+                {b.sharedAt ? ` · ${new Date(b.sharedAt).toLocaleDateString()}` : ''}
+              </span>
+            </div>
+          ))}
+        </section>
+      ))}
+    </>
   )
 }
 
@@ -413,6 +412,8 @@ export function BraceletMaker() {
           ))}
         </section>
       )}
+
+      <FromFamily />
     </div>
   )
 }

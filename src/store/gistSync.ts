@@ -459,6 +459,11 @@ function scheduleUpload(): void {
  * newer sections were overwritten until it noticed and re-sent them.
  */
 async function pushLatest(force = false): Promise<void> {
+  // True when the pre-upload merge left local data the gist lacks. The merge
+  // resets lastSyncedJson to the merged doc, so the plain "changed since the
+  // last sync?" check below would wrongly skip the upload (fixed 2026-10-27:
+  // an edit made after another device wrote waited for the next edit).
+  let mergedNeedsPush = false
   if (gistId && lastKnownVersion) {
     const latest = await fetchLatestVersion(gistId)
     if (latest && latest !== lastKnownVersion) {
@@ -466,11 +471,11 @@ async function pushLatest(force = false): Promise<void> {
       lastKnownRemoteUpdatedAt = detail.updated_at
       await harvestOtherKids(detail)
       const ownFile = detail.files[fileNameForKid()]
-      applyRemoteContent(ownFile ? await resolveFileContent(ownFile) : '')
+      mergedNeedsPush = applyRemoteContent(ownFile ? await resolveFileContent(ownFile) : '')
     }
   }
   const content = syncJson()
-  if (!force && content === lastSyncedJson) return
+  if (!force && !mergedNeedsPush && content === lastSyncedJson) return
   await pushToGist(content)
 }
 

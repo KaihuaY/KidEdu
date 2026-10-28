@@ -7,7 +7,7 @@
 
 import { useSyncExternalStore } from 'react'
 import { DEFAULT_KID, getKid, kidDisplayName, type KidId } from './kid'
-import { useProgress, type ProgressDoc } from './progress'
+import { useProgress, type Bracelet, type ProgressDoc } from './progress'
 import { lastNDays, localDay } from './sessions'
 import { practiceSecondsForDay } from './pianoRewards'
 import { computeRecords } from './records'
@@ -164,6 +164,25 @@ export function getRemoteKid(id: KidId): RemoteEntry | undefined {
 export function clearRemoteKids(): void {
   remoteKids = new Map()
   notify()
+}
+
+/** The finished bracelets a kid has sent to her sister, newest first. Defensive: `doc` may come from an older build. */
+export function sharedBracelets(doc: ProgressDoc): Bracelet[] {
+  const bracelets = doc.collection?.bracelets ?? []
+  return bracelets.filter((b) => b && b.finishedAt && b.sharedAt).sort((a, b) => (b.sharedAt ?? 0) - (a.sharedAt ?? 0))
+}
+
+/** Bracelets the OTHER kids sent to this device's kid, grouped by sender. */
+export function useBraceletsFromFamily(): { id: KidId; name: string; bracelets: Bracelet[] }[] {
+  const remote = useRemoteKids()
+  const ownId = getKid()
+  const out: { id: KidId; name: string; bracelets: Bracelet[] }[] = []
+  for (const [id, entry] of remote) {
+    if (id === ownId) continue
+    const bracelets = sharedBracelets(entry.doc)
+    if (bracelets.length) out.push({ id, name: kidDisplayName(id), bracelets })
+  }
+  return out
 }
 
 function useRemoteKids(): ReadonlyMap<KidId, RemoteEntry> {
